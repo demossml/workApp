@@ -54,6 +54,7 @@ import {
 } from "./utils";
 import { Document, ShopUuidName } from "./evotor/types";
 import { z } from "zod";
+import { analyzeWithAI } from "./ai";
 
 export const api = new Hono<IEnv>()
 
@@ -167,7 +168,39 @@ export const api = new Hono<IEnv>()
 	.get("/api/schedules", async (c) => {
 		const date = formatDate(new Date());
 
+		const evo = c.var.evotor;
+
+		const salesAnalysisSchema = {
+			name: "sales-analysis",
+			prompt: (docs: Document[]) => `
+			Проанализируй документы и верни JSON вида: 
+			{ "summary": "итог анализа" }
+			Пример: { "summary": "За день продано 42 товара" }
+			
+			Документы: ${JSON.stringify(docs.slice(0, 3))} [и еще ${docs.length - 3}...]
+		`,
+			outputSchema: z.object({
+				summary: z.string(),
+			}),
+		};
+
 		const shopsUuid = await c.var.evotor.getShopUuids();
+		const aiWithRun = c.var.ai as any;
+
+		const docs = await evo.getDocuments(
+			shopsUuid[2],
+			"2025-05-31T00:56:03.000+0000",
+			"2025-05-31T14:56:03.000+0000",
+		);
+
+		const aiData = await analyzeWithAI(
+			evo,
+			salesAnalysisSchema,
+			docs,
+			aiWithRun,
+		);
+
+		console.log("AI Data:", aiData);
 
 		const dataReport: Record<string, string> = {};
 
@@ -942,21 +975,21 @@ export const api = new Hono<IEnv>()
 				until,
 			);
 
-			const aiWithRun = c.var.ai as any;
-			const evo = c.var.evotor;
+			// const aiWithRun = c.var.ai as any;
+			// const evo = c.var.evotor;
 
-			const docs = await evo.getDocuments(shopUuids[2], since, until);
+			// 			const docs = await evo.getDocuments(shopUuids[2], since, until);
 
-			const salesAnalysisSchema = {
-				name: "sales-analysis",
-				prompt: (docs: Document[]) => `
-    Проанализируй эти документы: ${JSON.stringify(docs)}
-    Верни результат в формате: { "summary": string }
-  `,
-				outputSchema: z.object({
-					summary: z.string(),
-				}),
-			};
+			// 			const salesAnalysisSchema = {
+			// 				name: "sales-analysis",
+			// 				prompt: (docs: Document[]) => `
+			//     Проанализируй эти документы: ${JSON.stringify(docs)}
+			//     Верни результат в формате: { "summary": string }
+			//   `,
+			// 				outputSchema: z.object({
+			// 					summary: z.string(),
+			// 				}),
+			// 			};
 
 			// const d = await c.var.evotor.getDocuments(shopUuids[2], since, until);
 
