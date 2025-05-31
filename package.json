@@ -1,0 +1,16 @@
+{
+  "name": "evo-app",
+  "private": true,
+  "packageManager": "pnpm@9.1.3",
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "turbo": "^2.2.3"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --filter=@evo-app/{backend,frontend}",
+    "deploy": "turbo run deploy"
+  }
+}

@@ -1,0 +1,20 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "evo-app"
+main = "src/index.ts"
+compatibility_date = "2024-10-22"
+compatibility_flags = ["nodejs_compat"]
+assets = { directory = "dist"}
+
+
+[[d1_databases]]
+binding = "DB" # i.e. available in your Worker on env.DB
+database_name = "d1-bot"
+database_id = "17efe5ea-cab5-4ea6-8b12-0bdf77c375fb"
+
+[ai]
+binding = "AI" # это имя, под которым ты будешь обращаться к AI в коде (env.AI)
+
+
+[vars]
+EVOTOR_API_TOKEN = "1126f94c-2b19-490e-872c-49ded3be310e"
+BOT_TOKEN = "5405385673:AAFvJDIlR4BqQmnXDBGS8XOzEGSpVmE1w84"

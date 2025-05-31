@@ -1,0 +1,1960 @@
+import {
+	formatDateWithTime,
+	getDateRangesForWeeks,
+	generateDateRanges,
+	formatDateTime,
+	calculateDateRanges,
+} from "../utils";
+import {
+	Document,
+	Employee,
+	Product,
+	ProductsResponse,
+	Shop,
+	ShopsResponse,
+	PaymentType,
+	ShopUuidName,
+	ProductUuid,
+} from "./types";
+
+/**
+ * Класс Evotor для работы с API Эвотор
+ */
+export class Evotor {
+	private headers: { "X-Authorization": string }; // Заголовки для авторизации
+	private urls: {
+		getEmployees: string; // URL для получения списка сотрудников
+		getShops: string; // URL для получения списка магазинов
+		getProducts: string; // URL для получения списка продуктов
+		getZReport: string; // URL для получения Z-отчетов
+		getCashOutcome: string; // URL для получения документов о денежном расходе
+		getSell: string; // URL для получения документов о продажах
+		getDoc: string; // URL для получения документов
+	};
+
+	/**
+	 * Конструктор класса Evotor
+	 * @param token - Токен для авторизации
+	 */
+	constructor(token: string) {
+		this.headers = { "X-Authorization": token }; // Инициализация заголовков
+		this.urls = {
+			getEmployees: "https://api.evotor.ru/api/v1/inventories/employees/search",
+			getShops: "https://api.evotor.ru/api/v1/inventories/stores/search",
+			getProducts:
+				"https://api.evotor.ru/api/v1/inventories/stores/{}/products",
+			getZReport:
+				"https://api.evotor.ru/api/v1/inventories/stores/{}/documents?gtCloseDate={}&ltCloseDate={}&types=FPRINT",
+			getCashOutcome:
+				"https://api.evotor.ru/api/v1/inventories/stores/{}/documents?gtCloseDate={}&ltCloseDate={}&types=CASH_OUTCOME",
+			getSell:
+				"https://api.evotor.ru/api/v1/inventories/stores/{}/documents?gtCloseDate={}&ltCloseDate={}&types=SELL",
+			getDoc:
+				"https://api.evotor.ru/api/v1/inventories/stores/{}/documents?gtCloseDate={}&ltCloseDate={}",
+		};
+	}
+
+	async getProductsShopUuidsT(shopId: string): Promise<ProductUuid[]> {
+		try {
+			// Заменяем плейсхолдер в URL на shopId
+			const url = this._replacePlaceholders(this.urls.getProducts, [shopId]);
+			const products = await this._fetchData(url);
+
+			// Возвращаем только нужные поляn
+			return products.map(
+				(product: {
+					uuid: string;
+					group: boolean;
+					parentUuid: string;
+					name: string;
+				}) => ({
+					uuid: product.uuid,
+					group: product.group,
+					parentUuid: product.parentUuid,
+					name: product.name,
+					shopId: shopId,
+				}),
+			);
+		} catch (error) {
+			// Логируем ошибку
+			this._logError(
+				`Ошибка при получении продуктов для магазина с ID: ${shopId}`,
+				error,
+			);
+			throw error; // Пробрасываем ошибку дальше
+		}
+	}
+
+	async checkToken(): Promise<boolean> {
+		try {
+			const response = await fetch(this.urls.getShops, {
+				method: "GET",
+				headers: this.headers, // Используем текущие заголовки с токеном
+			});
+
+			// Проверка успешности запроса
+			if (response.ok) {
+				return true; // Токен действителен
+			} else {
+				throw new Error("Неверный или истекший токен");
+			}
+		} catch (error) {
+			this._logError("Ошибка при проверке токена", error);
+			return false; // Токен недействителен
+		}
+	}
+
+	/**
+	 * Получает данные сотрудников.
+	 * @returns Массив сотрудников.
+	 * @throws Пробрасывает ошибку, если возникает ошибка при получении данных сотрудников.
+	 */
+	async getEmployees(): Promise<Employee[]> {
+		try {
+			return await this._fetchData(this.urls.getEmployees); // Запрос данных сотрудников
+		} catch (error) {
+			this._logError("Ошибка при получении сотрудников", error); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Получает список uuid сотрудников.
+	 * @returns Массив uuid сотрудников.
+	 * @throws Пробрасывает ошибку, если возникает ошибка при получении данных.
+	 */
+	async getEmployeesUuids(): Promise<string[]> {
+		try {
+			// Получаем данные магазинов
+			const employeesResponse: Employee[] = await this.getEmployees();
+
+			// Извлекаем uuid для каждого магазина из массива items
+			const employeesUuids: string[] = employeesResponse.map(
+				(employee) => employee.uuid,
+			); // Исправлено с id на uuid
+
+			return employeesUuids;
+		} catch (error) {
+			this._logError(`Ошибка при получении списка uuid магазинов`, error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Получает имя сотрудника по его уникальному employeeUuid.
+	 * @param employeeUuid Уникальный идентификатор сотрудника.
+	 * @returns Имя сотрудника, если найден, или null, если сотрудник не найден.
+	 * @throws Пробрасывает ошибку, если возникает ошибка при получении данных.
+	 */
+	async getEmployeesByName(employeeUuid: string): Promise<string> {
+		try {
+			const employees = await this.getEmployees(); // Получение списка сотрудников
+			const employee = employees.find((emp) => emp.id === employeeUuid); // Поиск сотрудника по UUID
+			return employee ? employee.name : "Сотрудник не найден"; // Возврат имени или сообщение о неудаче
+		} catch (error) {
+			this._logError("Ошибка при получении имени сотрудника", error); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Получает имена и UUID сотрудников.
+	 * Массив объектов, где каждый объект содержит UUID и имя сотрудника.
+	 * @returns Массив объектов с UUID и именами сотрудников.
+	 * @throws Пробрасывает ошибку, если возникает ошибка при получении данных.
+	 */
+	async getEmployeesLastNameAndUuid(): Promise<
+		Array<{ uuid: string; name: string }>
+	> {
+		try {
+			const employees = await this.getEmployees(); // Получение списка сотрудников
+			// console.log("Список сотрудников:", employees); // Логирование списка сотрудников
+
+			// Преобразуем сотрудников в массив объектов с нужными полями
+			const result = employees
+				.filter((emp) => emp.uuid && emp.name) // Проверка наличия необходимых данных
+				.map((emp) => ({
+					uuid: emp.uuid, // UUID сотрудника
+					name: emp.name, // Имя сотрудника
+				}));
+
+			return result; // Возврат массива объектов с UUID и именами
+		} catch (error) {
+			this._logError("Ошибка при получении имен сотрудников", error); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Получает даннве сотрудника (uuid, name) по фамилии.
+	 * @param lastName - Фамилия для поиска сотрудников.
+	 * @returns Массив объектов с UUID и именем сотрудников.
+	 * @throws Пробрасывает ошибку, если возникает ошибка при получении данных.
+	 */
+	async getEmployeesByLastName(
+		lastName: string,
+	): Promise<Array<{ uuid: string; name: string }>> {
+		try {
+			const employees = await this.getEmployees(); // Получение списка сотрудников
+
+			// Фильтруем сотрудников по фамилии и преобразуем в массив объектов с нужными полями
+			const result = employees
+				.filter((emp) => emp.lastName === lastName && emp.uuid && emp.name) // Проверка наличия данных и соответствия фамилии
+				.map((emp) => ({
+					uuid: emp.uuid, // UUID сотрудника
+					name: emp.name, // Имя сотрудника
+				}));
+
+			return result; // Возврат отфильтрованного массива объектов
+		} catch (error) {
+			this._logError("Ошибка при получении сотрудников по фамилии", error); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Получает фамилию сотрудника по его фамилии.
+	 *
+	 * Этот метод ищет сотрудника по фамилии в списке сотрудников и возвращает его фамилию, если он найден.
+	 * Если сотрудник не найден, возвращается null.
+	 *
+	 * @param lastName - Фамилия сотрудника, по которой выполняется поиск.
+	 * @returns Фамилию сотрудника или null, если сотрудник не найден.
+	 * @throws Пробрасывает ошибку, если не удается получить список сотрудников.
+	 */
+	async getEmployeeLastName(lastName: string): Promise<string | null> {
+		try {
+			const shopsResponse: Employee[] = await this.getEmployees(); // Получение списка сотрудников
+			// Проверяем, является ли shopsResponse массивом
+			if (!Array.isArray(shopsResponse)) {
+				throw new Error("Некорректный ответ: отсутствует список магазинов");
+			}
+
+			// Поиск сотрудника по lastName
+			const employee = shopsResponse.find(
+				(doc: Employee) => doc.lastName === lastName,
+			); // Найти первого подходящего сотрудника
+
+			// Если сотрудник найден, вернуть его фамилию, иначе вернуть null
+			return employee ? employee.name : null;
+		} catch (error) {
+			this._logError("Ошибка при получении имени сотрудника", error); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Получает имя сотрудника по его уникальному employeeUuid.
+	 *
+	 * Этот метод обращается к списку сотрудников и ищет сотрудника с указанным UUID.
+	 * Если такой сотрудник найден, возвращает его имя. Если сотрудник не найден, возвращает null.
+	 *
+	 * @param employeeUuid - Уникальный идентификатор сотрудника.
+	 * @returns Имя сотрудника или null, если сотрудник не найден.
+	 * @throws Пробрасывает ошибку, если не удается получить список сотрудников.
+	 */
+	async getEmployeeByUuid(employeeUuid: string): Promise<string | null> {
+		try {
+			const employeesResponse: Employee[] = await this.getEmployees(); // Получение списка сотрудников
+			// Проверяем, является ли employeesResponse массивом
+			if (!Array.isArray(employeesResponse)) {
+				throw new Error("Некорректный ответ: отсутствует список сотрудников");
+			}
+
+			// Поиск сотрудника по employeeUuid
+			const employee = employeesResponse.find(
+				(doc: Employee) => doc.uuid === employeeUuid,
+			); // Найти первого подходящего сотрудника
+
+			// Если сотрудник найден, вернуть его имя, иначе вернуть null
+			return employee ? employee.name : null;
+		} catch (error) {
+			this._logError("Ошибка при получении имени сотрудника", error); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Получает роль сотрудника по фамилии.
+	 *
+	 * Этот метод обращается к списку сотрудников и ищет сотрудника с указанной фамилией.
+	 * Если такой сотрудник найден, возвращает его роль. Если сотрудник не найден, возвращает null.
+	 *
+	 * @param lastName - Фамилия сотрудника, роль которого нужно получить.
+	 * @returns Роль сотрудника или null, если сотрудник не найден.
+	 * @throws Пробрасывает ошибку, если не удается получить список сотрудников.
+	 */
+	async getEmployeeRole(lastName: string): Promise<string | null> {
+		try {
+			const shopsResponse: Employee[] = await this.getEmployees(); // Получение списка сотрудников
+			// Проверяем, является ли shopsResponse массивом
+			if (!Array.isArray(shopsResponse)) {
+				throw new Error("Некорректный ответ: отсутствует список магазинов");
+			}
+
+			// Поиск сотрудника по lastName
+			const employee = shopsResponse.find(
+				(doc: Employee) => doc.lastName === lastName,
+			); // Найти первого подходящего сотрудника
+
+			// Если сотрудник найден, вернуть его фамилию, иначе вернуть null
+			return employee ? employee.role : null;
+		} catch (error) {
+			this._logError("Ошибка при получении имени сотрудника", error); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Получает сотрудников, работающих в указанном магазине.
+	 * @param shopId - Идентификатор магазина (UUID), для которого нужно получить сотрудников.
+	 * @returns Массив объектов с UUID и именами сотрудников, работающих в указанном магазине.
+	 * @throws Пробрасывает ошибку, если возникает ошибка при получении данных.
+	 */
+	async getEmployeesByShopId(
+		shopId: string,
+	): Promise<Array<{ uuid: string; name: string }>> {
+		try {
+			const employees = await this.getEmployees(); // Получение списка сотрудников
+			// console.log("Список сотрудников:", employees); // Логирование списка сотрудников
+
+			// Фильтруем сотрудников, у которых есть указанный shopId в массиве stores
+			const result = employees
+				.filter((emp) => emp.uuid && emp.name && emp.stores?.includes(shopId)) // Проверка наличия данных и shopId
+				.map((emp) => ({
+					uuid: emp.uuid, // UUID сотрудника
+					name: emp.name, // Имя сотрудника
+				}));
+
+			return result; // Возврат массива объектов с UUID и именами
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении сотрудников для магазина с ID: ${shopId}`,
+				error,
+			); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Получает все документы для магазина с учетом интервалов по 30 дней.
+	 *
+	 * Этот метод разбивает период между датами на интервалы в 30 дней и для каждого интервала выполняет запрос
+	 * на сервер для получения документов. Все полученные документы объединяются в один массив и возвращаются.
+	 *
+	 * @param shopId - ID магазина, для которого получаем документы.
+	 * @param since - Дата начала периода (в формате строки).
+	 * @param until - Дата окончания периода (в формате строки).
+	 * @returns Массив документов, полученных за весь указанный период.
+	 * @throws Пробрасывает ошибку, если не удаётся получить документы.
+	 */
+	async getDocuments(
+		shopId: string,
+		since: string,
+		until: string,
+	): Promise<Document[]> {
+		try {
+			// Получаем интервалы дат с шагом в 30 дней
+			const intervals = generateDateRanges(since, until, "days", 30);
+
+			let allDoc: Document[] = []; // Массив для хранения всех документов
+
+			// Последовательно обрабатываем каждый интервал
+			for (const interval of intervals) {
+				const [startDate, endDate] = interval; // Деструктурируем интервал дат
+				const start = formatDateWithTime(new Date(startDate), false);
+				const end = formatDateWithTime(new Date(endDate), true);
+
+				// Формируем URL для каждого интервала
+				const url = this._replacePlaceholders(this.urls.getDoc, [
+					shopId,
+					start,
+					end,
+				]);
+
+				try {
+					// Выполняем запрос и получаем документы
+					const response = await this._fetchData(url);
+
+					if (Array.isArray(response)) {
+						// Добавляем полученные документы в общий массив
+						allDoc = allDoc.concat(response);
+					} else {
+						console.warn(
+							`Ответ не является массивом для интервала ${startDate} - ${endDate}`,
+						);
+					}
+				} catch (intervalError) {
+					console.error(
+						`Ошибка при обработке интервала ${startDate} - ${endDate}:`,
+						intervalError,
+					);
+					// Продолжаем выполнение цикла
+				}
+			}
+
+			// console.log(`Общее количество собранных документов: ${allDoc.length}`);
+
+			// Возвращаем все собранные документы, даже если некоторые интервалы не обработаны
+			return allDoc;
+		} catch (error) {
+			console.error(
+				`Общая ошибка при получении документов для магазина с ID: ${shopId}`,
+				error,
+			);
+			throw error; // Пробрасываем ошибку для верхнего уровня
+		}
+	}
+
+	/**
+	 * Получает документы с типами "SELL", "PAYBACK" и "CASH_OUTCOME" для магазина за указанный период.
+	 *
+	 * Этот метод фильтрует документы, полученные с использованием метода getDocuments,
+	 * и возвращает только те, которые относятся к продажам, возвратам и денежным расходам.
+	 *
+	 * @param shopId - ID магазина, для которого получаем документы.
+	 * @param since - Дата начала периода (в формате строки).
+	 * @param until - Дата окончания периода (в формате строки).
+	 * @returns Список документов с типами "SELL", "PAYBACK" и "CASH_OUTCOME".
+	 * @throws Пробрасывает ошибку, если не удаётся получить документы.
+	 */
+	async getDocumentsBySellPayback(
+		shopId: string,
+		since: string,
+		until: string,
+	): Promise<Document[]> {
+		try {
+			// Получаем все документы с использованием getDocuments
+			const documents = await this.getDocuments(shopId, since, until);
+
+			// Фильтрация по типам "SELL" и "PAYBACK"
+			return documents.filter((doc) =>
+				["SELL", "PAYBACK", "CASH_OUTCOME"].includes(doc.type),
+			);
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении документов для магазина с ID: ${shopId}`,
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Получает документы типа FPRINT для магазина, начиная с сегодняшнего дня,
+	 * и по мере необходимости проверяет предыдущие дни, пока не найдет документ.
+	 *
+	 * @param shopId - ID магазина, для которого получаем документы.
+	 * @param since - Дата начала периода (в формате строки).
+	 * @param until - Дата окончания периода (в формате строки).
+	 * @returns {Promise<Document[] | null>} Промис, возвращающий документы типа FPRINT или null, если не найдено.
+	 * @throws Пробрасывает ошибку, если не удается получить документы.
+	 */
+	async getDocumentsByFrint(shopId: string): Promise<Document[] | null> {
+		try {
+			// Инициализация переменной для поиска документов
+			let foundDocuments: Document[] | null = null;
+
+			// Начальная дата для поиска (сегодняшний день)
+			let currentDate = new Date();
+
+			// console.log(`Начинаем поиск документов для магазина с ID: ${shopId}`);
+
+			// Цикл для поиска документа начиная с сегодняшнего дня и переходя к предыдущим дням
+			while (!foundDocuments || foundDocuments.length === 0) {
+				const since = formatDateWithTime(currentDate, false); // Форматируем начальную дату
+				const until = formatDateWithTime(currentDate, true); // Форматируем дату для конца дня
+
+				// console.log(
+				// 	`Поиск документов за период с ${since} по ${until} для магазина с ID: ${shopId}`,
+				// );
+
+				// Получаем документы для текущего дня
+				const documents = await this.getDocuments(shopId, since, until);
+
+				// console.log(
+				// 	`Получено ${documents.length} документов для периода с ${since} по ${until}`,
+				// );
+
+				// Фильтрация по типу "FPRINT"
+				foundDocuments = documents.filter((doc) =>
+					["FPRINT"].includes(doc.type),
+				);
+
+				// console.log(
+				// 	`Найдено ${foundDocuments.length} документов типа "FPRINT" за текущий день`,
+				// );
+
+				// Если документы не найдены, уменьшаем дату на 1 день
+				if (!foundDocuments || foundDocuments.length === 0) {
+					// console.log(
+					// 	`Документы не найдены. Переход к предыдущему дню: ${currentDate}`,
+					// );
+					currentDate.setDate(currentDate.getDate() - 1);
+				}
+			}
+
+			// console.log(
+			// 	`Документы успешно найдены для магазина с ID: ${shopId}. Количество: ${foundDocuments.length}`,
+			// );
+
+			return foundDocuments;
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении документов для магазина с ID: ${shopId}`,
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Получает документы с типом "CASH_OUTCOME" для магазина за указанный период.
+	 *
+	 * Этот метод фильтрует документы, полученные с использованием метода getDocuments,
+	 * и возвращает только те, которые относятся к денежным расходам (CASH_OUTCOME).
+	 *
+	 * @param shopId - ID магазина, для которого получаем документы.
+	 * @param since - Дата начала периода (в формате строки).
+	 * @param until - Дата окончания периода (в формате строки).
+	 * @returns Список документов с типом "CASH_OUTCOME".
+	 * @throws Пробрасывает ошибку, если не удаётся получить документы.
+	 */
+	async getDocumentsByCashOutcome(
+		shopId: string,
+		since: string,
+		until: string,
+	): Promise<Document[]> {
+		try {
+			// Получаем все документы с использованием getDocuments
+			const documents = await this.getDocuments(shopId, since, until);
+
+			// Фильтрация по типам "SELL" и "PAYBACK"
+			return documents.filter((doc) => ["CASH_OUTCOME"].includes(doc.type));
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении документов для магазина с ID: ${shopId}`,
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Получает данные о остатке денежных средств в магазине.
+	 *
+	 * @param shopId - ID магазина, для которого получаем документы.
+	 * @returns {number}  остаток денежных средств.
+	 * @throws Пробрасывает ошибку, если не удаётся получить документы.
+	 */
+	async getCash(shopId: string): Promise<number> {
+		try {
+			// Инициализация переменной для хранения общей суммы
+			let totalCash = 0;
+			// console.log(`Инициализация общей суммы: ${totalCash}`);
+
+			// Получение последнего документа типа FPRINT_Z_REPORT для данного магазина
+			const documentFprint = await this.getDocumentsByFrint(shopId);
+
+			let since = "";
+
+			// Если найден документ FPRINT_Z_REPORT, обновляем начальную дату и общую сумму
+			if (documentFprint) {
+				for (const doc of documentFprint) {
+					// console.log("Обработка документа FPRINT_Z_REPORT:", doc);
+
+					const date = new Date(doc.closeDate);
+					date.setMilliseconds(date.getMilliseconds() + 100);
+					since = formatDateTime(date);
+					// console.log(`Дата начала (since): ${since}`);
+
+					for (const trans of doc.transactions) {
+						if (trans.type === "FPRINT_Z_REPORT") {
+							totalCash += trans.cash;
+							// console.log(
+							// 	`Добавлено ${trans.cash} из FPRINT_Z_REPORT. Текущая сумма: ${totalCash}`,
+							// );
+						}
+					}
+				}
+			}
+
+			const until = formatDateWithTime(new Date(), true); // Форматируем конечную дату
+			// console.log(`Дата конца (until): ${until}`);
+
+			// Получение всех документов для данного магазина
+			const documents = await this.getDocuments(shopId, since, until);
+
+			// Обработка каждого документа и его транзакций
+			for (const doc of documents) {
+				if (doc.type === "CASH_OUTCOME") {
+					for (const trans of doc.transactions) {
+						if (trans.type === "CASH_OUTCOME") {
+							totalCash -= trans.sum;
+							// console.log(
+							// 	`Вычтено ${trans.sum} из CASH_OUTCOME. Текущая сумма: ${totalCash}`,
+							// );
+						}
+					}
+				}
+
+				if (doc.type === "CASH_INCOME") {
+					for (const trans of doc.transactions) {
+						if (trans.type === "CASH_INCOME") {
+							totalCash += trans.sum;
+							// console.log(
+							// 	`Добавлено ${trans.sum} из CASH_INCOME. Текущая сумма: ${totalCash}`,
+							// );
+						}
+					}
+				}
+
+				if (doc.type === "SELL") {
+					for (const trans of doc.transactions) {
+						if (trans.type === "PAYMENT" && trans.paymentType === "CASH") {
+							totalCash += trans.sum;
+							// console.log(
+							// 	`Добавлено ${trans.sum} из SELL (PAYMENT). Текущая сумма: ${totalCash}`,
+							// );
+						}
+					}
+				}
+
+				if (doc.type === "PAYBACK") {
+					for (const trans of doc.transactions) {
+						if (trans.type === "PAYMENT" && trans.paymentType === "CASH") {
+							totalCash -= trans.sum;
+							// console.log(
+							// 	`Вычтено ${trans.sum} из PAYBACK (PAYMENT). Текущая сумма: ${totalCash}`,
+							// );
+						}
+					}
+				}
+			}
+
+			// console.log("Итоговая сумма по кассе:", totalCash);
+			return totalCash;
+		} catch (error) {
+			console.error(
+				"Ошибка при получении данных о остатке денежных средств в магазине:",
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Получает данные о остатке денежных средств во всех магазинах.
+	 *
+	 * @returns {Promise<Record<string, number>>} Объект, где ключи — названия магазинов, значения — их остаток денежных средств.
+	 * @throws Пробрасывает ошибку, если не удаётся получить данные.
+	 */
+	async getCashByShops(): Promise<Record<string, number>> {
+		try {
+			// Получаем список магазинов
+			const shops = await this.getShopNameUuids();
+			const reportData: Record<string, number> = {};
+
+			// Проверяем, что список магазинов не пустой
+			if (shops && shops.length > 0) {
+				for (const shop of shops) {
+					try {
+						// Получаем остаток денежных средств для текущего магазина
+						const cash = await this.getCash(shop.uuid);
+						reportData[shop.name] = cash; // Сохраняем данные в результат
+						// console.log(
+						// 	`Обновлён остаток для магазина "${shop.name}": ${cash}`,
+						// );
+					} catch (error) {
+						// Логируем ошибку для конкретного магазина
+						this._logError(
+							`Ошибка при получении остатка денежных средств для магазина "${shop.name}"`,
+							error,
+						);
+						reportData[shop.name] = 0; // Устанавливаем значение в 0 для сбоя
+					}
+				}
+			} else {
+				console.warn("Список магазинов пуст или не был получен.");
+			}
+
+			// Возвращаем собранные данные
+			return reportData;
+		} catch (error) {
+			// Логируем общую ошибку метода
+			this._logError(
+				"Ошибка при получении данных о денежных средствах для магазинов",
+				error,
+			);
+			throw error; // Пробрасываем ошибку дальше
+		}
+	}
+
+	/**
+	 * Рассчитывает валовую прибыль для магазина за указанный период по группам продуктов.
+	 *
+	 * Валовая прибыль рассчитывается как разница между доходами от продаж и затратами на товары.
+	 * Доход = цена * количество, затраты = себестоимость * количество.
+	 *
+	 * @param shopId - ID магазина, для которого рассчитывается валовая прибыль.
+	 * @param since - Дата начала периода (в формате строки).
+	 * @param until - Дата окончания периода (в формате строки).
+	 * @param groupIds - Массив идентификаторов групп продуктов.
+	 *
+	 * @returns {Record<string, number>} Объект, где ключи — названия товаров, значения — их суммарная валовая прибыль.
+	 * @throws Пробрасывает ошибку, если не удаётся получить документы или рассчитать прибыль.
+	 */
+	async getGrossProfitData(
+		shopId: string,
+		since: string,
+		until: string,
+		groupIds: string[], // Параметр для групп продуктов
+	): Promise<Record<string, number>> {
+		try {
+			// Получаем документы для магазина за указанный период
+			const documents = await this.getDocuments(shopId, since, until);
+			const productUuid = await this.getProductsByGroup(shopId, groupIds);
+
+			// Результат для валовой прибыли по каждому товару
+			const grossProfitByProduct: Record<string, number> = {};
+
+			// Проходим по всем документам
+			for (const doc of documents) {
+				if (["SELL", "PAYBACK"].includes(doc.type)) {
+					for (const trans of doc.transactions) {
+						let totalRevenue = 0;
+						let totalCost = 0;
+
+						// Если транзакция типа REGISTER_POSITION, то считаем прибыль по позиции
+						if (trans.type === "REGISTER_POSITION") {
+							// Проверка, принадлежит ли товар нужной группе
+							if (productUuid.includes(trans.commodityUuid)) {
+								// Расчет дохода (цена * количество)
+								totalRevenue += (trans.price || 0) * (trans.quantity || 0);
+
+								// Расчет затрат (себестоимость * количество)
+								totalCost += (trans.costPrice || 0) * (trans.quantity || 0);
+
+								// Добавляем/суммируем валовую прибыль для текущего товара
+								if (!grossProfitByProduct[trans.commodityName]) {
+									grossProfitByProduct[trans.commodityName] = 0;
+								}
+
+								// Разница дохода и затрат
+								grossProfitByProduct[trans.commodityName] +=
+									totalRevenue - totalCost;
+							}
+						}
+					}
+				}
+			}
+
+			return grossProfitByProduct;
+		} catch (error) {
+			// Логируем ошибку, если она произошла
+			this._logError(
+				`Ошибка при расчете валовой прибыли для магазина: ${shopId}`,
+				error,
+			); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Рассчитывает валовую прибыль для магазина за указанный период.
+	 *
+	 * Валовая прибыль рассчитывается как разница между доходами от продаж и затратами на товары.
+	 * Доход = цена * количество, затраты = себестоимость * количество.
+	 *
+	 * @param shopId - ID магазина, для которого рассчитывается валовая прибыль.
+	 * @param since - Дата начала периода (в формате строки).
+	 * @param until - Дата окончания периода (в формате строки).
+	 * @returns Сумма валовой прибыли.
+	 * @throws Пробрасывает ошибку, если не удаётся получить документы или рассчитать прибыль.
+	 */
+	async getGrossProfit(
+		shopId: string,
+		since: string,
+		until: string,
+	): Promise<number> {
+		try {
+			const documents = await this.getDocuments(shopId, since, until);
+
+			let sumPrGrossProfitace: number = 0;
+
+			for (const doc of documents) {
+				if (["SELL", "PAYBACK"].includes(doc.type)) {
+					for (const trans of doc.transactions) {
+						let totalRevenue = 0;
+						let totalCost = 0;
+						if (trans.type === "REGISTER_POSITION") {
+							totalRevenue += (trans.price || 0) * (trans.quantity || 0);
+							totalCost += trans.costPrice * (trans.quantity || 0);
+						}
+						sumPrGrossProfitace += totalRevenue - totalCost;
+					}
+				}
+			}
+			return sumPrGrossProfitace;
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении документов валовой прибыли для : ${shopId}`,
+				error,
+			); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Получает документы с типом "SELL" для указанного магазина за указанный период.
+	 *
+	 * @param shopId - ID магазина для получения данных о продажах.
+	 * @param since - Дата начала периода (в формате строки).
+	 * @param until - Дата окончания периода (в формате строки).
+	 * @returns Массив документов с типом "SELL".
+	 * @throws Пробрасывает ошибку, если не удаётся получить данные о документах.
+	 */
+	async getSellDocuments(
+		shopId: string,
+		since: string,
+		until: string,
+	): Promise<Document[]> {
+		try {
+			const documents = await this.getDocuments(shopId, since, until); // Запрос данных о документах
+
+			// Фильтруем документы с типом "SELL" и возвращаем
+			return documents.filter((doc: Document) => doc.type === "SELL"); // Указание типа для параметра doc
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении документов о продажах для магазина с ID: ${shopId}`,
+				error,
+			); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Получает документы по типам "SELL" и "PAYBACK" и вычисляет сумму продаж для определённых товаров.
+	 *
+	 * @param shopId - ID магазина, для которого необходимо посчитать сумму продаж.
+	 * @param since - Дата начала периода (в формате строки).
+	 * @param until - Дата окончания периода (в формате строки).
+	 * @param productUuids - Список UUID товаров, для которых нужно вычислить сумму продаж.
+	 * @returns Сумму продаж для указанных товаров за указанный период.
+	 * @throws Пробрасывает ошибку, если не удаётся получить документы или выполнить расчёт.
+	 */
+	async getSalesSumByDocuments(
+		shopId: string,
+		since: string,
+		until: string,
+		productUuids: string[],
+	): Promise<number> {
+		try {
+			// const url = this._replacePlaceholders(this.urls.getSell, [
+			// 	shopId,
+			// 	since,
+			// 	until,
+			// ]);
+			const documents = await this.getDocuments(shopId, since, until);
+
+			let sumSales: number = 0;
+
+			for (const doc of documents) {
+				if (["SELL", "PAYBACK"].includes(doc.type)) {
+					for (const trans of doc.transactions) {
+						if (
+							trans.type === "REGISTER_POSITION" &&
+							productUuids.includes(trans.commodityUuid)
+						) {
+							sumSales += trans.sum || 0; // Суммируем продажи
+						}
+					}
+				}
+			}
+
+			return sumSales; // Возвращаем итоговую сумму продаж
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении и расчете документов для магазина с ID: ${shopId}`,
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Получает документы по типам "SELL" и "PAYBACK" и вычисляет количество проданных товаров.
+	 *
+	 * @param shopId - ID магазина, для которого нужно выполнить расчёт.
+	 * @param since - Дата начала периода (в формате строки).
+	 * @param until - Дата окончания периода (в формате строки).
+	 * @param productUuids - Список идентификаторов товаров (UUID), по которым нужно выполнить расчёт.
+	 * @returns Объект, где ключи — названия товаров, значения — их суммарное количество.
+	 * @throws Пробрасывает ошибку, если не удаётся получить документы или выполнить расчёт.
+	 */
+	async getSalesSumQuantity(
+		shopId: string,
+		since: string,
+		until: string,
+		productUuids: string[],
+	): Promise<Record<string, number>> {
+		try {
+			const documents = await this.getDocuments(shopId, since, until);
+
+			let salesSummary: Record<string, number> = {};
+
+			for (const doc of documents) {
+				if (["SELL", "PAYBACK"].includes(doc.type)) {
+					for (const trans of doc.transactions) {
+						if (
+							trans.type === "REGISTER_POSITION" &&
+							productUuids.includes(trans.commodityUuid)
+						) {
+							const productName = trans.commodityName; // Получаем название продукта
+							const quantity = trans.quantity; // Получаем количество проданных товаров
+
+							// Проверяем, если продукт уже есть в итогах
+							if (!salesSummary[productName]) {
+								salesSummary[productName] = 0; // Инициализируем, если еще нет
+							}
+							salesSummary[productName] += quantity; // Суммируем количество
+						}
+					}
+				}
+			}
+			return salesSummary;
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении и расчете количества продаж для магазина с ID: ${shopId}`,
+				error,
+			); // Логируем ошибку
+			throw error; // Пробрасываем ошибку дальше
+		}
+	}
+
+	/**
+	 * Получает документы по типам "SELL" и "PAYBACK" и вычисляет количество проданных товаров и общую сумму.
+	 *
+	 * @param shopId - ID магазина, для которого нужно выполнить расчёт.
+	 * @param since - Дата начала периода (в формате строки).
+	 * @param until - Дата окончания периода (в формате строки).
+	 * @param productUuids - Список идентификаторов товаров (UUID), по которым нужно выполнить расчёт.
+	 * @returns Объект, где ключи — названия товаров, значения — объекты с количеством и суммой.
+	 * @throws Пробрасывает ошибку, если не удаётся получить документы или выполнить расчёт.
+	 */
+	async getSalesSumQuantitySum(
+		shopId: string,
+		since: string,
+		until: string,
+		productUuids: string[],
+	): Promise<Record<string, { quantitySale: number; sum: number }>> {
+		try {
+			// console.log(`Получение документов для магазина с ID: ${shopId}`);
+			// console.log(`Период: ${since} - ${until}`);
+			// console.log(`UUID продуктов: ${JSON.stringify(productUuids)}`);
+
+			const documents = await this.getDocuments(shopId, since, until);
+			// console.log(`Полученные документы:`, documents);
+
+			let salesSummary: Record<string, { quantitySale: number; sum: number }> =
+				{};
+
+			for (const doc of documents) {
+				if (["SELL", "PAYBACK"].includes(doc.type)) {
+					// console.log(`Обработка документа типа: ${doc.type}`);
+					for (const trans of doc.transactions) {
+						if (
+							trans.type === "REGISTER_POSITION" &&
+							productUuids.includes(trans.commodityUuid)
+						) {
+							const productName = trans.commodityName; // Название продукта
+							const quantity = trans.quantity; // Количество проданных товаров
+							const sum = trans.sum; // Сумма продажи
+
+							// console.log(
+							// 	`Продукт: ${productName}, Количество: ${quantity}, Сумма: ${sum}`,
+							// );
+
+							// Проверяем, если продукт уже есть в итогах
+							if (!salesSummary[productName]) {
+								salesSummary[productName] = { quantitySale: 0, sum: 0 }; // Инициализируем объект
+							}
+
+							// Увеличиваем количество и сумму
+							salesSummary[productName].quantitySale += quantity;
+							salesSummary[productName].sum += sum;
+						}
+					}
+				}
+			}
+
+			// console.log(`Итоговый отчет о продажах:`, salesSummary);
+			return salesSummary;
+		} catch (error) {
+			console.error(
+				`Ошибка при выполнении getSalesSumQuantity для магазина ${shopId}`,
+				error,
+			);
+			this._logError(
+				`Ошибка при получении и расчете количества продаж для магазина с ID: ${shopId}`,
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Вычисляет общую сумму продаж для заданного магазина, периода и списка товаров.
+	 *
+	 * @param shopId - ID магазина, для которого нужно рассчитать сумму продаж.
+	 * @param since - Дата начала периода (в формате строки).
+	 * @param until - Дата окончания периода (в формате строки).
+	 * @param productUuids - Список идентификаторов товаров (UUID), по которым нужно выполнить расчёт.
+	 * @returns Общая сумма продаж (в виде числа).
+	 * @throws Пробрасывает ошибку, если не удаётся получить документы или выполнить расчёт.
+	 */
+	async getSalesSum(
+		shopId: string,
+		since: string,
+		until: string,
+		productUuids: string[],
+	): Promise<number> {
+		try {
+			const documents = await this.getDocuments(shopId, since, until);
+
+			let salesSummary: number = 0;
+
+			for (const doc of documents) {
+				if (["SELL", "PAYBACK"].includes(doc.type)) {
+					for (const trans of doc.transactions) {
+						if (
+							trans.type === "REGISTER_POSITION" &&
+							productUuids.includes(trans.commodityUuid)
+						) {
+							salesSummary += trans.sum; // Суммируем количество
+						}
+					}
+				}
+			}
+			return salesSummary;
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении и расчете количества продаж для магазина с ID: ${shopId}`,
+				error,
+			); // Логируем ошибку
+			throw error; // Пробрасываем ошибку дальше
+		}
+	}
+
+	/**
+	 * Получает данные о продажах за текущий день, сгруппированные по магазинам и методам оплаты.
+	 *
+	 * @returns {Promise<Record<string, Record<string, number>>>} - Данные по продажам по магазинам и методам оплаты.
+	 *
+	 * @throws {Error} - В случае ошибки при получении данных.
+	 */
+	async getSalesToday(): Promise<Record<string, Record<string, number>>> {
+		try {
+			const newDate = new Date(); // Получаем текущую дату
+			const since = formatDateWithTime(newDate, false);
+			const until = formatDateWithTime(newDate, true);
+
+			const paymentType: PaymentType = {
+				CARD: "Банковской картой:",
+				ADVANCE: "Предоплатой (зачетом аванса):",
+				CASH: "Нал. средствами:",
+				COUNTEROFFER: "Встречным предоставлением:",
+				CREDIT: "Постоплатой (в кредит):",
+				ELECTRON: "Безналичными средствами:",
+				UNKNOWN: "Неизвестно. По-умолчанию:",
+			};
+
+			const salesByProduct: Record<string, Record<string, number>> = {};
+			const shopUuids: string[] = await this.getShopUuids();
+
+			for (const shopUuid of shopUuids) {
+				const salesData: Document[] = await this.getDocumentsBySellPayback(
+					shopUuid,
+					since,
+					until,
+				);
+
+				for (const doc of salesData) {
+					for (const trans of doc.transactions) {
+						if (trans.type === "PAYMENT") {
+							if (!salesByProduct[shopUuid]) {
+								salesByProduct[shopUuid] = {};
+							}
+
+							const paymentKey = trans.paymentType as keyof PaymentType;
+							const paymentTypeLabel = paymentType[paymentKey];
+
+							if (!salesByProduct[shopUuid][paymentTypeLabel]) {
+								salesByProduct[shopUuid][paymentTypeLabel] = 0;
+							}
+							salesByProduct[shopUuid][paymentTypeLabel] += trans.sum;
+						}
+					}
+				}
+			}
+
+			const salesByShopName: Record<string, Record<string, number>> = {};
+			for (const shopUuid in salesByProduct) {
+				const shopName = await this.getShopName(shopUuid);
+				//
+				if (!salesByShopName[shopName]) {
+					salesByShopName[shopName] = {};
+				}
+
+				salesByShopName[shopName] = { ...salesByProduct[shopUuid] };
+			}
+
+			const sortedSalesByShopName = Object.entries(salesByShopName)
+				.sort(([, a], [, b]) => {
+					const sumA = Object.values(a).reduce((acc, value) => acc + value, 0);
+					const sumB = Object.values(b).reduce((acc, value) => acc + value, 0);
+					return sumB - sumA;
+				})
+				.reduce((acc: Record<string, Record<string, number>>, [key, value]) => {
+					acc[key] = value;
+					return acc;
+				}, {});
+
+			return sortedSalesByShopName;
+		} catch (error) {
+			console.error(
+				"getSalesToday: ошибка при получении данных о продажах",
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Получает данные по выплатам в магазине с разбивкой по категориям.
+	 *
+	 * @param {string[]} shopUuids - Список UUID магазинов.
+	 * @param {string} since - Начальная дата (в формате строки).
+	 * @param {string} until - Конечная дата (в формате строки).
+	 *
+	 * @returns {Promise<Record<string, Record<string, number>>>} - Данные по выплатам для каждого магазина с разбивкой по категориям.
+	 *
+	 * @throws {Error} - В случае ошибки при получении данных.
+	 */
+	async getDocumentsByCashOutcomeData(
+		shopUuids: string[],
+		since: string,
+		until: string,
+	): Promise<Record<string, Record<string, number>>> {
+		// Словарь категорий выплат
+		const paymentCategory: Record<number, string> = {
+			1: "Инкассация",
+			2: "Оплата поставщику",
+			3: "Оплата услуг",
+			4: "Аренда",
+			5: "Заработная плата",
+			6: "Прочее",
+		};
+
+		// Результирующий объект
+		const resultData: Record<string, Record<string, number>> = {};
+
+		for (const shopUuid of shopUuids) {
+			// Получение имени магазина
+			const shopName = await this.getShopName(shopUuid);
+
+			// Инициализация объекта для текущего магазина
+			const sumPaymentCategory: Record<string, number> = {};
+
+			// Получение документов типа CASH_OUTCOME
+			const cashOutcomeDocuments: Document[] =
+				await this.getDocumentsByCashOutcome(shopUuid, since, until);
+
+			for (const doc of cashOutcomeDocuments) {
+				for (const trans of doc.transactions) {
+					if (trans.type === "CASH_OUTCOME") {
+						// Определение категории
+						const category = paymentCategory[trans.paymentCategoryId];
+						if (category) {
+							// Суммирование по категории
+							sumPaymentCategory[category] =
+								(sumPaymentCategory[category] || 0) + trans.sum;
+						}
+					}
+				}
+			}
+
+			// Сохранение данных для текущего магазина
+			resultData[shopName] = sumPaymentCategory;
+		}
+
+		return resultData;
+	}
+
+	/**
+	 * Получает отчет по продажам для магазинов по заданным UUID и датам.
+	 *
+	 * @param {string[]} shopUuids - Список UUID магазинов.
+	 * @param {string} since - Начальная дата (в формате строки).
+	 * @param {string} until - Конечная дата (в формате строки).
+	 *
+	 * @returns {Promise<{ salesDataByShopName: Record<string, { sell: Record<string, number>; refund: Record<string, number>; totalSell: number }>, grandTotalSell: number, grandTotaRefund: number }>}
+	 *  - Данные по продажам с разбивкой по магазинам и суммарными данными.
+	 *
+	 * @throws {Error} - В случае ошибки при получении данных.
+	 */
+	async getSalesgardenReportData(
+		shopUuids: string[],
+		since: string,
+		until: string,
+	): Promise<{
+		salesDataByShopName: Record<
+			string,
+			{
+				sell: Record<string, number>;
+				refund: Record<string, number>;
+				totalSell: number;
+			}
+		>;
+		grandTotalSell: number;
+		grandTotaRefund: number;
+	}> {
+		try {
+			const paymentType: PaymentType = {
+				CARD: "Банковской картой:",
+				ADVANCE: "Предоплатой (зачетом аванса):",
+				CASH: "Нал. средствами:",
+				COUNTEROFFER: "Встречным предоставлением:",
+				CREDIT: "Постоплатой (в кредит):",
+				ELECTRON: "Безналичными средствами:",
+				UNKNOWN: "Неизвестно. По-умолчанию:",
+			};
+
+			const salesDataByShop: Record<
+				string,
+				{ sell: Record<string, number>; refund: Record<string, number> }
+			> = {};
+
+			// Проходим по каждому магазину
+			for (const shopUuid of shopUuids) {
+				const salesData: Document[] = await this.getDocumentsBySellPayback(
+					shopUuid,
+					since,
+					until,
+				);
+
+				// Инициализируем структуру данных для текущего магазина
+				if (!salesDataByShop[shopUuid]) {
+					salesDataByShop[shopUuid] = { sell: {}, refund: {} };
+				}
+
+				for (const doc of salesData) {
+					const transactionType = doc.type === "PAYBACK" ? "refund" : "sell";
+
+					for (const trans of doc.transactions) {
+						if (trans.type !== "PAYMENT") continue;
+
+						const paymentKey = trans.paymentType as keyof PaymentType;
+						const paymentTypeLabel = paymentType[paymentKey];
+
+						// Проверяем корректность paymentKey
+						if (!paymentTypeLabel) {
+							// console.log(
+							// 	`${transactionType.toUpperCase()} Transaction with undefined paymentType:`,
+							// 	trans,
+							// );
+							continue;
+						}
+
+						// Инициализируем, если нужно, и добавляем сумму
+						if (!salesDataByShop[shopUuid][transactionType][paymentTypeLabel]) {
+							salesDataByShop[shopUuid][transactionType][paymentTypeLabel] = 0;
+						}
+
+						salesDataByShop[shopUuid][transactionType][paymentTypeLabel] +=
+							trans.sum;
+					}
+				}
+			}
+
+			// Преобразование shopUuid в shopName и сортировка по сумме продаж
+			const salesDataByShopName: Record<
+				string,
+				{
+					sell: Record<string, number>;
+					refund: Record<string, number>;
+					totalSell: number;
+				}
+			> = {};
+
+			let grandTotalSell = 0;
+			let grandTotaRefund = 0;
+
+			for (const shopUuid in salesDataByShop) {
+				const shopName = await this.getShopName(shopUuid);
+
+				// Получаем данные по продажам для текущего магазина
+				const shopData = salesDataByShop[shopUuid];
+
+				// Считаем сумму всех продаж по всем категориям
+				const totalSell = Object.values(shopData.sell).reduce(
+					(sum, value) => sum + value,
+					0,
+				);
+
+				const totalRefund = Object.values(shopData.refund).reduce(
+					(sum, value) => sum + value,
+					0,
+				);
+
+				// Добавляем данные по магазину, включая сумму продаж
+				salesDataByShopName[shopName] = {
+					...shopData,
+					totalSell,
+				};
+				grandTotalSell += totalSell;
+				grandTotaRefund += totalRefund;
+			}
+			// console.log(grandTotalSell);
+			// console.log(grandTotaRefund);
+
+			return {
+				salesDataByShopName,
+				grandTotalSell,
+				grandTotaRefund,
+			};
+		} catch (error) {
+			console.error(
+				"getSalesData: ошибка при получении данных о продажах",
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Получает список магазинов.
+	 *
+	 * @returns {Promise<ShopsResponse>} - Список магазинов.
+	 * @throws {Error} - В случае ошибки при получении данных магазинов.
+	 */
+	async getShops(): Promise<ShopsResponse> {
+		try {
+			const respons: ShopsResponse = await this._fetchData(this.urls.getShops);
+
+			return respons; // Запрашиваем данные о магазинах
+		} catch (error) {
+			this._logError("Ошибка при получении магазинов", error); // Логируем ошибку
+			throw error; // Пробрасываем ошибку дальше
+		}
+	}
+
+	/**
+	 * Получает список UUID магазинов.
+	 *
+	 * @returns {Promise<string[]>} - Массив UUID магазинов.
+	 * @throws {Error} - В случае ошибки при получении данных магазинов.
+	 */
+	async getShopUuids(): Promise<string[]> {
+		try {
+			// Получаем данные магазинов
+			const shopsResponse: ShopsResponse = await this.getShops();
+
+			// Извлекаем uuid для каждого магазина из массива items
+			const shopUuids: string[] = shopsResponse.map((shop) => shop.uuid); // Исправлено с id на uuid
+
+			return shopUuids;
+		} catch (error) {
+			this._logError(`Ошибка при получении списка uuid магазинов`, error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Получает список UUID и имен магазинов.
+	 *
+	 * @returns {Promise<ShopUuidName[] | null>} - Массив объектов с UUID и именем магазинов, или null в случае ошибки.
+	 * @throws {Error} - В случае ошибки при получении данных.
+	 */
+	async getShopNameUuids(): Promise<ShopUuidName[] | null> {
+		try {
+			// Получаем данные магазинов
+			const shopsResponse = await this.getShops();
+
+			// Проверяем, был ли запрос успешным
+			// Проверяем, является ли shopsResponse массивом объектов с uuid и name
+			if (!Array.isArray(shopsResponse)) {
+				this._logError(
+					`Некорректный формат ответа при получении магазинов`,
+					shopsResponse,
+				);
+				return null; // Возвращаем null, если формат ответа не соответствует ожиданиям
+			}
+
+			// Предполагаем, что `shopsResponse` содержит метод `.json()` для парсинга тела
+			const shopsData: ShopsResponse = await shopsResponse;
+
+			// Формируем массив объектов с UUID и именем
+			const result = shopsData.map((shop) => ({
+				uuid: shop.uuid,
+				name: shop.name,
+			}));
+
+			return result; // Возвращаем массив объектов
+		} catch (error) {
+			this._logError(`Ошибка при получении списка uuid магазинов`, error);
+			return null; // Возвращаем null в случае ошибки
+		}
+	}
+
+	/**
+	 * Получает имя магазина по его UUID.
+	 *
+	 * @param {string} shopUuid - UUID магазина, имя которого нужно получить.
+	 * @returns {Promise<string>} - Имя магазина, или сообщение о ненайденном магазине.
+	 * @throws {Error} - Если возникла ошибка при получении списка магазинов.
+	 */
+	async getShopName(shopUuid: string): Promise<string> {
+		try {
+			const shopsResponse: Shop[] = await this.getShops(); // Получаем список магазинов напрямую
+
+			// Проверяем, является ли shopsResponse массивом
+			if (!Array.isArray(shopsResponse)) {
+				throw new Error("Некорректный ответ: отсутствует список магазинов");
+			}
+
+			// Ищем магазин по UUID
+			const shop: Shop | undefined = shopsResponse.find(
+				(shop) => shop.uuid === shopUuid,
+			);
+
+			return shop ? shop.name : "Магазин не найден"; // Возвращаем имя или сообщение о ненайденном магазине
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении имени магазина с ID: ${shopUuid}`,
+				error,
+			);
+			throw error; // Пробрасываем ошибку дальше
+		}
+	}
+
+	/**
+	 * Получает первый документ с типом "OPEN_SESSION" для каждого магазина в заданный период.
+	 *
+	 * @param {string} since - Начальная дата периода в формате строки (например, ISO 8601).
+	 * @param {string} until - Конечная дата периода в формате строки (например, ISO 8601).
+	 * @param {string} userUuid - UUID пользователя, для которого ищется документ.
+	 * @returns {Promise<string | null>} Возвращает UUID магазина, если найден первый документ "OPEN_SESSION" для указанного пользователя, или null, если такого документа нет.
+	 * @throws {Error} Пробрасывает ошибку, если запросы или обработка данных не удались.
+	 */
+	async getFirstOpenSession(
+		since: string,
+		until: string,
+		userUuid: string,
+	): Promise<string | null> {
+		try {
+			const shopsId = await this.getShopUuids(); // Получаем все ID магазинов
+			for (const shopId of shopsId) {
+				// console.log(shopId);
+				const documents = await this.getDocuments(shopId, since, until);
+				// console.log("OPEN_SESSION", documents.length);
+
+				if (documents && documents.length > 0) {
+					const openSession = documents.find(
+						(doc: Document) =>
+							doc.type === "OPEN_SESSION" && doc.openUserUuid === userUuid,
+					);
+
+					if (openSession) {
+						return shopId; // Возвращаем storeUuid
+					}
+				}
+			}
+
+			// Если подходящий документ не найден для всех магазинов, возвращаем null
+			return null;
+		} catch (error) {
+			this._logError(
+				"Ошибка при получении первого документа OPEN_SESSION",
+				error,
+			); // Логируем ошибку
+			throw error; // Пробрасываем ошибку дальше
+		}
+	}
+	/**
+	 * Получает список продуктов для указанного магазина.
+	 *
+	 * @param {string} shopId - ID магазина, для которого нужно получить продукты.
+	 * @returns {Promise<ProductsResponse>} - Продукты магазина, или ошибка в случае неудачи.
+	 * @throws {Error} - Если возникла ошибка при получении данных о продуктах.
+	 */
+	async getProducts(shopId: string): Promise<ProductsResponse> {
+		try {
+			// Заменяем плейсхолдер в URL на shopId
+			const url = this._replacePlaceholders(this.urls.getProducts, [shopId]);
+			// Получаем данные с помощью fetch
+			return await this._fetchData(url);
+		} catch (error) {
+			// Логируем ошибку
+			this._logError(
+				`Ошибка при получении продуктов для магазина с ID: ${shopId}`,
+				error,
+			);
+			throw error; // Пробрасываем ошибку дальше
+		}
+	}
+
+	/**
+	 * Получает список групп продуктов с их UUID для указанного магазина.
+	 *
+	 * @param {string} shopId - ID магазина для получения групп продуктов.
+	 * @returns {Promise<{name: string; uuid: string}[] | null>} - Массив групп с их названиями и UUID, или null в случае ошибки.
+	 */
+	async getGroupsByNameUuid(
+		shopId: string,
+	): Promise<{ name: string; uuid: string }[] | null> {
+		try {
+			// Получаем ответ от getProducts
+			const response: ProductsResponse = await this.getProducts(shopId);
+
+			// Проверяем, что response является массивом
+			if (!Array.isArray(response)) {
+				this._logError(
+					`Некорректный формат ответа при получении магазинов`,
+					response,
+				);
+				return null; // Возвращаем null, если формат ответа не соответствует ожиданиям
+			}
+
+			// Фильтруем продукты, оставляя только группы, и возвращаем {name, uuid}
+			const groups = response
+				.filter((product: Product) => product.group === true)
+				.map((group: Product) => ({
+					name: group.name,
+					uuid: group.uuid,
+				}));
+
+			return groups;
+		} catch (error) {
+			// Логируем ошибку и возвращаем null в случае ошибки
+			this._logError(
+				`Ошибка при получении групп продуктов для магазина с ID: ${shopId}`,
+				error,
+			);
+			return null; // Возвращаем null в случае ошибки
+		}
+	}
+
+	/**
+	 * Получает названия групп продуктов по переданным UUID для магазина.
+	 *
+	 * @param {string} shopId - ID магазина, для которого выполняется запрос.
+	 * @param {string[]} uuids - Массив UUID групп, которые нужно отфильтровать.
+	 * @returns {Promise<string[]>} - Массив названий групп.
+	 * @throws {Error} - Ошибка при запросе продуктов или фильтрации.
+	 */
+	async getGroupsByName(shopId: string, uuids: string[]): Promise<string[]> {
+		try {
+			// Получаем ответ от getProducts
+			const response: ProductsResponse = await this.getProducts(shopId);
+
+			// Проверяем, что response является массивом
+			if (!Array.isArray(response)) {
+				throw new Error("Ответ от getProducts не является массивом.");
+			}
+
+			// Фильтруем продукты, оставляя только группы, и возвращаем {name, uuid}
+			const groups = response
+				.filter((product: Product) => product.group === true)
+				.map((group: Product) => ({
+					name: group.name,
+					uuid: group.uuid,
+				}));
+
+			// Отбираем только те группы, uuid которых содержится в переданном списке uuids
+			const filteredGroupUuids = groups
+				.filter((group) => uuids.includes(group.uuid))
+				.map((group) => group.name);
+
+			return filteredGroupUuids;
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении групп продуктов для магазина с ID: ${shopId}`,
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Получает данные о товарных остатках по группе и возвращает информацию о цене и количестве
+	 * для каждого продукта в указанной группе.
+	 *
+	 * @param {string} shopId - ID магазина, для которого получаем данные
+	 * @param {string[]} groupIds - Массив идентификаторов групп товаров
+	 * @param {string} priceKey - Ключ для получения цены товара
+	 * @returns {Promise<Record<string, { price: number; quantity: number }>>} - Объект с данными о товарах (цена и количество)
+	 * @throws {Error} - Если ответ от API не является массивом или если группа не найдена
+	 */
+	async getStockByGroup(
+		shopId: string,
+		groupIds: string[],
+		priceKey: string, // Переименовано для более ясного обозначения, что это ключ цены
+	): Promise<Record<string, { sum: number; quantity: number }>> {
+		// Получаем продукты для магазина
+		const products: ProductsResponse = await this.getProducts(shopId);
+
+		// Проверяем, что response является массивом
+		if (!Array.isArray(products)) {
+			throw new Error("Ответ от getProducts не является массивом.");
+		}
+
+		return products
+			.filter(
+				(prod) => groupIds.includes(prod.parentUuid) && prod.quantity !== 0, // Проверяем принадлежность группе и наличие ненулевого количества
+			)
+			.reduce(
+				(acc, prod) => {
+					const sum = prod[priceKey] * prod.quantity;
+					acc[prod.name] = { sum, quantity: prod.quantity };
+					return acc;
+				},
+				{} as Record<string, { sum: number; quantity: number }>,
+			);
+	}
+
+	async getProductStockByGroups(
+		shopId: string,
+		groupIds: string[],
+	): Promise<
+		Record<string, { name: string; quantity: number; costPrice: number }>
+	> {
+		// Получаем продукты для магазина
+		const products: ProductsResponse = await this.getProducts(shopId);
+
+		// Проверяем, что response является массивом
+		if (!Array.isArray(products)) {
+			throw new Error("Ответ от getProducts не является массивом.");
+		}
+
+		// Фильтруем продукты и формируем результат
+		return products
+			.filter(
+				(prod) => groupIds.includes(prod.parentUuid) && prod.quantity !== 0, // Проверяем принадлежность группе и наличие ненулевого количества
+			)
+			.reduce(
+				(acc, prod) => {
+					acc[prod.uuid] = {
+						name: prod.name,
+						quantity: prod.quantity,
+						costPrice: prod.costPrice,
+					};
+					return acc;
+				},
+				{} as Record<
+					string,
+					{ name: string; quantity: number; costPrice: number }
+				>,
+			);
+	}
+
+	/**
+	 * Расчет оптимального заказа на основе истории продаж и анализа периодов.
+	 * @param params - Объект с параметрами:
+	 * - shopId: Идентификатор магазина.
+	 * - groups: Массив групп товаров.
+	 * - since: Дата начала периода для прогноза (включительно).
+	 * - until: Дата окончания периода для прогноза (включительно).
+	 * - periods: Количество анализируемых периодов.
+	 * @returns ??????
+	 */
+	async getOrder(params: {
+		shopId: string;
+		groups: string[];
+		since: string;
+		until: string;
+		periods: number;
+	}): Promise<Record<string, Record<string, number>>> {
+		// Расчет периодов
+		const dateRanges = calculateDateRanges(
+			params.since,
+			params.until,
+			params.periods,
+		);
+
+		// Получаем UUID товаров из групп
+		const productUuids = await this.getProductsByGroup(
+			params.shopId,
+			params.groups,
+		);
+
+		const stockProduct = await this.getProductStockByGroups(
+			params.shopId,
+			params.groups,
+		);
+		// console.log(stockProduct);
+		const resultData: Record<string, number[]> = {};
+
+		// Обрабатываем каждый период
+		for (const [since, until] of dateRanges) {
+			// Получаем документы (продажи) для текущего периода
+			const documents = await this.getDocuments(params.shopId, since, until);
+
+			// Если документы найдены, продолжаем обработку
+			if (documents) {
+				// Обрабатываем каждый документ
+				for (const doc of documents) {
+					// Оставляем только продажи
+					if (["SELL"].includes(doc.type)) {
+						// Обрабатываем каждую транзакцию в документе
+						for (const trans of doc.transactions) {
+							// Фильтруем транзакции по типу "REGISTER_POSITION" и проверяем товар по UUID
+							if (
+								trans.type === "REGISTER_POSITION" &&
+								productUuids.includes(trans.commodityUuid)
+							) {
+								// Добавляем продажи в resultData для соответствующего товара
+								if (!resultData[trans.commodityUuid]) {
+									// Инициализируем массив для товара, если его еще нет
+									resultData[trans.commodityUuid] = new Array(
+										params.periods,
+									).fill(0);
+								}
+
+								// Суммируем продажи для товара в каждом периоде
+								for (let i = 0; i < dateRanges.length; i++) {
+									const [start, end] = dateRanges[i];
+									const transDate = new Date(trans.creationDate);
+									if (
+										transDate >= new Date(start) &&
+										transDate <= new Date(end)
+									) {
+										// Добавляем количество продажи в текущий период
+										resultData[trans.commodityUuid][i] += trans.quantity;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// После того как мы собрали данные по продажам, применяем расчёт SMA
+		const smaData: Record<string, number> = {};
+
+		// Для каждого товара рассчитываем SMA
+		for (const [commodityUuid, sales] of Object.entries(resultData)) {
+			const sma = this.calculateSMA(sales, params.periods);
+			smaData[commodityUuid] = sma[sma.length - 1]; // Берем последнее значение SMA
+		}
+
+		const optimalOrder: Record<string, Record<string, number>> = {};
+
+		for (const [commodityUuid, smaValue] of Object.entries(smaData)) {
+			// Получаем остаток на складе для товара
+			const stockQuantity = stockProduct[commodityUuid].quantity || 0;
+
+			// console.log(
+			// 	`${stockProduct[commodityUuid].name}sma:${Math.ceil(smaValue)}/ stock:${stockProduct[commodityUuid].quantity}/ sum:${sum}`,
+			// );
+
+			// Вычисляем оптимальный заказ
+			const orderQuantity = Math.max(0, Math.ceil(smaValue) - stockQuantity);
+			const sum =
+				orderQuantity === 0
+					? 0
+					: Number(
+							(orderQuantity * stockProduct[commodityUuid].costPrice).toFixed(
+								2,
+							),
+						);
+
+			optimalOrder[stockProduct[commodityUuid].name] = {
+				orderQuantity: orderQuantity,
+				smaQuantity: Number(smaValue.toFixed(1)),
+				quantity: stockQuantity,
+				sum: sum,
+			};
+		}
+
+		return optimalOrder;
+	}
+
+	/**
+	 * Получает список UUID продуктов, относящихся к заданным группам для магазина.
+	 *
+	 * @param {string} shopId - ID магазина
+	 * @param {string[]} groupIds - Массив идентификаторов групп продуктов
+	 * @returns {Promise<string[]>} - Массив UUID продуктов
+	 * @throws {Error} - Если ответ от API не является массивом или происходит ошибка при запросе
+	 */
+	async getProductsByGroup(
+		shopId: string,
+		groupIds: string[],
+	): Promise<string[]> {
+		try {
+			// Получаем продукты для магазина
+			const response: ProductsResponse = await this.getProducts(shopId);
+
+			// Проверяем, что response является массивом
+			if (!Array.isArray(response)) {
+				throw new Error("Ответ от getProducts не является массивом.");
+			}
+
+			// Формируем список идентификаторов продуктов, относящихся к заданным группам
+			const productsUuid: string[] = response
+				.filter(
+					(product: Product) =>
+						product.parentUuid !== undefined &&
+						groupIds.includes(product.parentUuid),
+				)
+				.map((product: Product) => product.uuid);
+
+			return productsUuid;
+		} catch (error) {
+			this._logError(
+				`Ошибка при получении продуктов по группам для магазина с ID: ${shopId}`,
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Получает план продаж для продуктов на основе заданной даты и UUID продуктов.
+	 *
+	 * @param {Date} datePlan - Дата плана, для которого рассчитывается прогноз.
+	 * @param {string[]} productUuids - Массив UUID продуктов, для которых рассчитываются продажи.
+	 * @returns {Promise<Record<string, number>>} - Объект, где ключ - это ID магазина, а значение - скорректированные продажи.
+	 * @throws {Error} - При ошибке получения данных или вычислений.
+	 */
+	async getPlan(datePlan: Date, productUuids: string[]) {
+		// Получаем список ID магазинов
+		const shopUuids: string[] = await this.getShopUuids();
+
+		// Создаём объект для хранения планов
+		const datPlan: Record<string, number> = {};
+		const weekOffsets = [7, 14, 21, 28];
+		const dateRanges = getDateRangesForWeeks(datePlan, weekOffsets);
+
+		// Параллельные запросы к API для получения продуктов и продаж
+		const shopSalesPromises = shopUuids.map(async (shopId) => {
+			if (shopId === "20231001-6611-407F-8068-AC44283C9196") return null;
+
+			const sumSalesToday: number = await this.calculateSalesForShop(
+				shopId,
+				productUuids,
+				dateRanges,
+			);
+
+			// Среднее значение за 4 недели с корректировкой
+			let adjustedSales: number = this.adjustSales(sumSalesToday);
+			datPlan[shopId] = adjustedSales; // Сохраняем результат
+		});
+
+		// Ждем завершения всех асинхронных операций
+		await Promise.all(shopSalesPromises);
+
+		return datPlan;
+	}
+
+	// Вспомогательный метод для расчета продаж по магазину
+	private async calculateSalesForShop(
+		shopId: string,
+		productUuids: string[],
+		dateRanges: [string, string][],
+	): Promise<number> {
+		let sumSalesToday: number = 0;
+
+		for (const [since, until] of dateRanges) {
+			const sumSalesData: number = await this.getSalesSum(
+				shopId,
+				since,
+				until,
+				productUuids,
+			);
+			sumSalesToday += sumSalesData;
+		}
+
+		return sumSalesToday;
+	}
+
+	// Вспомогательный метод для корректировки продаж
+	private adjustSales(sumSalesToday: number): number {
+		let adjustedSales: number = Math.floor(sumSalesToday / 4); // Среднее значение за 4 недели
+
+		if (adjustedSales > 5200) {
+			adjustedSales *= 1.05; // Увеличиваем на 3%, если больше 5200
+		} else {
+			adjustedSales = 5200; // Минимум 5200
+		}
+
+		return Math.floor(adjustedSales); // Округляем до целого числа
+	}
+
+	/**
+	 * Функция для вычисления Simple Moving Average (SMA) для данных.
+	 * @param data - Массив данных для вычисления среднего.
+	 * @param period - Количество периодов, по которым нужно вычислять SMA.
+	 * @returns Массив SMA для каждого товара по периодам.
+	 */
+	private calculateSMA(data: number[], period: number): number[] {
+		const sma: number[] = [];
+
+		for (let i = 0; i < data.length; i++) {
+			if (i + 1 >= period) {
+				const sum = data
+					.slice(i + 1 - period, i + 1)
+					.reduce((acc, value) => acc + value, 0);
+				sma.push(sum / period);
+			} else {
+				sma.push(0); // Если недостаточно данных для вычисления SMA
+			}
+		}
+
+		return sma;
+	}
+
+	private async _fetchData(url: string): Promise<any> {
+		try {
+			const response = await fetch(url, { headers: this.headers }); // Выполнение запроса
+			const responseBody = await response.text(); // Получение текста ответа
+
+			if (!response.ok) {
+				throw new Error(
+					`Ошибка HTTP: ${response.status}, тело ответа: ${responseBody}`,
+				); // Обработка ошибки HTTP
+			}
+
+			return JSON.parse(responseBody); // Парсинг JSON-ответа
+		} catch (error) {
+			this._logError(`Ошибка запроса к URL ${url}`, error); // Логирование ошибки
+			throw error; // Пробрасывание ошибки дальше
+		}
+	}
+
+	/**
+	 * Логирует ошибки
+	 */
+	private _logError(message: string, error: unknown): void {
+		if (error instanceof Error) {
+			console.error(`${message}: ${error.message}`); // Логирование сообщения ошибки
+			if ((error as any).response) {
+				console.error(`Ответ API: ${JSON.stringify((error as any).response)}`); // Логирование ответа API
+			}
+		} else {
+			console.error(`${message}: Неизвестная ошибка`, error); // Логирование неизвестной ошибки
+		}
+	}
+
+	/**
+	 * Заменяет плейсхолдеры в URL
+	 * @param url - URL с плейсхолдерами
+	 * @param params - Массив параметров для подстановки
+	 * @returns Обновленный URL
+	 */
+	private _replacePlaceholders(url: string, params: string[]): string {
+		return url.replace(/{}/g, () => params.shift()!); // Подстановка параметров в URL
+	}
+}
