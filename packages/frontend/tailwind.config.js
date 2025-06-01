@@ -5,11 +5,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        'custom-gray': 'rgba(246, 246, 246, 1)', // Добавляем кастомный цвет
-        'custom-gray-dark': 'rgba(30, 30, 30, 1)', // Цвет для ночного режима
-
+        "custom-gray": "rgba(246, 246, 246, 1)", // Добавляем кастомный цвет
+        "custom-gray-dark": "rgba(30, 30, 30, 1)", // Цвет для ночного режима
       },
     },
   },
   plugins: [],
-}
+};

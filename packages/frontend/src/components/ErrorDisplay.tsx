@@ -1,4 +1,4 @@
-import React from "react";
+import type React from "react";
 import { GoBackButton } from "../components/GoBackButton"; // Импортируем компонент "Назад"
 
 // Компонент отображения ошибки

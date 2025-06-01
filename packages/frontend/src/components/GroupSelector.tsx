@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import type React from "react";
+import { useState } from "react";
 
 // Тип для элемента группы
 interface GroupOption {
@@ -72,7 +73,7 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
       <div className="flex flex-wrap gap-2 mb-4">
         {isLoadingGroups ? (
           <div className="flex items-center justify-center w-full h-16">
-            <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 border-solid rounded-full animate-spin"></div>
+            <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
           </div>
         ) : (
           groupOptions.slice(0, 7).map((group) => (
@@ -122,7 +123,7 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
           <div className="flex-1 overflow-y-auto p-4">
             {isLoadingGroups ? (
               <div className="flex items-center justify-center w-full h-full">
-                <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 border-solid rounded-full animate-spin"></div>
+                <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
               </div>
             ) : (
               Object.entries(groupedByLetter).map(([letter, groups]) => (

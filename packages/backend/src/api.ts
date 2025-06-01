@@ -3,31 +3,25 @@ import { cors } from "hono/cors";
 // import path from "path";
 // import fs from "fs";
 // import os from "os";
-import { IEnv } from "./types";
+import type { IEnv } from "./types";
 // import { createWorkersAI } from 'workers-ai-provider';
 // import { Ai } from "@cloudflare/ai";
 // import { z } from 'zod';
 
+import { sum2Numbers } from "./ai";
+import type { ShopUuidName } from "./evotor/types";
 import {
 	assert,
+	calculateTotalSum,
 	createAccessoriesTable,
 	createPlanTable,
 	createSalaryBonusTable,
+	// transformScheduleData,
+	createScheduleTable,
 	formatDate,
 	formatDateWithTime,
 	getAllUuid,
-	getIntervals,
-	getPlan,
-	getSalaryAndBonus,
-	saveOrUpdateUUIDs,
-	saveSalaryAndBonus,
-	updatePlan,
-	// sortSalesData,
-	getUuidsByParentUuidList,
-	getSalaryData,
-	calculateTotalSum,
 	getData,
-	getTelegramFile,
 	// getTelegramFileUpl,
 	// sendToTelegram,
 	// sortStockData,
@@ -36,25 +30,26 @@ import {
 	// createProductsTableIfNotExists,
 	// updateOrInsertData,
 	getGroupsByNameUuid,
+	getIntervals,
+	getMonthStartAndEnd,
+	getPlan,
 	getProductsByGroup,
-	// transformScheduleData,
-	createScheduleTable,
-	updateSchedule,
+	getSalaryAndBonus,
+	getSalaryData,
+	getScheduleByPeriod,
+	getScheduleByPeriodAndShopId,
+	getTelegramFile,
+	// sortSalesData,
+	getUuidsByParentUuidList,
 	// getSchedule,
 	replaceUuidsWithNames,
-	getScheduleByPeriod,
-	getMonthStartAndEnd,
-	getScheduleByPeriodAndShopId,
+	saveOrUpdateUUIDs,
+	saveSalaryAndBonus,
 	// deleteScheduleTable,
 	transformScheduleDataD,
-	// analyzeSalesDocuments,
-	// prepareDocumentsForAI,
-
-	// generateLLMPromptFromDocuments,
+	updatePlan,
+	updateSchedule,
 } from "./utils";
-import { Document, ShopUuidName } from "./evotor/types";
-import { z } from "zod";
-import { analyzeWithAI } from "./ai";
 
 export const api = new Hono<IEnv>()
 
@@ -165,27 +160,10 @@ export const api = new Hono<IEnv>()
 		}
 	})
 
-	.get("/api/schedules", async (c) => {
-		const date = formatDate(new Date());
-
+	.get("/api/ai-report", async (c) => {
 		const evo = c.var.evotor;
 
-		const salesAnalysisSchema = {
-			name: "sales-analysis",
-			prompt: (docs: Document[]) => `
-			Проанализируй документы и верни JSON вида: 
-			{ "summary": "итог анализа" }
-			Пример: { "summary": "За день продано 42 товара" }
-			
-			Документы: ${JSON.stringify(docs.slice(0, 3))} [и еще ${docs.length - 3}...]
-		`,
-			outputSchema: z.object({
-				summary: z.string(),
-			}),
-		};
-
 		const shopsUuid = await c.var.evotor.getShopUuids();
-		const aiWithRun = c.var.ai as any;
 
 		const docs = await evo.getDocuments(
 			shopsUuid[2],
@@ -193,15 +171,15 @@ export const api = new Hono<IEnv>()
 			"2025-05-31T14:56:03.000+0000",
 		);
 
-		const aiData = await analyzeWithAI(
-			evo,
-			salesAnalysisSchema,
-			docs,
-			aiWithRun,
-		);
+		// const result = await execAnalyzeDocsTask(c, docs.slice(0, 3));
 
-		console.log("AI Data:", aiData);
+		const result = await sum2Numbers(c, { a: 1, b: 2 });
+		return c.json(result);
+	})
 
+	.get("/api/schedules", async (c) => {
+		const date = formatDate(new Date());
+		const shopsUuid = await c.var.evotor.getShopUuids();
 		const dataReport: Record<string, string> = {};
 
 		for (const uuid of shopsUuid) {
@@ -386,7 +364,7 @@ export const api = new Hono<IEnv>()
 			const productUuids = await getUuidsByParentUuidList(db, groupIdsVape);
 
 			// Получение плана продаж
-			let plan = await getPlan(datePlan, db);
+			const plan = await getPlan(datePlan, db);
 			let datPlan: Record<string, number> = {};
 
 			if (!plan) {
@@ -562,7 +540,7 @@ export const api = new Hono<IEnv>()
 			}
 
 			// Создание объекта totalReport с типизацией
-			let totalReport: TotalReport = {
+			const totalReport: TotalReport = {
 				employeeName: employeeName, // Имя сотрудника
 				startDate: formatDate(star), // Начальная дата
 				endDate: formatDate(end), // Конечная дата
@@ -571,7 +549,7 @@ export const api = new Hono<IEnv>()
 				totalBonus: 0, // Инициализация
 			};
 
-			let result = [];
+			const result = [];
 
 			for (const date_ of dates) {
 				const date = new Date(date_);
@@ -642,7 +620,7 @@ export const api = new Hono<IEnv>()
 
 						await createPlanTable(c.get("db"));
 
-						let plan = await getPlan(datePlan, c.get("db"));
+						const plan = await getPlan(datePlan, c.get("db"));
 
 						let datPlan: Record<string, number> = {};
 

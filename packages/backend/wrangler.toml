@@ -4,6 +4,7 @@ main = "src/index.ts"
 compatibility_date = "2024-10-22"
 compatibility_flags = ["nodejs_compat"]
 assets = { directory = "dist"}
+upload_source_maps = true
 
 
 [[d1_databases]]

@@ -5,7 +5,7 @@ import {
 	formatDateTime,
 	calculateDateRanges,
 } from "../utils";
-import {
+import type {
 	Document,
 	Employee,
 	Product,
@@ -95,9 +95,8 @@ export class Evotor {
 			// Проверка успешности запроса
 			if (response.ok) {
 				return true; // Токен действителен
-			} else {
-				throw new Error("Неверный или истекший токен");
 			}
+			throw new Error("Неверный или истекший токен");
 		} catch (error) {
 			this._logError("Ошибка при проверке токена", error);
 			return false; // Токен недействителен
@@ -135,7 +134,7 @@ export class Evotor {
 
 			return employeesUuids;
 		} catch (error) {
-			this._logError(`Ошибка при получении списка uuid магазинов`, error);
+			this._logError("Ошибка при получении списка uuid магазинов", error);
 			throw error;
 		}
 	}
@@ -456,7 +455,7 @@ export class Evotor {
 			let foundDocuments: Document[] | null = null;
 
 			// Начальная дата для поиска (сегодняшний день)
-			let currentDate = new Date();
+			const currentDate = new Date();
 
 			// console.log(`Начинаем поиск документов для магазина с ID: ${shopId}`);
 
@@ -780,7 +779,7 @@ export class Evotor {
 		try {
 			const documents = await this.getDocuments(shopId, since, until);
 
-			let sumPrGrossProfitace: number = 0;
+			let sumPrGrossProfitace = 0;
 
 			for (const doc of documents) {
 				if (["SELL", "PAYBACK"].includes(doc.type)) {
@@ -857,7 +856,7 @@ export class Evotor {
 			// ]);
 			const documents = await this.getDocuments(shopId, since, until);
 
-			let sumSales: number = 0;
+			let sumSales = 0;
 
 			for (const doc of documents) {
 				if (["SELL", "PAYBACK"].includes(doc.type)) {
@@ -901,7 +900,7 @@ export class Evotor {
 		try {
 			const documents = await this.getDocuments(shopId, since, until);
 
-			let salesSummary: Record<string, number> = {};
+			const salesSummary: Record<string, number> = {};
 
 			for (const doc of documents) {
 				if (["SELL", "PAYBACK"].includes(doc.type)) {
@@ -956,8 +955,10 @@ export class Evotor {
 			const documents = await this.getDocuments(shopId, since, until);
 			// console.log(`Полученные документы:`, documents);
 
-			let salesSummary: Record<string, { quantitySale: number; sum: number }> =
-				{};
+			const salesSummary: Record<
+				string,
+				{ quantitySale: number; sum: number }
+			> = {};
 
 			for (const doc of documents) {
 				if (["SELL", "PAYBACK"].includes(doc.type)) {
@@ -1022,7 +1023,7 @@ export class Evotor {
 		try {
 			const documents = await this.getDocuments(shopId, since, until);
 
-			let salesSummary: number = 0;
+			let salesSummary = 0;
 
 			for (const doc of documents) {
 				if (["SELL", "PAYBACK"].includes(doc.type)) {
@@ -1365,7 +1366,7 @@ export class Evotor {
 
 			return shopUuids;
 		} catch (error) {
-			this._logError(`Ошибка при получении списка uuid магазинов`, error);
+			this._logError("Ошибка при получении списка uuid магазинов", error);
 			throw error;
 		}
 	}
@@ -1385,7 +1386,7 @@ export class Evotor {
 			// Проверяем, является ли shopsResponse массивом объектов с uuid и name
 			if (!Array.isArray(shopsResponse)) {
 				this._logError(
-					`Некорректный формат ответа при получении магазинов`,
+					"Некорректный формат ответа при получении магазинов",
 					shopsResponse,
 				);
 				return null; // Возвращаем null, если формат ответа не соответствует ожиданиям
@@ -1402,7 +1403,7 @@ export class Evotor {
 
 			return result; // Возвращаем массив объектов
 		} catch (error) {
-			this._logError(`Ошибка при получении списка uuid магазинов`, error);
+			this._logError("Ошибка при получении списка uuid магазинов", error);
 			return null; // Возвращаем null в случае ошибки
 		}
 	}
@@ -1520,7 +1521,7 @@ export class Evotor {
 			// Проверяем, что response является массивом
 			if (!Array.isArray(response)) {
 				this._logError(
-					`Некорректный формат ответа при получении магазинов`,
+					"Некорректный формат ответа при получении магазинов",
 					response,
 				);
 				return null; // Возвращаем null, если формат ответа не соответствует ожиданиям
@@ -1849,7 +1850,7 @@ export class Evotor {
 			);
 
 			// Среднее значение за 4 недели с корректировкой
-			let adjustedSales: number = this.adjustSales(sumSalesToday);
+			const adjustedSales: number = this.adjustSales(sumSalesToday);
 			datPlan[shopId] = adjustedSales; // Сохраняем результат
 		});
 
@@ -1865,7 +1866,7 @@ export class Evotor {
 		productUuids: string[],
 		dateRanges: [string, string][],
 	): Promise<number> {
-		let sumSalesToday: number = 0;
+		let sumSalesToday = 0;
 
 		for (const [since, until] of dateRanges) {
 			const sumSalesData: number = await this.getSalesSum(

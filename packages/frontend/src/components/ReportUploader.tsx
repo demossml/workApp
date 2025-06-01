@@ -1,4 +1,9 @@
-import { useCallback, useState, forwardRef, MutableRefObject } from "react";
+import {
+  useCallback,
+  useState,
+  forwardRef,
+  type MutableRefObject,
+} from "react";
 import { toPng } from "html-to-image";
 
 interface ReportUploaderProps {

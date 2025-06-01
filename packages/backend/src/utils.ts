@@ -1,7 +1,7 @@
-import { D1Database } from "@cloudflare/workers-types";
-import { Evotor } from "./evotor";
-import { Document, Transaction } from "./evotor/types";
+import type { D1Database } from "@cloudflare/workers-types";
 import { z } from "zod";
+import type { Evotor } from "./evotor";
+import type { Document, Transaction } from "./evotor/types";
 
 // import { Init } from "v8";
 export function assert(
@@ -54,7 +54,7 @@ export const isValidSign = async (
 	);
 
 	const isRecent =
-		(Date.now() - parseInt(data.auth_date) * 1000) / 1000 < 86400; // 86400 секунд в 24 часа
+		(Date.now() - Number.parseInt(data.auth_date) * 1000) / 1000 < 86400; // 86400 секунд в 24 часа
 
 	const hashMatched = buf2hex(digest) === hash;
 
@@ -62,7 +62,7 @@ export const isValidSign = async (
 };
 
 export function formatDateTime(date: Date): string {
-	const pad = (num: number, size: number = 2): string =>
+	const pad = (num: number, size = 2): string =>
 		String(num).padStart(size, "0"); // Функция для добавления нуля спереди
 
 	const year: number = date.getUTCFullYear();
@@ -79,11 +79,8 @@ export function formatDateTime(date: Date): string {
 	// Формируем строку в нужном формате
 	return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${fractionalSeconds}+00:00`;
 }
-export function formatDateWithTime(
-	date: Date,
-	isEndOfDay: boolean = false,
-): string {
-	const pad = (num: number, size: number = 2): string =>
+export function formatDateWithTime(date: Date, isEndOfDay = false): string {
+	const pad = (num: number, size = 2): string =>
 		String(num).padStart(size, "0"); // Функция для добавления нуля спереди
 
 	const year: number = date.getUTCFullYear();
@@ -126,7 +123,7 @@ export function calculateDateRanges(
 	const untilDate = new Date(until);
 
 	// Проверяем, что даты корректны
-	if (isNaN(sinceDate.getTime()) || isNaN(untilDate.getTime())) {
+	if (Number.isNaN(sinceDate.getTime()) || Number.isNaN(untilDate.getTime())) {
 		throw new Error("Неверный формат даты в параметрах.");
 	}
 
@@ -157,11 +154,11 @@ export function getDateRangesForWeeks(
 	startDate: Date,
 	weekOffsets: number[],
 ): [string, string][] {
-	const pad = (num: number, size: number = 2): string =>
+	const pad = (num: number, size = 2): string =>
 		String(num).padStart(size, "0"); // Функция для добавления нуля спереди
 
 	// Форматирование даты с началом и концом дня
-	function formatDateWithTime(date: Date, isEndOfDay: boolean = false): string {
+	function formatDateWithTime(date: Date, isEndOfDay = false): string {
 		const year = date.getUTCFullYear();
 		const month = pad(date.getUTCMonth() + 1); // Месяцы начинаются с 0
 		const day = pad(date.getUTCDate());
@@ -357,10 +354,12 @@ export function sortStockData(
 			if (sortBy === "quantity") {
 				// Сортировка по количеству (от большего к меньшему)
 				return dataB.quantity - dataA.quantity;
-			} else if (sortBy === "name") {
+			}
+			if (sortBy === "name") {
 				// Сортировка по имени (в алфавитном порядке)
 				return nameA.localeCompare(nameB);
-			} else if (sortBy === "sum") {
+			}
+			if (sortBy === "sum") {
 				// Сортировка по цене (от большего к меньшему)
 				return dataB.sum - dataA.sum;
 			}
@@ -397,7 +396,7 @@ export async function saveSalaryAndBonus(
 ): Promise<void> {
 	try {
 		// Проверяем, существует ли запись с указанной датой
-		const checkQuery = `SELECT * FROM salary_bonus WHERE data = ?;`;
+		const checkQuery = "SELECT * FROM salary_bonus WHERE data = ?;";
 		const checkStatement = db.prepare(checkQuery);
 		const result = await checkStatement.bind(data).first();
 
@@ -455,14 +454,13 @@ export async function getSalaryAndBonus(
 		const result = await statement.bind(date).all();
 
 		// Проверяем, есть ли результаты в поле results
-		if (result && result.results && result.results.length > 0) {
+		if (result?.results && result.results.length > 0) {
 			// console.log("Полученные данные:", result.results[0]);
 			// Преобразуем результат к типу SalaryBonus после приведения к unknown
 			return result.results[0] as unknown as SalaryBonus;
-		} else {
-			console.log("Нет записей до указанной даты.");
-			return null; // Если записей нет, возвращаем null
 		}
+		console.log("Нет записей до указанной даты.");
+		return null; // Если записей нет, возвращаем null
 	} catch (err) {
 		console.error("Ошибка при получении зарплаты и премии:", err);
 		return null; // Возвращаем null в случае ошибки
@@ -511,7 +509,7 @@ export async function saveOrUpdateUUIDs(
 			// console.log(`Добавлен новый UUID: ${uuid}`);
 		}
 	} catch (err) {
-		console.error(`Ошибка при сохранении UUID:`, err);
+		console.error("Ошибка при сохранении UUID:", err);
 	}
 }
 
@@ -531,13 +529,12 @@ export async function getAllUuid(db: D1Database): Promise<string[]> {
 			// Указываем, что результат будет массивом объектов с полем uuid
 			const uuids = result.results as Array<{ uuid: string }>;
 			return uuids.map((row) => row.uuid); // Извлекаем UUID из результата
-		} else {
-			console.error(
-				"Не удалось получить UUID, структура результата некорректна:",
-				result,
-			);
-			return []; // Возвращаем пустой массив в случае, если структура результата некорректна
 		}
+		console.error(
+			"Не удалось получить UUID, структура результата некорректна:",
+			result,
+		);
+		return []; // Возвращаем пустой массив в случае, если структура результата некорректна
 	} catch (err) {
 		console.error("Ошибка при получении UUID:", err);
 		return []; // Возвращаем пустой массив в случае ошибки
@@ -625,7 +622,7 @@ export async function updatePlan(
 			// );
 		}
 	} catch (err) {
-		console.error(`Ошибка при обновлении плана:`, err);
+		console.error("Ошибка при обновлении плана:", err);
 	}
 }
 
@@ -695,10 +692,9 @@ export function sortSalesData(
 			if (sortBy === "v") {
 				// Сортировка по значению, от большего к меньшему
 				return b[1] - a[1];
-			} else {
-				// Сортировка по ключу (алфавитный порядок)
-				return a[0].localeCompare(b[0]);
 			}
+			// Сортировка по ключу (алфавитный порядок)
+			return a[0].localeCompare(b[0]);
 		})
 		.reduce((acc: SalesData, [key, value]) => {
 			acc[key.trim()] = value; // Убираем пробелы в ключах
@@ -720,13 +716,13 @@ export function sortSalesSummary(
 			if (sortBy === "quantity") {
 				// Сортировка по количеству (quantity), от большего к меньшему
 				return valueB.quantity - valueA.quantity;
-			} else if (sortBy === "sum") {
+			}
+			if (sortBy === "sum") {
 				// Сортировка по сумме (sum), от большего к меньшему
 				return valueB.sum - valueA.sum;
-			} else {
-				// Сортировка по ключу (названию продукта) в алфавитном порядке
-				return keyA.localeCompare(keyB);
 			}
+			// Сортировка по ключу (названию продукта) в алфавитном порядке
+			return keyA.localeCompare(keyB);
 		})
 		.reduce((acc: SalesSummary, [key, value]) => {
 			acc[key.trim()] = value; // Убираем пробелы в ключах
@@ -939,11 +935,11 @@ export function calculateTotalSum(data: Data): number {
 
 	const roundedSum = totalSum.toFixed(2);
 
-	if (parseFloat(roundedSum) % 1 === 0) {
-		return parseInt(roundedSum, 10);
+	if (Number.parseFloat(roundedSum) % 1 === 0) {
+		return Number.parseInt(roundedSum, 10);
 	}
 
-	return parseFloat(roundedSum);
+	return Number.parseFloat(roundedSum);
 }
 
 export interface OpenShopRecord {
@@ -988,12 +984,11 @@ export async function getData(
 			// 	`Данные успешно извлечены для даты: ${date} и магазина: ${shopUuid}`,
 			// );
 			return result as unknown as OpenShopRecord; // Приведение типа
-		} else {
-			// console.log(
-			// 	`Запись не найдена для даты: ${date} и магазина: ${shopUuid}`,
-			// );
-			return null;
 		}
+		// console.log(
+		// 	`Запись не найдена для даты: ${date} и магазина: ${shopUuid}`,
+		// );
+		return null;
 	} catch (err) {
 		console.error(
 			`Ошибка при извлечении данных для даты ${date} и магазина ${shopUuid}: ${err}`,
@@ -1146,7 +1141,7 @@ export async function getSalesDataByDate(
 
 			// Убедимся, что данные корректные
 			if (!shopName || !dataQuantity) {
-				console.warn(`Некорректные данные в записи:`, item);
+				console.warn("Некорректные данные в записи:", item);
 				continue;
 			}
 
@@ -1570,12 +1565,11 @@ export async function getScheduleByPeriodAndShopId(
 
 		if (result.results && result.results.length > 0) {
 			return result.results as unknown as TransformedSchedule[];
-		} else {
-			console.log(
-				`Данные не найдены для периода с ${dateStart} по ${dateEnd} и магазина ${shopUuid}`,
-			);
-			return null;
 		}
+		console.log(
+			`Данные не найдены для периода с ${dateStart} по ${dateEnd} и магазина ${shopUuid}`,
+		);
+		return null;
 	} catch (err) {
 		console.error(
 			`Ошибка при получении расписания за период с ${dateStart} по ${dateEnd} и магазина ${shopUuid}:`,
@@ -1603,10 +1597,9 @@ export async function getSchedule(
 
 		if (result.results && result.results.length > 0) {
 			return result.results as unknown as TransformedSchedule[];
-		} else {
-			console.log(`Данные не найдены для ${date} и магазина ${shopUuid}`);
-			return null;
 		}
+		console.log(`Данные не найдены для ${date} и магазина ${shopUuid}`);
+		return null;
 	} catch (err) {
 		console.error(
 			`Ошибка при получении расписания (${date}, ${shopUuid}):`,
@@ -1634,10 +1627,9 @@ export async function getScheduleByPeriod(
 
 		if (result.results && result.results.length > 0) {
 			return result.results as unknown as TransformedSchedule[];
-		} else {
-			console.log(`Данные не найдены для периода с ${dateStart} по ${dateEnd}`);
-			return null;
 		}
+		console.log(`Данные не найдены для периода с ${dateStart} по ${dateEnd}`);
+		return null;
 	} catch (err) {
 		console.error(
 			`Ошибка при получении расписания за период с ${dateStart} по ${dateEnd}:`,
@@ -1767,13 +1759,13 @@ export function generateStoreAnalysisPrompt(
 ): string {
 	if (!simplifiedDocs.length) return "Нет данных для анализа.";
 
-	let prompt = `Проанализируй работу магазина на основе данных о продажах:\n\n`;
+	let prompt = "Проанализируй работу магазина на основе данных о продажах:\n\n";
 
 	simplifiedDocs.forEach((doc) => {
 		prompt += `🧾 Документ №${doc.number} (${doc.type}) от ${new Date(doc.closeDate).toLocaleString()}:\n`;
 
 		if (!doc.transactions.length) {
-			prompt += `- Нет транзакций\n`;
+			prompt += "- Нет транзакций\n";
 		} else {
 			doc.transactions.forEach((t: Transaction) => {
 				const name = t.commodityName ?? "неизвестный товар";
@@ -1796,7 +1788,8 @@ export function generateStoreAnalysisPrompt(
 		prompt += `Итого: ${total.toFixed(2)}₽\n\n`;
 	});
 
-	prompt += `\nОтветь кратко:\n1. Какие товары продавались чаще всего?\n2. Каков средний чек?\n3. Какие способы оплаты преобладают?\n4. Есть ли пики продаж по времени?`;
+	prompt +=
+		"\nОтветь кратко:\n1. Какие товары продавались чаще всего?\n2. Каков средний чек?\n3. Какие способы оплаты преобладают?\n4. Есть ли пики продаж по времени?";
 
 	return prompt;
 }
@@ -1819,7 +1812,7 @@ const schema = z.record(
  */
 export function generateLLMPromptFromDocuments(
 	docs: Document[],
-	maxDocs: number = 128000,
+	maxDocs = 128000,
 ): string {
 	const trimmed = docs.slice(0, maxDocs);
 

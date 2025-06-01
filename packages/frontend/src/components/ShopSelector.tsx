@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import type React from "react";
+import { useState, useEffect } from "react";
 
 type ShopSelectorProps = {
   isLoadingShops: boolean;
@@ -63,7 +64,7 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({
       <div>
         {isLoadingShops ? (
           <div className="flex items-center justify-center w-full h-16">
-            <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 dark:border-blue-400 border-solid rounded-full animate-spin"></div>
+            <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 dark:border-blue-400 border-solid rounded-full animate-spin" />
           </div>
         ) : (
           <div className="flex gap-2 mb-4">

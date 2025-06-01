@@ -1,5 +1,5 @@
 // SendToTelegramButton.tsx
-import React from "react";
+import type React from "react";
 
 interface SendToTelegramButtonProps {
   html: string; // Тип для html пропса
@@ -9,7 +9,7 @@ const SendToTelegramButton: React.FC<SendToTelegramButtonProps> = ({
   html,
 }) => {
   const sendToTelegram = async () => {
-    alert("Отправляем HTML: " + html);
+    alert(`Отправляем HTML: ${html}`);
 
     if (!html?.trim()) {
       alert("Нет данных для отправки");

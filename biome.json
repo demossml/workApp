@@ -1,0 +1,38 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "files": {
+    "ignoreUnknown": true,
+    "ignore": ["tsconfig.node.json", "tsconfig.app.json", "tsconfig.json"]
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "organizeImports": {
+    "enabled": true
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "complexity": {
+        "noForEach": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "warn"
+      },
+      "correctness": {
+        "useExhaustiveDependencies": "warn"
+      },
+      "a11y": {
+        "useButtonType": "off",
+        "useKeyWithClickEvents": "off",
+        "noLabelWithoutControl": "off",
+        "useHeadingContent": "off"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "warn",
+        "noExplicitAny": "warn"
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { api } from "./api";
 import { authenticate, initialize } from "./helpers";
-import { IEnv } from "./types";
+import type { IEnv } from "./types";
 
 const app = new Hono<IEnv>()
 	.use("/*", cors())

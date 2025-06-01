@@ -58,7 +58,7 @@ const ScheduleTableView: React.FC<ScheduleTableProps> = ({ scheduleTable }) => {
 
     // Попробуем создать объект Date
     const date = new Date(dateString);
-    if (isNaN(date.getTime())) {
+    if (Number.isNaN(date.getTime())) {
       // Если дата некорректна, возвращаем сообщение об ошибке
       return dateString;
     }
@@ -112,7 +112,7 @@ const ScheduleTableView: React.FC<ScheduleTableProps> = ({ scheduleTable }) => {
                   (() => {
                     const dateString = String(value); // Преобразуем значение в строку
                     const date = new Date(dateString);
-                    if (isNaN(date.getTime())) return false; // Если дата некорректна, не считаем её выходным
+                    if (Number.isNaN(date.getTime())) return false; // Если дата некорректна, не считаем её выходным
                     const day = date.getDay();
                     return day === 0 || day === 6; // Воскресенье (0) или суббота (6)
                   })();

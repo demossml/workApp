@@ -6,11 +6,24 @@
     "packages/*"
   ],
   "dependencies": {
-    "turbo": "^2.2.3"
+    "turbo": "^2.5.4"
   },
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --filter=@evo-app/{backend,frontend}",
-    "deploy": "turbo run deploy"
+    "deploy": "turbo run deploy",
+    "format": "prettier . --write",
+    "lint": "pnpm biome lint --write --unsafe ."
+  },
+  "prettier": {
+    "trailingComma": "es5",
+    "tabWidth": 2,
+    "semi": true,
+    "singleQuote": false,
+    "useTabs": false
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "prettier": "^3.3.3"
   }
 }

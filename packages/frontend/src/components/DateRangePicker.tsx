@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import type React from "react";
+import { useState, useEffect } from "react";
 
 interface DateRangePickerProps {
   onDateChange: (start: string, end: string) => void; // Callback function to send the selected dates to parent

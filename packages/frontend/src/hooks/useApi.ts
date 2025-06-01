@@ -23,11 +23,11 @@ export const useEmployeeNameAndUuid = () =>
 export const useSchedules = () =>
   useQuery({
     queryKey: ["schedules"],
-    queryFn: () => client.api["schedules"].$get().then((res) => res.json()),
+    queryFn: () => client.api.schedules.$get().then((res) => res.json()),
   });
 
 export const useGetShops = () =>
   useQuery({
     queryKey: ["getShops"],
-    queryFn: () => client.api["shops"].$get().then((res) => res.json()),
+    queryFn: () => client.api.shops.$get().then((res) => res.json()),
   });

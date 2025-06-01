@@ -1,6 +1,6 @@
-import { Next } from "hono";
+import type { Next } from "hono";
 import { Evotor } from "./evotor";
-import { IContext } from "./types";
+import type { IContext } from "./types";
 import { assert, isValidSign } from "./utils";
 
 export const initialize = (c: IContext, next: Next) => {

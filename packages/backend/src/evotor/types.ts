@@ -36,7 +36,7 @@ export interface Document {
 		| "CASH_INCOME";
 
 	id: string; // Уникальный идентификатор документа
-	extras: Record<string, any>; // Дополнительная информация о документе
+	extras: Record<string, unknown>; // Дополнительная информация о документе
 	number: number; // Порядковый номер документа
 	closeDate: string; // Дата и время закрытия документа
 	time_zone_offset: number; // Смещение часового пояса

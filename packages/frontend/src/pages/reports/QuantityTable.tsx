@@ -38,7 +38,7 @@ export default function QuantityTableProps() {
       setIsLoadingShops(true); // Начало загрузки групп
 
       try {
-        const response = await fetch(`/api/evotor/shops`, {
+        const response = await fetch("/api/evotor/shops", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -77,7 +77,7 @@ export default function QuantityTableProps() {
       const dataGroups = {
         shopUuid: shopUuid,
       };
-      const response = await fetch(`/api/evotor/groups-by-shop`, {
+      const response = await fetch("/api/evotor/groups-by-shop", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -148,7 +148,7 @@ export default function QuantityTableProps() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-custom-gray p-4">
         <div className="flex items-center mb-4">
-          <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin"></div>
+          <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
         </div>
       </div>
     );

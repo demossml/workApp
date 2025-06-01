@@ -1,4 +1,4 @@
-import React from "react";
+import type React from "react";
 import * as XLSX from "xlsx";
 
 // Типизация данных таблицы

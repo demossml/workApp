@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import type React from "react";
+import { useEffect, useState } from "react";
 
 type ShopSelectorProps = {
   userId: string;
@@ -19,7 +20,7 @@ export const ShopSelectorNew: React.FC<ShopSelectorProps> = ({
       setIsLoadingShops(true);
 
       try {
-        const response = await fetch(`/api/evotor/shops`, {
+        const response = await fetch("/api/evotor/shops", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -69,7 +70,7 @@ export const ShopSelectorNew: React.FC<ShopSelectorProps> = ({
       <div>
         {isLoadingShops ? (
           <div className="flex items-center justify-center w-full h-16">
-            <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 dark:border-blue-400 border-solid rounded-full animate-spin"></div>
+            <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 dark:border-blue-400 border-solid rounded-full animate-spin" />
           </div>
         ) : (
           <div className="flex gap-2 mb-4">

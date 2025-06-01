@@ -101,7 +101,7 @@ export const DynamicTable: React.FC<DynamicTableProps> = ({ data }) => {
                 </td>
               </tr>
               <tr>
-                <td className="px-4 py-1 text"></td>
+                <td className="px-4 py-1 text" />
                 {Object.keys(row).map((key, index) => {
                   if (key !== "productName") {
                     return (

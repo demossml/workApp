@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import type React from "react";
+import { useState } from "react";
 import { ShopSelectorNew } from "./ShopSelectorNew";
 import { useMe } from "../hooks/useApi";
 import ScheduleTableView from "./ScheduleTableView";
@@ -32,7 +33,7 @@ const SchedulesView: React.FC = () => {
 
     setIsLoadingTable(true);
     try {
-      const response = await fetch(`/api/schedules/table-view`, {
+      const response = await fetch("/api/schedules/table-view", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

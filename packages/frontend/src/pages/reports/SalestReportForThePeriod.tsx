@@ -23,11 +23,11 @@ const formatAmount = (amount: number): number | string => {
   const roundedSum = amount.toFixed(2);
 
   // Проверка на целое число
-  if (parseFloat(roundedSum) % 1 === 0) {
-    return parseInt(roundedSum, 10); // Возвращаем целое число
+  if (Number.parseFloat(roundedSum) % 1 === 0) {
+    return Number.parseInt(roundedSum, 10); // Возвращаем целое число
   }
 
-  return parseFloat(roundedSum); // Возвращаем с двумя знаками после запятой
+  return Number.parseFloat(roundedSum); // Возвращаем с двумя знаками после запятой
 };
 
 export default function SalesTodayReport() {
@@ -77,8 +77,8 @@ export default function SalesTodayReport() {
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
         <div className="flex items-center mb-4">
           {/* Loading spinner */}
-          <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin"></div>
-          <h1 className="ml-4 text-xl sm:text-2xl text-gray-800 font-bold"></h1>
+          <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
+          <h1 className="ml-4 text-xl sm:text-2xl text-gray-800 font-bold" />
         </div>
       </div>
     );

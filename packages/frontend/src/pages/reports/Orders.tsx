@@ -1,14 +1,14 @@
-import { useState, useEffect } from "react";
-import { useMe } from "../../hooks/useApi";
-import { PeriodSelector } from "../../components/Period";
+import { useEffect, useState } from "react";
 import { GoBackButton } from "../../components/GoBackButton"; // Импортируем компонент "Назад"
+import { PeriodSelector } from "../../components/Period";
 import { ShopSelector } from "../../components/ShopSelector"; // Импортируем компонент "Назад"
+import { useMe } from "../../hooks/useApi";
 
 import React from "react";
-import { ErrorDisplay } from "../../components/ErrorDisplay";
-import { LoadingSpinner } from "../../components/LoadingSpinner";
-import { GroupSelector } from "../../components/GroupSelector";
 import { DynamicTable } from "../../components/DynamicTable";
+import { ErrorDisplay } from "../../components/ErrorDisplay";
+import { GroupSelector } from "../../components/GroupSelector";
+import { LoadingSpinner } from "../../components/LoadingSpinner";
 
 // Интерфейсы для типов данных
 interface GroupOption {
@@ -63,7 +63,7 @@ export default function Order() {
       setIsLoadingShops(true); // Начало загрузки групп
 
       try {
-        const response = await fetch(`/api/evotor/shops`, {
+        const response = await fetch("/api/evotor/shops", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -102,7 +102,7 @@ export default function Order() {
       const dataGroups = {
         shopUuid: shopUuid,
       };
-      const response = await fetch(`/api/evotor/groups-by-shop`, {
+      const response = await fetch("/api/evotor/groups-by-shop", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -178,6 +178,7 @@ export default function Order() {
     )}`;
 
   // При первой загрузке задаем дни начиная с сегодняшнего дня
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   React.useEffect(() => {
     const today = getStartOfToday(new Date());
     setDaysFromStart(getDaysFrom(today));
@@ -252,8 +253,8 @@ export default function Order() {
       <div className="flex flex-col items-center justify-center min-h-screen bg-custom-gray p-4">
         <div className="flex items-center mb-4">
           {/* Loading spinner */}
-          <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin"></div>
-          <h1 className="ml-4 text-xl sm:text-2xl text-gray-900 font-bold"></h1>
+          <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
+          <h1 className="ml-4 text-xl sm:text-2xl text-gray-900 font-bold" />
         </div>
       </div>
     );

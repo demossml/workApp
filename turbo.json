@@ -1,24 +1,23 @@
 {
-    "$schema": "https://turbo.build/schema.json",
-    "ui": "tui",
-    "tasks": {
-      "build": {
-        "dependsOn": ["^build"],
-        "inputs": ["src/*", ".env*"],
-        "outputs": ["dist/**"]
-      },
-      "lint": {
-        "dependsOn": ["^lint"]
-      },
-      "dev": {
-        "passThroughEnv": ["*"],
-        "cache": false,
-        "persistent": true
-      },
-      "deploy": {
-        "passThroughEnv": ["*"],
-        "dependsOn": ["build"],
-        "cache": false
-      }
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "envMode": "loose",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/*", ".env*"],
+      "outputs": ["dist/**"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "deploy": {
+      "dependsOn": ["build"],
+      "cache": false
     }
   }
+}

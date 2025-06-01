@@ -1,13 +1,13 @@
-import { Context } from "hono";
-import { Evotor } from "./evotor";
-import { D1Database, Fetcher } from "@cloudflare/workers-types";
+import type { Ai, D1Database } from "@cloudflare/workers-types";
+import type { Context } from "hono";
+import type { Evotor } from "./evotor";
 
 export type IEnv = {
 	Bindings: {
 		DB: D1Database;
 		BOT_TOKEN: string;
 		EVOTOR_API_TOKEN: string;
-		AI: Fetcher;
+		AI: Ai;
 	};
 	Variables: {
 		userId: string;
@@ -21,7 +21,6 @@ export type IEnv = {
 		};
 		evotor: Evotor;
 		db: D1Database;
-		ai: Fetcher; // уже добавлено
 	};
 };
 
