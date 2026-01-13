@@ -1,12 +1,13 @@
-import React, { Fragment, useState } from "react";
+import React, { Fragment, useState, useRef } from "react";
+import { motion, useScroll, useSpring } from "framer-motion";
 
 // Интерфейс для структуры данных
 interface TableData {
-  [key: string]: string | number; // Ключи могут быть строками, а значения - строками или числами
+  [key: string]: string | number;
 }
 
 interface DynamicTableProps {
-  data: TableData[]; // Массив объектов, которые соответствуют интерфейсу TableData
+  data: TableData[];
 }
 
 // Объект с переводами
@@ -19,13 +20,28 @@ const tableN: { [key: string]: string } = {
   sum: "Сумма",
 };
 
+// Основной компонент таблицы
 export const DynamicTable: React.FC<DynamicTableProps> = ({ data }) => {
+  // Состояние для сортировки таблицы
   const [sortConfig, setSortConfig] = useState<{
     key: string | null;
     direction: "asc" | "desc" | null;
   }>({
     key: null,
     direction: null,
+  });
+
+  // Реф на скроллируемый контейнер
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Полоса прогресса скролла для tbody
+  const { scrollYProgress } = useScroll({
+    container: scrollRef,
+  });
+  const scaleX = useSpring(scrollYProgress, {
+    stiffness: 100,
+    damping: 30,
+    restDelta: 0.001,
   });
 
   // Функция для сортировки данных
@@ -46,6 +62,7 @@ export const DynamicTable: React.FC<DynamicTableProps> = ({ data }) => {
     return sortableData;
   }, [data, sortConfig]);
 
+  // Обработчик сортировки по клику на заголовок
   const handleSort = (key: string) => {
     let direction: "asc" | "desc" = "asc";
     if (sortConfig.key === key && sortConfig.direction === "asc") {
@@ -55,75 +72,124 @@ export const DynamicTable: React.FC<DynamicTableProps> = ({ data }) => {
   };
 
   return (
-    <div className="overflow-x-auto w-full bg-custom-gray dark:bg-gray-900 rounded-t-lg">
-      <table className="min-w-full table-auto bg-custom-gray dark:bg-gray-900 rounded-lg shadow-md">
-        <thead className=" bg-gray-100 dark:bg-gray-700">
-          <tr>
-            {Object.keys(data[0]).map((key) => (
-              <th
-                key={key}
-                className="px-4 py-1 text-left text-xs sm:text-sm text-gray-700 dark:text-gray-400 cursor-pointer"
-                onClick={() => handleSort(key)}
-              >
-                {tableN[key] || key.charAt(0).toUpperCase() + key.slice(1)}{" "}
-                {sortConfig.key === key
-                  ? sortConfig.direction === "asc"
-                    ? "↑"
-                    : "↓"
-                  : null}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {sortedData.map((row, rowIndex) => (
-            <Fragment key={rowIndex}>
-              <tr>
-                <td
-                  className="px-4 py-1 text-sm text-left text-gray-700 dark:text-gray-400"
-                  colSpan={Object.keys(row).length}
-                  style={{
-                    wordWrap: "break-word",
-                    maxWidth: "200px",
-                  }}
+    // Основной контейнер таблицы, занимающий весь экран
+    <div
+      className="w-full
+     rounded-2xl min-h-screen bg-custom-gray dark:bg-gray-900 px-2 sm:px-4 "
+    >
+      {/* Анимированная полоса прокрутки сверху */}
+      <motion.div
+        style={{ scaleX, transformOrigin: "0%" }}
+        className="h-1 bg-blue-500 mb-2 rounded-full"
+      />
+      <div className="relative">
+        {/* Заголовок таблицы */}
+        <table className="w-full table-auto bg-custom-gray dark:bg-gray-900 rounded-lg shadow-md">
+          <thead className="bg-gray-100 dark:bg-gray-700 sticky top-0 z-10">
+            <tr>
+              {Object.keys(data[0] || {}).map((key) => (
+                <th
+                  key={key}
+                  className="px-2 sm:px-4 py-0.5 sm:py-1 text-left text-[10px] sm:text-xs text-gray-700 dark:text-gray-400 cursor-pointer bg-gray-100 dark:bg-gray-700"
+                  onClick={() => handleSort(key)}
                 >
-                  {Object.keys(row).map((key) => {
-                    const value = row[key];
-                    if (key === "productName" && typeof value === "string") {
-                      return value.length > 34 ? (
-                        <span className="break-all">{value}</span>
-                      ) : (
-                        value
-                      );
-                    }
-                    return null;
-                  })}
-                </td>
-              </tr>
-              <tr>
-                <td className="px-4 py-1 text" />
-                {Object.keys(row).map((key, index) => {
-                  if (key !== "productName") {
-                    return (
-                      <td
-                        key={index}
-                        className="px-4 py-1 text-xs sm:text-sm text-gray-700 dark:text-gray-400"
-                      >
-                        {key === "sum" && typeof row[key] === "number" ? (
-                          <span>{row[key]} ₽</span>
-                        ) : (
-                          <span>{row[key]}</span>
-                        )}
-                      </td>
-                    );
-                  }
-                  return null;
-                })}
-              </tr>
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+                  {tableN[key] || key.charAt(0).toUpperCase() + key.slice(1)}{" "}
+                  {sortConfig.key === key
+                    ? sortConfig.direction === "asc"
+                      ? "↑"
+                      : "↓"
+                    : null}
+                </th>
+              ))}
+            </tr>
+          </thead>
+        </table>
+        {/* Прокручиваемый блок с данными */}
+        <div
+          id="dynamic-table-scroll"
+          ref={scrollRef}
+          style={{
+            maxHeight: "calc(100vh - 4rem)",
+            overflowY: "auto",
+            overflowX: "auto",
+          }}
+        >
+          <table className="w-full table-auto bg-custom-gray dark:bg-gray-900 rounded-lg shadow-md">
+            <tbody>
+              {sortedData.map((row, rowIndex) => (
+                <Fragment key={rowIndex}>
+                  <motion.tr
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.25,
+                      delay: rowIndex * 0.07,
+                      ease: "easeInOut",
+                    }}
+                  >
+                    <td
+                      className="px-2 sm:px-4 py-0.5 sm:py-1 text-[10px] sm:text-xs text-left text-gray-700 dark:text-gray-400"
+                      colSpan={Object.keys(row).length}
+                      style={{
+                        wordWrap: "break-word",
+                        maxWidth: "150px",
+                      }}
+                    >
+                      {Object.keys(row).map((key) => {
+                        const value = row[key];
+                        if (
+                          key === "productName" &&
+                          typeof value === "string"
+                        ) {
+                          return value.length > 34 ? (
+                            <span className="break-all">{value}</span>
+                          ) : (
+                            value
+                          );
+                        }
+                        return null;
+                      })}
+                    </td>
+                  </motion.tr>
+                  <motion.tr
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.4,
+                      delay: rowIndex * 0.07,
+                      ease: "easeInOut",
+                    }}
+                  >
+                    <td className="px-2 sm:px-4 py-0.5 sm:py-1" />
+                    {Object.keys(row).map((key, index) => {
+                      if (key !== "productName") {
+                        // Центрируем "Количество" и "Сумма"
+                        const isCenter =
+                          key === "quantitySale" || key === "sum"
+                            ? "text-center font-semibold"
+                            : "text-left";
+                        return (
+                          <td
+                            key={index}
+                            className={`px-2 sm:px-4 py-0.5 sm:py-1 text-[10px] sm:text-xs text-gray-700 dark:text-gray-400 ${isCenter}`}
+                          >
+                            {key === "sum" && typeof row[key] === "number" ? (
+                              <span>{row[key]} ₽</span>
+                            ) : (
+                              <span>{row[key]}</span>
+                            )}
+                          </td>
+                        );
+                      }
+                      return null;
+                    })}
+                  </motion.tr>
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 };

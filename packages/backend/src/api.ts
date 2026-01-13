@@ -3,53 +3,62 @@ import { cors } from "hono/cors";
 // import path from "path";
 // import fs from "fs";
 // import os from "os";
-import type { IEnv } from "./types";
+import type { IEnv, SaveDeadStocksRequest } from "./types";
 // import { createWorkersAI } from 'workers-ai-provider';
 // import { Ai } from "@cloudflare/ai";
 // import { z } from 'zod';
+// import jwt from "jsonwebtoken";
 
-import { sum2Numbers } from "./ai";
+// const JWT_SECRET = "your_secret_key"; // Секретный ключ для подписи токена
+
+import { analyzeDocsStaffTask, getHoroscopeByDateTask } from "./ai";
 import type { ShopUuidName } from "./evotor/types";
 import {
 	assert,
+	buildSinceUntilFromDocuments,
 	calculateTotalSum,
 	createAccessoriesTable,
 	createPlanTable,
 	createSalaryBonusTable,
-	// transformScheduleData,
 	createScheduleTable,
 	formatDate,
 	formatDateWithTime,
 	getAllUuid,
 	getData,
-	// getTelegramFileUpl,
-	// sendToTelegram,
-	// sortStockData,
-	// sortSalesSummary,
-	// getSalesDataByDate,
-	// createProductsTableIfNotExists,
-	// updateOrInsertData,
 	getGroupsByNameUuid,
 	getIntervals,
+	getIsoTimestamp,
+	getLatestCloseDates,
 	getMonthStartAndEnd,
+	getPeriodRangeEvotor,
 	getPlan,
 	getProductsByGroup,
-	getSalaryAndBonus,
 	getSalaryData,
 	getScheduleByPeriod,
 	getScheduleByPeriodAndShopId,
 	getTelegramFile,
-	// sortSalesData,
+	getTodayRangeEvotor,
 	getUuidsByParentUuidList,
-	// getSchedule,
+	isOpenStoreExists,
 	replaceUuidsWithNames,
+	saveFileToR2,
+	saveNewIndexDocuments,
+	saveOpenStorsTable,
 	saveOrUpdateUUIDs,
 	saveSalaryAndBonus,
-	// deleteScheduleTable,
 	transformScheduleDataD,
+	updateOpenStore,
 	updatePlan,
 	updateSchedule,
 } from "./utils";
+// import type { CandleBinance } from "./utils";
+import {
+	getDocumentsByCashOutcomeData,
+	getSalesDataG,
+	getSalesgardenReportData,
+} from "./evotor/utils";
+import { saveDeadStocks } from "./db/repositories/saveDeadStocks";
+import { sendDeadStocksToTelegram } from "../utils/sendDeadStocksToTelegram";
 
 export const api = new Hono<IEnv>()
 
@@ -64,6 +73,7 @@ export const api = new Hono<IEnv>()
 
 	.get("/api/employee-name", async (c) => {
 		const employeeName = await c.var.evotor.getEmployeeLastName(c.var.userId);
+		// console.log("employeeName:", employeeName);
 
 		assert(employeeName, "not an employee");
 		return c.json({ employeeName });
@@ -78,9 +88,65 @@ export const api = new Hono<IEnv>()
 		return c.json({ employeeNameAndUuid });
 	})
 
+	.get("/api/documents", async (c) => {
+		console.log("documents");
+		const db = c.get("db");
+		const shopsUuid = await c.var.evotor.getShopUuids();
+		const newDate = new Date(); // Получаем текущую дату
+		const sevenDaysAgo = new Date(newDate.getTime() - 5 * 24 * 60 * 60 * 1000);
+
+		const since = formatDateWithTime(sevenDaysAgo, false);
+		const until = formatDateWithTime(sevenDaysAgo, true);
+
+		const shopQueries = shopsUuid.map((shopId) => ({
+			shopId,
+			since,
+			until,
+		}));
+		// await createIndexDocumentsTable(db);
+		// await createIndexOnType(db);
+
+		const documents = await c.var.evotor.getDocumentsIndexForShops(shopQueries);
+		await saveNewIndexDocuments(db, documents);
+
+		console.log("documents:", documents);
+
+		const latestCloseDates = await getLatestCloseDates(db, shopsUuid);
+
+		const resultData = buildSinceUntilFromDocuments(latestCloseDates);
+		const documents_ = await c.var.evotor.getDocumentsIndexForShops(resultData);
+
+		await saveNewIndexDocuments(db, documents_);
+
+		// const results = await getDocumentsByPeriod(db, shopsUuid[0], since, until);
+		// const cashOutcomeData = await getSalesgardenReportData(
+		// 	db,
+		// 	c.var.evotor,
+		// 	shopsUuid,
+		// 	since,
+		// 	until,
+		// );
+
+		assert(documents_, "not an employee");
+		return c.json({ cashOutcomeData: documents_ });
+	})
+
+	.get("/api/by-grammar", async (c) => {
+		// const result = await createSloveneGrammarTask(c, {
+		// 	topic: "спряжение глаголов",
+		// 	level: "продвинутый",
+		// 	count: 5,
+		// });
+		const result = getHoroscopeByDateTask(c, { date: "08-06-2025" });
+
+		// console.log(employeeNameAndUuid);
+		return c.json({ result });
+	})
+
 	.get("/api/employee/name-uuid", async (c) => {
 		const employeeNameAndUuid =
 			await c.var.evotor.getEmployeesLastNameAndUuid();
+		// console.log("employeeNameAndUuid:", employeeNameAndUuid);
 
 		assert(employeeNameAndUuid, "not an employee");
 		return c.json({ employeeNameAndUuid });
@@ -161,20 +227,42 @@ export const api = new Hono<IEnv>()
 	})
 
 	.get("/api/ai-report", async (c) => {
+		console.log("AI report request received");
 		const evo = c.var.evotor;
 
-		const shopsUuid = await c.var.evotor.getShopUuids();
+		// const shopsUuid = await c.var.evotor.getShopUuids();
+		const [start, end] = getTodayRangeEvotor();
 
-		const docs = await evo.getDocuments(
-			shopsUuid[2],
-			"2025-05-31T00:56:03.000+0000",
-			"2025-05-31T14:56:03.000+0000",
-		);
+		const docs = await evo.getAllDocumentsByTypes(start, end);
 
-		// const result = await execAnalyzeDocsTask(c, docs.slice(0, 3));
+		const docFiltered = await evo.extractSalesInfo(docs);
+		// console.log("docs:", JSON.stringify(docFiltered, null, 2));
 
-		const result = await sum2Numbers(c, { a: 1, b: 2 });
-		return c.json(result);
+		const result = await analyzeDocsStaffTask(c, docFiltered);
+		// console.log({ result });
+
+		// const result = await sum2Numbers(c, { a: 1, b: 2 });
+		return c.json({ result });
+	})
+
+	.get("/api/ai-association-rules", async (c) => {
+		console.log("AI report request received");
+		const evo = c.var.evotor;
+
+		// const shopsUuid = await c.var.evotor.getShopUuids();
+		const [start, end] = getPeriodRangeEvotor(3);
+		console.log("start:", start, "end:", end);
+
+		const docs = await evo.getAllDocumentsByTypes(start, end);
+
+		const docFiltered = await evo.extractSalesInfo(docs);
+		// console.log("docs:", JSON.stringify(docFiltered, null, 2));
+
+		const result = await analyzeDocsStaffTask(c, docFiltered);
+		// console.log({ result });
+
+		// const result = await sum2Numbers(c, { a: 1, b: 2 });
+		return c.json({ result });
 	})
 
 	.get("/api/schedules", async (c) => {
@@ -299,14 +387,221 @@ export const api = new Hono<IEnv>()
 	})
 
 	.get("/api/employee-role", async (c) => {
-		const employeeRole = await c.var.evotor.getEmployeeRole(
-			c.var.user.id.toString(),
-		);
+		const userId = c.var.user.id.toString();
 
-		// console.log(employeeRole);
+		const employeeRoleEvo = await c.var.evotor.getEmployeeRole(userId);
+
+		const employeeRole =
+			userId === "5700958253" || userId === "475039971"
+				? "SUPERADMIN"
+				: employeeRoleEvo;
+		console.log("employeeRole:", employeeRole);
 
 		assert(employeeRole, "not an employee");
 		return c.json({ employeeRole });
+	})
+
+	.post("/api/register", async (c) => {
+		const data = await c.req.json(); // Разбор JSON тела
+		// console.log("user", c.var.user.id.toString());
+
+		// Извлекаем данные из JSON
+		const { userId } = data;
+		c.set("userId", String(userId));
+
+		const employeeRoleEvo = await c.var.evotor.getEmployeeRole(userId);
+		const employeeRole = employeeRoleEvo !== null;
+		console.log("employeeRole:", employeeRole);
+
+		if (!employeeRole) {
+			return c.json({ success: false, message: "not an employee" }, 403);
+		}
+
+		assert(employeeRole, "not an employee");
+		return c.json({ success: true, employeeRole });
+	})
+
+	.post("/api/upload-photos-batch", async (c) => {
+		try {
+			const formData = await c.req.formData();
+
+			// --- USER ID ---
+			const userId = formData.get("userId")?.toString();
+			if (!userId) {
+				return c.json({ success: false, error: "Missing userId" }, 400);
+			}
+
+			// --- ПОЛУчАЕМ МАССИВЫ ---
+			const files = formData.getAll("files") as unknown as File[];
+			const categories = formData.getAll("categories").map(String);
+			const fileKeys = formData.getAll("fileKeys").map(String);
+
+			if (files.length === 0) {
+				return c.json({ success: false, error: "No files uploaded" }, 400);
+			}
+
+			if (
+				files.length !== categories.length ||
+				files.length !== fileKeys.length
+			) {
+				console.log("❌ Ошибка структуры FormData");
+				return c.json(
+					{ success: false, error: "Invalid batch structure" },
+					400,
+				);
+			}
+
+			const allowed = ["area", "stock", "cash", "mrc"];
+
+			// --- Генерируем дату ---
+			const now = new Date();
+			const dd = String(now.getDate()).padStart(2, "0");
+			const mm = String(now.getMonth() + 1).padStart(2, "0");
+			const yyyy = now.getFullYear();
+
+			const dateFolder = `opening/${dd}-${mm}-${yyyy}/${userId}`;
+
+			const saved: { key: string; category: string; fileKey: string }[] = [];
+
+			// --- СОХРАНЯЕМ ВСЕ ФАЙЛЫ ---
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i];
+				const category = categories[i];
+				const fileKey = fileKeys[i];
+
+				if (!allowed.includes(category)) {
+					console.log("❌ Неверная категория:", category);
+					continue;
+				}
+
+				if (!(file instanceof File)) {
+					console.log("❌ Не файл:", file);
+					continue;
+				}
+
+				const key = `${dateFolder}/${category}/${file.name}`;
+
+				console.log(`➡️ Сохранение файла ${i + 1}/${files.length}:`, key);
+
+				await saveFileToR2(c.env.R2, file, key);
+
+				console.log(`✅ Сохранено: ${key}`);
+
+				saved.push({ key, category, fileKey });
+			}
+
+			return c.json({
+				success: true,
+				saved,
+			});
+		} catch (error) {
+			console.error("🔥 Ошибка batch загрузки:", error);
+			return c.json(
+				{
+					success: false,
+					error: error instanceof Error ? error.message : "Upload failed",
+				},
+				500,
+			);
+		}
+	})
+
+	.post("/api/upload-photos", async (c) => {
+		try {
+			const formData = await c.req.formData();
+
+			const file = formData.get("file") as File | null;
+			const category = formData.get("category")?.toString();
+			const userId = formData.get("userId")?.toString();
+			const fileKey = formData.get("fileKey")?.toString();
+
+			if (!userId) {
+				return c.json({ success: false, error: "Missing userId" }, 400);
+			}
+
+			if (!file) {
+				return c.json({ success: false, error: "Missing file" }, 400);
+			}
+
+			if (!category) {
+				return c.json({ success: false, error: "Missing category" }, 400);
+			}
+
+			if (!fileKey) {
+				return c.json({ success: false, error: "Missing fileKey" }, 400);
+			}
+
+			const allowed = ["area", "stock", "cash", "mrc"] as const;
+			if (!allowed.includes(category as any)) {
+				return c.json({ success: false, error: "Invalid category" }, 400);
+			}
+
+			const now = new Date();
+			const dd = String(now.getDate()).padStart(2, "0");
+			const mm = String(now.getMonth() + 1).padStart(2, "0");
+			const yyyy = now.getFullYear();
+
+			const folder = `opening/${dd}-${mm}-${yyyy}/${userId}/${category}`;
+			const uniqueName = `${Date.now()}_${file.name}`;
+			const key = `${folder}/${uniqueName}`;
+
+			console.log(`📁 Сохраняем файл ${file.name} → ${key}`);
+
+			await saveFileToR2(c.env.R2, file, key);
+
+			console.log("✅ Файл успешно сохранён:", key);
+
+			return c.json({
+				success: true,
+				fileKey,
+				category,
+				key,
+			});
+		} catch (err) {
+			console.error("❌ Ошибка upload-photos:", err);
+			return c.json({ success: false, error: "Server error" }, 500);
+		}
+	})
+
+	.post("/api/upload", async (c) => {
+		const formData = await c.req.formData();
+		console.log("formData entries:", Array.from(formData.entries()));
+
+		const file = formData.get("photos") as File | null;
+		if (!file || !(file instanceof File)) {
+			return c.json({ error: "Нет файла для загрузки" }, 400);
+		}
+
+		// const baseUrl = c.env.R2_PUBLIC_URL;
+
+		try {
+			const savedKey = `uploads/${crypto.randomUUID()}_${file.name}`;
+			const arrayBuffer = await file.arrayBuffer();
+			console.log(
+				"Processing file:",
+				file.name,
+				"type:",
+				file.type,
+				"size:",
+				file.size,
+			);
+
+			await c.env.R2.put(savedKey, arrayBuffer, {
+				httpMetadata: { contentType: file.type || "application/octet-stream" },
+			});
+
+			// const publicUrl = `${baseUrl}/${savedKey}`;
+			const publicUrl = `https://pub-a1a3c60dd9754ffba505cb0039a032fa.r2.dev/${savedKey}`;
+			console.log("Saved:", publicUrl);
+
+			return c.json({
+				url: publicUrl,
+				name: file.name,
+			});
+		} catch (error) {
+			console.error("Error saving file:", file.name, error);
+			return c.json({ error: `Ошибка сохранения файла: ${error}` }, 500);
+		}
 	})
 
 	.get("/api/evotor/sales-today", async (c) => {
@@ -315,6 +610,42 @@ export const api = new Hono<IEnv>()
 		assert(salesData, "No sales data found");
 
 		return c.json({ salesData });
+	})
+
+	.get("/api/evotor/sales-today-graf", async (c) => {
+		const db = c.get("db"); // Получаем подключение к базе данных
+		const evo = c.var.evotor;
+
+		const shopUuids = await c.var.evotor.getShopUuids();
+
+		const nowDate = new Date(); // Получаем текущую дату
+		const sevenDaysAgo = new Date(nowDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+		const nowSince = formatDateWithTime(nowDate, false);
+		const nowUntil = getIsoTimestamp();
+
+		const sevenDaysSince = formatDateWithTime(sevenDaysAgo, false);
+		const sevenDaysUntil = getIsoTimestamp(false, -7);
+
+		const nowDataSales = await getSalesDataG(
+			db,
+			evo,
+			shopUuids,
+			nowSince,
+			nowUntil,
+		);
+
+		const sevenDaysDataSales = await getSalesDataG(
+			db,
+			evo,
+			shopUuids,
+			sevenDaysSince,
+			sevenDaysUntil,
+		);
+
+		assert(sevenDaysDataSales, "No sales data found");
+
+		return c.json({ nowDataSales, sevenDaysDataSales });
 	})
 
 	.get("/api/evotor/plan-for-today", async (c) => {
@@ -331,16 +662,6 @@ export const api = new Hono<IEnv>()
 			const newDate: Date = new Date();
 			const datePlan: string = formatDate(newDate);
 			let salesData: SalesData = {};
-
-			// Попытка получить данные продаж за текущую дату
-			// let salesData = await getSalesDataByDate(datePlan, db);
-			// if (salesData) {
-			// 	console.log("Данные продаж найдены:", salesData);
-			// 	return c.json({ salesData });
-			// }
-
-			// Если данных нет, создаем их
-			// console.log("Данные продаж не найдены. Генерируем новый план...");
 
 			const since = formatDateWithTime(newDate, false); // Начало дня
 			const until = formatDateWithTime(newDate, true); // Конец дня
@@ -430,39 +751,6 @@ export const api = new Hono<IEnv>()
 		}
 	})
 
-	// .post("/api/evotor/generate-pdf", async (c) => {
-	// 	try {
-	// 		const formData = await c.req.formData();
-	// 		const file = formData.get("file");
-	// 		console.log(file);
-
-	// 		if (!file || !(file instanceof File)) {
-	// 			return c.json({ error: "Файл не найден или неверный формат" }, 400);
-	// 		}
-
-	// 		// Преобразуем File в Blob
-	// 		const blob = new Blob([await file.arrayBuffer()], { type: file.type });
-
-	// 		// Отправляем в Telegram
-	// 		const response = await sendToTelegram(
-	// 			blob,
-	// 			"5405385673:AAFvJDIlR4BqQmnXDBGS8XOzEGSpVmE1w84",
-	// 			"490899906",
-	// 		);
-
-	// 		return c.json({ success: true, response });
-	// 	} catch (error) {
-	// 		console.error("Ошибка:", error);
-	// 		return c.json(
-	// 			{
-	// 				error:
-	// 					error instanceof Error ? error.message : "Ошибка обработки файла",
-	// 			},
-	// 			500,
-	// 		);
-	// 	}
-	// })
-
 	.get("/api/evotor/groups", async (c) => {
 		// Получаем UUID магазинов
 		const shopIds: string[] = await c.var.evotor.getShopUuids();
@@ -510,43 +798,38 @@ export const api = new Hono<IEnv>()
 
 	.post("/api/evotor/salary", async (c) => {
 		try {
-			const data = await c.req.json(); // Разбор JSON тела
-			// console.log(data);
+			const { employee, startDate, endDate } = await c.req.json();
+			console.log("data:", await c.req.json());
+			const db = c.get("db");
 
-			// Извлекаем данные из JSON
-			const { employee, startDate, endDate } = data;
-			// console.log(employee);
-
-			const star = new Date(startDate);
-			const end = new Date(endDate);
-
-			const sincetDate = formatDateWithTime(star, false);
-			const untilDate = formatDateWithTime(end, true);
-
+			const sincetDate = formatDateWithTime(new Date(startDate), false);
+			const untilDate = formatDateWithTime(new Date(endDate), true);
 			const dates = getIntervals(sincetDate, untilDate, "days", 1);
 
-			const groupIdsAks = await getAllUuid(c.get("db"));
-
+			const groupIdsAks = await getAllUuid(db);
 			const employeeName = await c.var.evotor.getEmployeeByUuid(employee);
 
-			// Интерфейс для описания структуры отчета
-			interface TotalReport {
-				employeeName: string | null; // Имя сотрудника
-				startDate: string; // Начальная дата
-				endDate: string; // Конечная дата
-				totalBonusAccessories: number; // Общая сумма бонусов по аксессуарам
-				totalBonusPlan: number; // Общая сумма плановых бонусов
-				totalBonus: number; // Общая сумма бонусов
-			}
+			// Константа для Vape групп
+			const groupIdsVape = [
+				"78ddfd78-dc52-11e8-b970-ccb0da458b5a",
+				"bc9e7e4c-fdac-11ea-aaf2-2cf05d04be1d",
+				"0627db0b-4e39-11ec-ab27-2cf05d04be1d",
+				"2b8eb6b4-92ea-11ee-ab93-2cf05d04be1d",
+				"8a8fcb5f-9582-11ee-ab93-2cf05d04be1d",
+				"97d6fa81-84b1-11ea-b9bb-70c94e4ebe6a",
+				"ad8afa41-737d-11ea-b9b9-70c94e4ebe6a",
+				"568905bd-9460-11ee-9ef4-be8fe126e7b9",
+				"568905be-9460-11ee-9ef4-be8fe126e7b9",
+			];
+			const productUuidsVape = await getUuidsByParentUuidList(db, groupIdsVape);
 
-			// Создание объекта totalReport с типизацией
-			const totalReport: TotalReport = {
-				employeeName: employeeName, // Имя сотрудника
-				startDate: formatDate(star), // Начальная дата
-				endDate: formatDate(end), // Конечная дата
-				totalBonusAccessories: 0, // Инициализация
-				totalBonusPlan: 0, // Инициализация
-				totalBonus: 0, // Инициализация
+			const totalReport = {
+				employeeName,
+				startDate: formatDate(new Date(startDate)),
+				endDate: formatDate(new Date(endDate)),
+				totalBonusAccessories: 0,
+				totalBonusPlan: 0,
+				totalBonus: 0,
 			};
 
 			const result = [];
@@ -555,142 +838,95 @@ export const api = new Hono<IEnv>()
 				const date = new Date(date_);
 				const since = formatDateWithTime(date, false);
 				const until = formatDateWithTime(date, true);
-				// console.log("since:", since);
-				const salaryDate: string = formatDate(date);
+				const datePlan = formatDate(date);
 
 				const openShopUuid = await c.var.evotor.getFirstOpenSession(
 					since,
 					until,
 					employee,
 				);
-				// console.log(openShopUuid);
+				if (!openShopUuid) continue;
 
-				// Задаем ID групп продуктов для Vape
+				const dataReport = {
+					date: datePlan,
+					shopName: await c.var.evotor.getShopName(openShopUuid),
+					bonusAccessories: 0,
+					dataPlan: 0,
+					salesDataVape: 0,
+					bonusPlan: 0,
+					totalBonus: 0,
+				};
 
-				const groupIdsVape: string[] = [
-					"78ddfd78-dc52-11e8-b970-ccb0da458b5a",
-					"bc9e7e4c-fdac-11ea-aaf2-2cf05d04be1d",
-					"0627db0b-4e39-11ec-ab27-2cf05d04be1d",
-					"2b8eb6b4-92ea-11ee-ab93-2cf05d04be1d",
-					"8a8fcb5f-9582-11ee-ab93-2cf05d04be1d",
-					"97d6fa81-84b1-11ea-b9bb-70c94e4ebe6a",
-					"ad8afa41-737d-11ea-b9b9-70c94e4ebe6a",
-					"568905bd-9460-11ee-9ef4-be8fe126e7b9",
-					"568905be-9460-11ee-9ef4-be8fe126e7b9",
-				];
-				const productUuids = await getUuidsByParentUuidList(
-					c.get("db"),
-					groupIdsVape,
-				);
+				const salaryData = await getSalaryData(employee, datePlan, until, db);
 
-				if (openShopUuid) {
-					const datePlan: string = formatDate(date);
-					const dataReport = {
-						date: datePlan,
-						shopName: "",
-						bonusAccessories: 0,
-						dataPlan: 0,
-						salesDataVape: 0,
-						bonusPlan: 0,
-						totalBonus: 0,
-					};
+				if (salaryData) {
+					const { date, bonusAccessories, dataPlan, salesDataVape } =
+						salaryData;
+					const bonusPlan = salesDataVape >= dataPlan ? 450 : 0;
 
-					const salaryData = await getSalaryData(
-						employee,
-						salaryDate,
-						until,
-						c.get("db"),
-					);
-					if (salaryData) {
-						// console.log(salaryData);
-						const shopName = await c.var.evotor.getShopName(openShopUuid);
-
-						dataReport.shopName = shopName;
-						dataReport.date = salaryData.date;
-						dataReport.bonusAccessories = salaryData.bonusAccessories;
-						dataReport.dataPlan = salaryData.dataPlan;
-						dataReport.salesDataVape = salaryData.salesDataVape;
-						dataReport.bonusPlan = salaryData.bonusPlan;
-						dataReport.totalBonus = salaryData.totalBonus;
-					} else {
-						const salaryAndBonus = await getSalaryAndBonus(
-							datePlan,
-							c.get("db"),
-						);
-
-						await createPlanTable(c.get("db"));
-
-						const plan = await getPlan(datePlan, c.get("db"));
-
-						let datPlan: Record<string, number> = {};
-
-						if (!plan) {
-							const datPlan = await c.var.evotor.getPlan(date, productUuids);
-
-							await updatePlan(datPlan, datePlan, c.get("db"));
-						} else {
-							datPlan = plan;
-						}
-						// console.log(datPlan);
-						const shopName = await c.var.evotor.getShopName(openShopUuid);
-
-						const porodUuidAks = await getProductsByGroup(
-							c.get("db"),
-							openShopUuid,
-							groupIdsAks,
-						);
-
-						const salesDataAks = await c.var.evotor.getSalesSum(
-							openShopUuid,
-							since,
-							until,
-							porodUuidAks,
-						); // Данные о продажах
-						const bonusAccessories = Math.floor(salesDataAks * 0.05);
-
-						const porodUuidVape = await getProductsByGroup(
-							c.get("db"),
-							openShopUuid,
-							groupIdsVape,
-						);
-
-						const salesDataVape = await c.var.evotor.getSalesSum(
-							openShopUuid,
-							since,
-							until,
-							porodUuidVape,
-						);
-
-						const bonus = salaryAndBonus?.bonus;
-						console.log("bonus:", bonus);
-						// console.log(openShopUuid);
-						// console.log(datPlan[openShopUuid] ?? 0);
-
-						const currentPlan = datPlan[openShopUuid] ?? 0;
-						// План на сегодня (значение по умолчанию 0, если null или undefined)
-						const bonusPlan = salesDataVape >= currentPlan ? 450 : 0; // Форми
-
-						// console.log("salesDataVape:", salesDataVape);
-						// console.log("currentPlan:", currentPlan);
-						// console.log("bonusPlan:", bonusPlan);
-
-						dataReport.shopName = shopName;
-						dataReport.bonusAccessories = bonusAccessories;
-						dataReport.dataPlan = currentPlan;
-						dataReport.salesDataVape = salesDataVape;
-						dataReport.bonusPlan = bonusPlan;
-
-						dataReport.totalBonus =
-							dataReport.bonusAccessories + dataReport.bonusPlan;
+					Object.assign(dataReport, {
+						date,
+						bonusAccessories,
+						dataPlan,
+						salesDataVape,
+						bonusPlan,
+						totalBonus: bonusPlan + bonusAccessories,
+					});
+				} else {
+					let plan = await getPlan(datePlan, db);
+					if (!plan || Object.keys(plan).length === 0) {
+						plan = await c.var.evotor.getPlan(date, productUuidsVape);
+						await updatePlan(plan, datePlan, db);
 					}
 
-					result.push(dataReport);
+					const currentPlan = Number.isFinite(plan[openShopUuid])
+						? plan[openShopUuid]
+						: 0;
 
-					// Обновление значений в totalReport
-					totalReport.totalBonusAccessories += dataReport.bonusAccessories;
-					totalReport.totalBonusPlan += dataReport.bonusPlan;
-					totalReport.totalBonus += dataReport.totalBonus;
+					// Бонусы по аксессуарам
+					const productsAks = await getProductsByGroup(
+						db,
+						openShopUuid,
+						groupIdsAks,
+					);
+					const salesDataAks = await c.var.evotor.getSalesSum(
+						openShopUuid,
+						since,
+						until,
+						productsAks,
+					);
+					const bonusAccessories = Math.floor(salesDataAks * 0.05);
+
+					// Продажи Vape
+					const productsVape = await getProductsByGroup(
+						db,
+						openShopUuid,
+						groupIdsVape,
+					);
+					const salesDataVape = await c.var.evotor.getSalesSum(
+						openShopUuid,
+						since,
+						until,
+						productsVape,
+					);
+
+					const bonusPlan = salesDataVape >= currentPlan ? 450 : 0;
+
+					Object.assign(dataReport, {
+						bonusAccessories,
+						dataPlan: currentPlan,
+						salesDataVape,
+						bonusPlan,
+						totalBonus: bonusAccessories + bonusPlan,
+					});
 				}
+
+				result.push(dataReport);
+
+				// Обновление общего отчета
+				totalReport.totalBonusAccessories += dataReport.bonusAccessories;
+				totalReport.totalBonusPlan += dataReport.bonusPlan;
+				totalReport.totalBonus += dataReport.totalBonus;
 			}
 
 			return c.json({ result, totalReport });
@@ -737,13 +973,6 @@ export const api = new Hono<IEnv>()
 	})
 
 	.post("/api/evotor/shops", async (c) => {
-		// const data = await c.req.json();
-		// console.log("Полученные данные:", data);
-
-		// const { userId } = data;
-
-		// Получение токенов авторизации
-
 		// Объект для хранения сопоставления shopUuid -> shopName
 		const shopOptions: Record<string, string> = {};
 
@@ -760,6 +989,15 @@ export const api = new Hono<IEnv>()
 		assert(shopOptions, "not an shopOptions");
 
 		return c.json({ shopOptions });
+	})
+
+	.get("/api/evotor/shops-names", async (c) => {
+		// Получение списка магазинов
+		const shopsName = await c.var.evotor.getShopsName();
+
+		assert(shopsName, "not an shopOptions");
+
+		return c.json({ shopsName });
 	})
 
 	.get("/api/evotor/sales-report", async (c) => {
@@ -815,6 +1053,7 @@ export const api = new Hono<IEnv>()
 
 			// Продукты по группам
 			const salesData = await c.var.evotor.getSalesSumQuantitySum(
+				c.env.DB,
 				shopUuid,
 				since,
 				until,
@@ -822,11 +1061,46 @@ export const api = new Hono<IEnv>()
 			); // Получаем данные по продажам
 
 			// const sortedSalesDataByValue = sortSalesSummary(salesData, sortCriteria);
-			// console.log(sortedSalesDataByValue);
+			// console.log(salesData);
 
 			const shopName = await c.var.evotor.getShopName(shopUuid);
 
 			return c.json({ salesData, shopName, startDate, endDate });
+		} catch (error) {
+			console.error("Ошибка при разборе JSON:", error);
+			return c.json({ message: "Ошибка обработки данных" }, 400);
+		}
+	})
+
+	.post("/api/evotor/dead-stock", async (c) => {
+		try {
+			const data = await c.req.json(); // Разбор JSON тела
+			// console.log(data);
+
+			// Извлекаем данные из JSON
+			const { startDate, endDate, shopUuid, groups } = data;
+
+			const sincetDate = new Date(startDate); // Преобразуем в объект Date
+			const untilDate = new Date(endDate); // Преобразуем в объект Date
+
+			const since = formatDateWithTime(sincetDate, false); // Форматируем начальную дату
+			const until = formatDateWithTime(untilDate, true); // Форматируем конечную дату
+
+			const params = { shopId: shopUuid, groups, since, until };
+
+			// Продукты по группам
+			const salesData = await c.var.evotor.getSalesSummary(params); // Получаем данные по продажам
+
+			const shopName = await c.var.evotor.getShopName(shopUuid);
+
+			console.log(salesData);
+
+			return c.json({
+				salesData: salesData, // МАССИВ элементов
+				shopName,
+				startDate,
+				endDate,
+			});
 		} catch (error) {
 			console.error("Ошибка при разборе JSON:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
@@ -925,6 +1199,42 @@ export const api = new Hono<IEnv>()
 		}
 	})
 
+	.get("/api/evotor/report/financial/today", async (c) => {
+		try {
+			const db = c.get("db");
+			const evo = c.var.evotor;
+			const now = new Date();
+
+			const since = formatDateWithTime(now, false);
+			const until = formatDateWithTime(now, true);
+
+			const shopUuids = await evo.getShopUuids();
+
+			const { salesDataByShopName, grandTotalSell, grandTotalRefund } =
+				await getSalesgardenReportData(db, evo, shopUuids, since, until);
+
+			const cashOutcomeData = await getDocumentsByCashOutcomeData(
+				db,
+				evo,
+				shopUuids,
+				since,
+				until,
+			);
+
+			const grandTotalCashOutcome = calculateTotalSum(cashOutcomeData);
+
+			return c.json({
+				salesDataByShopName,
+				grandTotalSell,
+				grandTotalRefund,
+				grandTotalCashOutcome,
+				cashOutcomeData,
+			});
+		} catch (error) {
+			console.error("Ошибка при обработке запроса:", error);
+			return c.json({ message: "Ошибка обработки данных" }, 400);
+		}
+	})
 	.post("/api/evotor/sales-garden-report", async (c) => {
 		try {
 			const data = await c.req.json(); // Разбор JSON тела
@@ -995,6 +1305,161 @@ export const api = new Hono<IEnv>()
 			console.error("Ошибка при разборе JSON:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
+	})
+
+	.post("/api/profit-report", async (c) => {
+		try {
+			// Получаем данные из запроса
+			const body = await c.req.json<{
+				shopUuids: string[];
+				since: string;
+				until: string;
+				dataFrom1C: Record<string, { expenses: number; grossProfit: number }>; // { shopUuid: {expenses, grossProfit} }
+			}>();
+
+			const { shopUuids, since, until, dataFrom1C } = body;
+
+			if (!Array.isArray(shopUuids) || shopUuids.length === 0) {
+				return c.json({ error: "Не переданы UUID магазинов" }, 400);
+			}
+
+			// 1. Получаем расходы из Evo
+			const evoData = await c.var.evotor.getExpensesByCategories(
+				shopUuids,
+				since,
+				until,
+			);
+
+			// 2. Формируем отчет по каждому магазину
+			const report: Record<
+				string,
+				{
+					byCategory: Record<string, number>;
+					totalEvoExpenses: number;
+					expenses1C: number;
+					grossProfit: number;
+					netProfit: number;
+				}
+			> = {};
+
+			for (const shopUuid of shopUuids) {
+				const evoShopData = evoData[shopUuid] || {
+					byCategory: {},
+					total: 0,
+				};
+				const data1C = dataFrom1C[shopUuid] || {
+					expenses: 0,
+					grossProfit: 0,
+				};
+
+				// Чистая прибыль = Валовая прибыль - расходы Evo + расходы 1С
+				const netProfit =
+					(data1C.grossProfit || 0) -
+					(evoShopData.total || 0) +
+					(data1C.expenses || 0);
+
+				report[shopUuid] = {
+					byCategory: evoShopData.byCategory,
+					totalEvoExpenses: evoShopData.total,
+					expenses1C: data1C.expenses,
+					grossProfit: data1C.grossProfit,
+					netProfit,
+				};
+			}
+
+			// 3. Возвращаем результат
+			return c.json({
+				period: { since, until },
+				report,
+			});
+		} catch (error) {
+			console.error("Ошибка при формировании отчета:", error);
+			return c.json({ error: "Ошибка при формировании отчета" }, 500);
+		}
+	})
+
+	.post("/api/is-open-store", async (c) => {
+		try {
+			const data = await c.req.json();
+			const { userId, date } = data; // date в формате "dd-mm-yyyy"
+
+			const db = c.env.DB;
+
+			// Разбираем дату и проверяем наличие записи
+			const exists = await isOpenStoreExists(db, userId, date);
+
+			return c.json({ exists });
+		} catch (err) {
+			console.error("Ошибка в /api/is-open-store:", err);
+			return c.json({ exists: false, error: "Ошибка сервера" }, 500);
+		}
+	})
+	.post("/api/open-store", async (c) => {
+		const data = await c.req.json();
+		const { userId, timestamp } = data;
+
+		const db = c.env.DB;
+
+		// Создаём таблицу, если её нет
+		// await createOpenStorsTable(db);
+
+		// Сохраняем новую строку открытия магазина
+		await saveOpenStorsTable(db, {
+			date: timestamp,
+			userId,
+			cash: null, // пока нет данных кассы
+			sign: null, // открытие
+			ok: null, // ещё не проверено
+		});
+
+		return c.json({ ok: true });
+	})
+	.post("/api/dead-stocks/update", async (c) => {
+		const db = c.get("drizzle");
+
+		const { shopUuid, items } = await c.req.json<
+			SaveDeadStocksRequest & { userId: number }
+		>();
+
+		// ID группы Telegram (из env)
+		const TELEGRAM_GROUP_ID = "5700958253";
+
+		// 1️⃣ ОТПРАВКА В TELEGRAM (ДО сохранения)
+		await sendDeadStocksToTelegram(
+			{
+				chatId: TELEGRAM_GROUP_ID,
+				shopUuid,
+				items,
+			},
+			c.env.BOT_TOKEN,
+			c.var.evotor,
+		);
+
+		// 2️⃣ СОХРАНЕНИЕ В БД
+		await saveDeadStocks(db, shopUuid, items);
+
+		return c.json({ success: true });
+	})
+	.post("/api/finish-opening", async (c) => {
+		const db = c.env.DB;
+
+		const data = await c.req.json();
+
+		const { ok, discrepancy, userId } = data;
+		console.log("discrepancy:", discrepancy);
+		console.log("ok:", ok);
+
+		let cash = null;
+		let sign = null;
+
+		if (!ok && discrepancy) {
+			cash = Number(discrepancy.amount);
+			sign = discrepancy.type; // "+" или "-"
+		}
+
+		await updateOpenStore(db, userId, { cash, sign });
+
+		return c.json({ success: true });
 	});
 
 export type IAPI = typeof api;

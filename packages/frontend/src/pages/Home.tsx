@@ -1,30 +1,52 @@
-import { useEmployeeRole } from "../hooks/useApi";
-import { LoadingSpinner } from "../components/LoadingSpinner";
 import { ErrorDisplay } from "../components/ErrorDisplay";
-import { PlanSalesReport } from "../components/PlanSalesReport";
-import { AdminButtons, CashierButtons } from "../components/Button";
+import { LoadingSpinner } from "../components/LoadingSpinner";
+import PlanSalesFinancialReport from "../components/PlanSalesFinancialReport";
+import { RegisterUser } from "../components/RegisterUser";
+import { useEmployeeRole } from "../hooks/useApi";
 
 export default function Home() {
   const { data, error, isLoading } = useEmployeeRole();
 
+  // Состояния загрузки и ошибок
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorDisplay error={error.message} />;
-  if (!data?.employeeRole)
+
+  // Проверка прав доступа - улучшенная версия
+  if (!data?.employeeRole || data.employeeRole === "null") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-custom-gray dark:bg-gray-900 p-4">
-        <h1 className="mb-4 text-xl sm:text-2xl text-gray-800 dark:text-gray-100 font-bold">
-          У вас нет прав доступа.
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 p-4 sm:p-6">
+        <h1 className="mb-4 text-lg sm:text-xl md:text-2xl text-gray-800 dark:text-gray-100 font-bold">
+          {!data?.employeeRole
+            ? "У вас нет прав доступа."
+            : "Завершите регистрацию."}
         </h1>
+        {data?.employeeRole === "null" && (
+          <RegisterUser
+            onRegister={(id) => {
+              console.log("Новый пользователь Telegram ID:", id);
+              // 👉 здесь можно вызвать API для сохранения в БД
+            }}
+          />
+        )}
       </div>
     );
+  }
+
+  const isCashier = data.employeeRole === "CASHIER";
+  const isAdmin = data.employeeRole === "ADMIN";
+  const isSuperAdmin = data.employeeRole === "SUPERADMIN";
 
   return (
-    <div className="flex flex-col items-center bg-custom-gray dark:bg-gray-900 justify-center w-full py-12 h-screen">
-      <div className="relative min-h-[150px] w-full top-[-120px]">
-        <PlanSalesReport />
+    <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-8 sm:pt-12 px-4 sm:px-6">
+      {/* Плитки */}
+      <div className="w-full max-w-7xl">
+        {(isCashier || isAdmin || isSuperAdmin) && <PlanSalesFinancialReport />}
       </div>
-      {data.employeeRole === "CASHIER" && <CashierButtons />}
-      {data.employeeRole === "ADMIN" && <AdminButtons />}
+
+      {/* Кнопки */}
+      <div className="w-full max-w-md mt-6">
+        {/* Дополнительные компоненты можно добавить здесь */}
+      </div>
     </div>
   );
 }

@@ -1,17 +1,22 @@
 import { hc } from "hono/client";
-import type { IAPI } from "@evo-app/backend";
+import type { IAPI } from "@work-app/backend";
 import { telegram } from "./telegram";
 
 console.log("telegram.WebApp.initData:", telegram.WebApp.initData);
 
-if (!telegram.WebApp.initData) {
-  console.error("Telegram WebApp initData отсутствует.");
-}
+let initData = telegram.WebApp.initData || "";
 
+if (!initData) {
+  const storedId = localStorage.getItem("telegramId");
+  if (storedId) {
+    initData = "guest"; // чтобы пройти auth
+  }
+}
 export const client = hc<IAPI>("", {
   init: {
     headers: {
       initData: telegram.WebApp.initData || "guest",
+      "telegram-id": localStorage.getItem("telegramId") || "",
     },
   },
 });

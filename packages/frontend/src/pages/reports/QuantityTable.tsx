@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useMe } from "../../hooks/useApi";
-import { GoBackButton } from "../../components/GoBackButton";
 import { ShopSelector } from "../../components/ShopSelector";
 import { GroupSelector } from "../../components/GroupSelector";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { ErrorDisplay } from "../../components/ErrorDisplay";
 import { DynamicTable } from "../../components/DynamicTable";
+import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 
 interface GroupOption {
   name: string;
@@ -32,6 +32,8 @@ export default function QuantityTableProps() {
 
   const { data } = useMe();
   const userId = data?.id.toString();
+
+  useTelegramBackButton();
 
   useEffect(() => {
     const fetchSalesData = async () => {
@@ -166,7 +168,6 @@ export default function QuantityTableProps() {
     );
     return (
       <div className="p-4 flex flex-col items-start bg-custom-gray dark:bg-gray-900 gap-4 max-w-md mx-auto">
-        <GoBackButton />
         {/* Заголовок с информацией */}
         <div className="text-sm text-gray-700 dark:text-gray-400">
           <p className="font-semibold">{shopName}</p>
@@ -179,7 +180,6 @@ export default function QuantityTableProps() {
 
   return (
     <div className="fixed  w-screen h-screen px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900">
-      <GoBackButton />
       <h1 className="text-xl font-bold"> Товарные остатки</h1>
 
       <div className="w-full">

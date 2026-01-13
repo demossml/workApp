@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GoBackButton } from "../../components/GoBackButton";
+import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 
 // Определяем тип GroupOption для TypeScript
 interface GroupOption {
@@ -20,6 +20,8 @@ const Settings = () => {
     bonus: string;
   } | null>(null);
   const [showGroups, setShowGroups] = useState(false);
+
+  useTelegramBackButton();
 
   // Загружаем доступные группы аксессуаров при монтировании компонента
   useEffect(() => {
@@ -97,9 +99,6 @@ const Settings = () => {
 
   return (
     <div className="container mx-auto p-4">
-      <div className="mb-4">
-        <GoBackButton />
-      </div>
       <h2 className="text-2xl font-bold mb-4">
         Настройки оплаты и выбора групп аксессуаров
       </h2>

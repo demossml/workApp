@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { GoBackButton } from "../../components/GoBackButton"; // Импортируем компонент "Назад"
 import { PeriodSelector } from "../../components/Period";
 import { ShopSelector } from "../../components/ShopSelector"; // Импортируем компонент "Назад"
 import { useMe } from "../../hooks/useApi";
@@ -9,6 +8,7 @@ import { DynamicTable } from "../../components/DynamicTable";
 import { ErrorDisplay } from "../../components/ErrorDisplay";
 import { GroupSelector } from "../../components/GroupSelector";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
+import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 
 // Интерфейсы для типов данных
 interface GroupOption {
@@ -50,6 +50,10 @@ export default function Order() {
 
   const [selectedPeriod, setSelectedPeriod] = useState<number | null>(null);
   const [isLoadingShops, setIsLoadingShops] = useState<boolean>(false);
+
+  useTelegramBackButton({
+    show: true,
+  });
 
   const toggleInstructions = () => {
     setShowInstructions(!showInstructions);
@@ -281,8 +285,6 @@ export default function Order() {
 
     return (
       <div className="p-4 flex flex-col items-start bg-custom-gray dark:bg-gray-900 gap-4 max-w-md mx-auto">
-        <GoBackButton />
-
         {/* Заголовок с информацией */}
         <div className="text-sm text-gray-700 dark:text-gray-400">
           {/* Формат: Имя магазина, 31 янв → 4 фев */}
@@ -311,7 +313,6 @@ export default function Order() {
     <div className="p-4 flex  w-screen h-screen flex-col items-start gap-4 max-w-md  dark:bg-gray-900 mx-auto">
       <div className="flex items-center justify-between w-full">
         {/* Кнопка "Назад" */}
-        <GoBackButton />
 
         {/* Кнопка "Инструкция" */}
         <button

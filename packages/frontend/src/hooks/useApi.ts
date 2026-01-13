@@ -26,8 +26,28 @@ export const useSchedules = () =>
     queryFn: () => client.api.schedules.$get().then((res) => res.json()),
   });
 
+type ShopBrief = { uuid: string; name: string };
+
 export const useGetShops = () =>
-  useQuery({
+  useQuery<{ shopsNameAndUuid: ShopBrief[] }, Error>({
     queryKey: ["getShops"],
-    queryFn: () => client.api.shops.$get().then((res) => res.json()),
+    queryFn: async () => {
+      const res = await client.api.shops.$get();
+      const data = await res.json();
+      return data as { shopsNameAndUuid: ShopBrief[] };
+    },
   });
+
+// export const useGetShopNames = () =>
+//   useQuery<string[], Error>({
+//     queryKey: ["getShopNames"],
+//     queryFn: async () => {
+//       const res = await client.api.evotor["shops-names"].$get();
+//       if (!res.ok) {
+//         throw new Error("Ошибка загрузки названий магазинов");
+//       }
+//       const data = await res.json();
+//       return data.shopsName || [];
+//     },
+//     select: (data) => data || [], // на всякий случай
+//   });

@@ -1,105 +1,205 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { DateRangePicker } from "../../components/DateRangePicker";
 import { ShopSelector } from "../../components/ShopSelector";
-import { useMe } from "../../hooks/useApi";
 import { GroupSelector } from "../../components/GroupSelector";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { ErrorDisplay } from "../../components/ErrorDisplay";
-import { GoBackButton } from "../../components/GoBackButton";
 import { DynamicTable } from "../../components/DynamicTable";
-import ReportUploader from "../../components/ReportUploader";
-// import DownloadTableButton from "../../components/DownloadTableButton";
-
-// import SendToTelegramButton from "../../components/SendToTelegramButton";
+import { useMe } from "../../hooks/useApi";
+import { motion } from "framer-motion";
+import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { telegram, isTelegramMiniApp } from "../../helpers/telegram";
 
 interface GroupOption {
   name: string;
   uuid: string;
 }
 
-// Интерфейс для структуры данных отчёта
 interface ReportData {
-  salesData: Record<string, { quantitySale: number; sum: number }>; // Сортированные данные по продажам
+  salesData: Record<string, { quantitySale: number; sum: number }>;
   shopName: string;
-  startDate: string; // Начальная дата
-  endDate: string; // Конечная дата
+  startDate: string;
+  endDate: string;
 }
 
 export default function SalesReport() {
-  // Declare ref at the top level of the component
-  const pageRef = useRef<HTMLDivElement>(null);
-
   const [shopOptions, setShopOptions] = useState<Record<string, string>>({});
-  const [selectedShop, setSelectedShop] = useState<string | null>(null); // Добавляем состояние для выбранного магазина
+  const [selectedShop, setSelectedShop] = useState<string | null>(null);
   const [groupOptions, setGroupOptions] = useState<GroupOption[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [isLoadingGroups, setIsLoadingGroups] = useState<boolean>(false);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [reportData, setReportData] = useState<ReportData | null>(null);
-  const [isLoadingReport, setIsLoadingReport] = useState<boolean>(false);
-  const [isLoadingShops, setIsLoadingShops] = useState<boolean>(false);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
+  const [isLoadingShops, setIsLoadingShops] = useState(false);
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
 
-  const { data } = useMe(); // Получаем данные из хука useAuthCheck
-  const userId = data?.id.toString() || " ";
+  // Состояния для отслеживания открытых модальных окон
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [isShopSelectorOpen, setIsShopSelectorOpen] = useState(false);
+  const [isGroupSelectorOpen, setIsGroupSelectorOpen] = useState(false);
 
+  const isMiniApp = isTelegramMiniApp();
+
+  useTelegramBackButton();
+
+  const { data } = useMe();
+  const userId = data?.id?.toString() || "";
+
+  const isFormValid =
+    !!startDate && !!endDate && !!selectedShop && selectedGroups.length > 0;
+
+  // Проверяем, что все модальные окна закрыты
+  const areAllModalsClosed =
+    !isDatePickerOpen && !isShopSelectorOpen && !isGroupSelectorOpen;
+
+  // 🔹 Функция генерации отчёта с useCallback
+  const submitForecast = useCallback(async () => {
+    if (!isFormValid) {
+      if (isMiniApp) {
+        telegram.WebApp.HapticFeedback.impactOccurred("light");
+      } else {
+        alert("Пожалуйста, выберите все параметры для формирования отчёта.");
+      }
+      return;
+    }
+
+    setIsLoadingReport(true);
+    if (isMiniApp) {
+      telegram.WebApp.MainButton.showProgress(true);
+    }
+    try {
+      const response = await fetch("/api/evotor/sales-result", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startDate,
+          endDate,
+          shopUuid: selectedShop,
+          groups: selectedGroups,
+        }),
+      });
+      if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
+      const report: ReportData = await response.json();
+      setReportData(report);
+    } catch (err) {
+      console.error(err);
+      setError("Не удалось получить отчёт");
+      if (isMiniApp) {
+        telegram.WebApp.HapticFeedback.impactOccurred("light");
+      }
+    } finally {
+      setIsLoadingReport(false);
+      if (isMiniApp) {
+        telegram.WebApp.MainButton.showProgress(false);
+      }
+    }
+  }, [
+    startDate,
+    endDate,
+    selectedShop,
+    selectedGroups,
+    isFormValid,
+    isMiniApp,
+  ]);
+
+  // 🔹 Инициализация Telegram Mini App
+  useEffect(() => {
+    if (!isMiniApp) return;
+
+    // Настройка темы
+    const theme = telegram.WebApp.colorScheme;
+    document.documentElement.classList.toggle("dark", theme === "dark");
+
+    // Установка цвета фона
+    telegram.WebApp.setBackgroundColor(
+      theme === "dark" ? "#111827" : "#f9fafb"
+    );
+
+    // Настройка главной кнопки
+    telegram.WebApp.MainButton.setText("Сгенерировать отчёт");
+    telegram.WebApp.MainButton.setParams({
+      color: "#0088cc",
+      text_color: "#ffffff",
+    });
+
+    const handleGenerate = () => {
+      telegram.WebApp.HapticFeedback.impactOccurred("light");
+      submitForecast();
+    };
+
+    telegram.WebApp.MainButton.onClick(handleGenerate);
+
+    return () => {
+      // Очистка при размонтировании
+      telegram.WebApp.MainButton.offClick(handleGenerate);
+    };
+  }, [isMiniApp, submitForecast]);
+
+  // 🔹 Управление видимостью MainButton с учётом модальных окон
+  useEffect(() => {
+    if (!isMiniApp) return;
+
+    if (
+      isFormValid &&
+      !error &&
+      !isLoadingReport &&
+      !reportData &&
+      areAllModalsClosed
+    ) {
+      telegram.WebApp.MainButton.show();
+    } else {
+      telegram.WebApp.MainButton.hide();
+    }
+  }, [
+    isMiniApp,
+    isFormValid,
+    error,
+    isLoadingReport,
+    reportData,
+    areAllModalsClosed,
+  ]);
+
+  // 🔹 Загрузка магазинов
   useEffect(() => {
     const fetchSalesData = async () => {
-      setIsLoadingShops(true); // Начало загрузки групп
-
+      setIsLoadingShops(true);
       try {
         const response = await fetch("/api/evotor/shops", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId }),
         });
-
-        if (!response.ok) {
-          throw new Error(`Ошибка: ${response.status}`);
-        }
-
+        if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
         const data = await response.json();
         setShopOptions(data.shopOptions);
-
-        // Если магазины есть, устанавливаем первый магазин как выбранный
         if (Object.keys(data.shopOptions).length > 0) {
           const defaultShopUuid = Object.keys(data.shopOptions)[0];
-          setSelectedShop(defaultShopUuid); // Устанавливаем первый магазин как выбранный
-          await fetchGroups(defaultShopUuid); // Получаем группы для первого магазина
+          setSelectedShop(defaultShopUuid);
+          await fetchGroups(defaultShopUuid);
         }
       } catch (err) {
         console.error(err);
+        setError("Не удалось загрузить магазины");
       } finally {
-        setIsLoadingShops(false); // Завершение загрузки групп
+        setIsLoadingShops(false);
       }
     };
-
-    if (userId) {
-      fetchSalesData();
-    }
+    if (userId) fetchSalesData();
   }, [userId]);
 
+  // 🔹 Загрузка групп
   const fetchGroups = async (shopUuid: string) => {
-    setIsLoadingGroups(true); // Начало загрузки групп
+    setIsLoadingGroups(true);
     try {
-      const dataGroups = {
-        shopUuid: shopUuid,
-      };
       const response = await fetch("/api/evotor/groups-by-shop", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(dataGroups),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shopUuid }),
       });
-
-      if (!response.ok) {
+      if (!response.ok)
         throw new Error(`Ошибка загрузки групп: ${response.status}`);
-      }
-
       const data: { groups: GroupOption[] } = await response.json();
       setGroupOptions(data.groups || []);
       setSelectedGroups([]);
@@ -107,53 +207,11 @@ export default function SalesReport() {
       console.error(err);
       setError("Не удалось загрузить группы для выбранного магазина");
     } finally {
-      setIsLoadingGroups(false); // Завершение загрузки групп
+      setIsLoadingGroups(false);
     }
   };
 
-  const submitForecast = async () => {
-    // Проверяем, что все необходимые данные выбраны
-    if (
-      !startDate ||
-      !endDate ||
-      !selectedShop ||
-      selectedGroups.length === 0
-    ) {
-      alert("Пожалуйста, выберите все параметры для формирования прогноза.");
-      return;
-    }
-    const data = {
-      startDate: startDate, // Устанавливаем начало дня
-      endDate: endDate,
-      shopUuid: selectedShop,
-      groups: selectedGroups,
-    };
-    setIsLoadingReport(true);
-
-    try {
-      const response = await fetch("/api/evotor/sales-result", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Ошибка: ${response.status}`);
-      }
-
-      const report: ReportData = await response.json();
-      setReportData(report);
-    } catch (err) {
-      console.error(err);
-      setError("Не удалось получить отчёт");
-    } finally {
-      setIsLoadingReport(false); // Завершаем загрузку
-    }
-  };
-
-  // Форматирование даты
+  // 🔹 Форматирование дат
   const formatDate = (date: Date) =>
     `${date.getDate().toString().padStart(2, "0")} ${date.toLocaleString(
       "default",
@@ -172,30 +230,22 @@ export default function SalesReport() {
     return `${shopName}, ${formattedStartDate} → ${formattedEndDate}`;
   };
 
-  if (isLoadingReport) {
-    return <LoadingSpinner />;
-  }
+  // 🔹 Состояния загрузки / ошибки
+  if (isLoadingReport) return <LoadingSpinner />;
+  if (error) return <ErrorDisplay error={error} />;
 
-  if (error) {
-    return <ErrorDisplay error={error} />;
-  }
-
+  // 🔹 Нет магазинов
   if (!Object.keys(shopOptions).length) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-custom-gray p-4">
-        <div className="flex items-center mb-4">
-          {/* Loading spinner */}
-          <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 dark:text-blue-400 border-solid rounded-full animate-spin" />
-          <h1 className="ml-4 text-xl sm:text-2xl text-gray-800 font-bold" />
-        </div>
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+        <LoadingSpinner />
       </div>
     );
   }
 
+  // 🔹 Отчёт готов
   if (reportData) {
     const { salesData, startDate, endDate, shopName } = reportData;
-
-    // Преобразуем объект в массив
     const tableData = Object.entries(salesData).map(
       ([productName, { quantitySale, sum }]) => ({
         productName,
@@ -205,82 +255,110 @@ export default function SalesReport() {
     );
 
     return (
-      <div className="p-4  flex-col block items-start bg-custom-gray gap-4 max-w-md mx-auto  dark:bg-gray-900">
-        <GoBackButton />
-        {/* Заголовок с информацией */}
-        <div className="text-sm dark:text-gray-400">
-          <p className="font-semibold">
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="w-full bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 flex flex-col items-center"
+        style={{
+          minHeight: "calc(100vh - 130px)", // Оставляем место под BottomNavigation
+          paddingTop: "calc(env(safe-area-inset-top) + 70px)", // 🟦 увеличенный отступ сверху
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 10px)",
+        }}
+      >
+        <motion.div
+          className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-none shadow-lg p-4 w-full"
+          initial={{ opacity: 0, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          style={{
+            height: "100%",
+            maxWidth: "100%", // 🟦 РАСТЯГИВАЕМ НА ВСЮ ШИРИНУ
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <h1 className="text-lg sm:text-xl font-semibold mb-2 px-2">
             {formatPeriod(shopName, startDate, endDate)}
-          </p>
-          <p className="font-semibold">
+          </h1>
+
+          <p className="text-gray-600 dark:text-gray-400 mb-4 px-2">
             Общая сумма продаж:{" "}
-            <span className="font-semibold ">
+            <span className="font-semibold text-blue-600 dark:text-blue-400">
               {Object.values(salesData)
                 .reduce((acc, item) => acc + item.sum, 0)
                 .toLocaleString("ru-RU")}{" "}
               ₽
             </span>
           </p>
-        </div>
 
-        {/* Использование компонента DynamicTable */}
-        <DynamicTable data={tableData} />
-        {/* <DownloadTableButton data={tableData} fileName="Отчёт_сотрудников" /> */}
-
-        <ReportUploader ref={pageRef} />
-      </div>
+          {/* 🟦 Таблица во всю ширину */}
+          <div className="flex-1 min-h-0 w-full">
+            <DynamicTable data={tableData} />
+          </div>
+        </motion.div>
+      </motion.div>
     );
   }
 
+  // 🔹 Основной экран
   return (
-    <div className="fixed  w-screen h-screen px-4  dark:text-gray-400 dark:bg-gray-900">
-      <GoBackButton />
-      <h1 className="text-3xl font-bold text-center">Отчёт по продажам</h1>
-      <div className="w-full">
+    <motion.div
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="min-h-screen w-full px-4 sm:px-6 py-10 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 flex flex-col items-center"
+    >
+      <motion.h1
+        className="text-xl sm:text-2xl font-semibold mb-6"
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        📊 Отчёт по продажам
+      </motion.h1>
+      <motion.div
+        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg p-4 sm:p-6 w-full max-w-3xl space-y-5"
+        initial={{ opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+      >
         <DateRangePicker
           onDateChange={(start, end) => {
             setStartDate(start);
             setEndDate(end);
           }}
+          onOpenChange={setIsDatePickerOpen}
         />
-      </div>
-
-      <div className="w-full">
-        {/* Передаем userId как строку, даже если он пустой */}
         <ShopSelector
           shopOptions={shopOptions}
           isLoadingShops={isLoadingShops}
           fetchGroups={fetchGroups}
-          selectedShop={selectedShop} // Передаем текущее состояние выбранного магазина
-          setSelectedShop={setSelectedShop} // Передаем функцию для обновления выбранного магазина
+          selectedShop={selectedShop}
+          setSelectedShop={setSelectedShop}
+          onOpenChange={setIsShopSelectorOpen}
         />
-      </div>
-      {/* Выбор группы */}
-      <div className="w-full">
         <GroupSelector
-          groupOptions={groupOptions} // Передаем данные групп
-          selectedGroups={selectedGroups} // Передаем выбранные группы
-          setSelectedGroups={setSelectedGroups} // Функция для обновления выбранных групп
-          isLoadingGroups={isLoadingGroups} // Флаг загрузки
+          groupOptions={groupOptions}
+          selectedGroups={selectedGroups}
+          setSelectedGroups={setSelectedGroups}
+          isLoadingGroups={isLoadingGroups}
+          onOpenChange={setIsGroupSelectorOpen}
         />
-      </div>
-
-      {/* <SortCriteriaPicker onSortChange={handleSortChange} /> */}
-
-      {/* Кнопка "Сформировать прогноз" */}
-      <button
-        onClick={submitForecast} // Вызываем функцию отправки данных
-        className={`w-full p-2 rounded-md text-white mt-8 ${
-          startDate && endDate && selectedShop && selectedGroups.length
-            ? "bg-blue-500 hover:bg-blue-600 dark:bg-blue-400 dark:hover:bg-blue-500"
-            : "bg-gray-300 dark:bg-gray-700"
-        }`}
-        disabled={
-          !(startDate && endDate && selectedShop && selectedGroups.length) // Блокируем кнопку, если не выбраны все параметры
-        }
-      >
-        Сгенерировать отчет
-      </button>
-    </div>
+        {!isMiniApp && (
+          <motion.button
+            onClick={submitForecast}
+            className={`w-full py-3 rounded-xl font-medium text-white transition ${
+              isFormValid
+                ? "bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                : "bg-gray-300 dark:bg-gray-700 cursor-not-allowed"
+            }`}
+            disabled={!isFormValid}
+            whileHover={{ scale: isFormValid ? 1.03 : 1 }}
+            whileTap={{ scale: isFormValid ? 0.97 : 1 }}
+          >
+            Сгенерировать отчёт
+          </motion.button>
+        )}
+      </motion.div>
+    </motion.div>
   );
 }

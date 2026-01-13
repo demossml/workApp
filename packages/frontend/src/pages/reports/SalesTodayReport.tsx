@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 
 export default function SalesTodayReport() {
   const [salesData, setSalesData] = useState<Record<
@@ -6,6 +7,8 @@ export default function SalesTodayReport() {
     Record<string, number>
   > | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useTelegramBackButton();
 
   useEffect(() => {
     const fetchSalesData = async () => {

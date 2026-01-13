@@ -1,5 +1,5 @@
 #:schema node_modules/wrangler/config-schema.json
-name = "evo-app"
+name = "work-app"
 main = "src/index.ts"
 compatibility_date = "2024-10-22"
 compatibility_flags = ["nodejs_compat"]
@@ -7,15 +7,34 @@ assets = { directory = "dist"}
 upload_source_maps = true
 
 
+routes = [
+  { pattern = "demossml.cc", custom_domain = true }
+]
+
+
 [[d1_databases]]
-binding = "DB" # i.e. available in your Worker on env.DB
-database_name = "d1-bot"
-database_id = "17efe5ea-cab5-4ea6-8b12-0bdf77c375fb"
+binding = "DB" # доступно как env.DB
+database_name = "work-db"
+database_id = "0c434bad-9113-4689-9a49-becf4304330b"
+
+migrations_dir = "./drizzle"
+
+
 
 [ai]
-binding = "AI" # это имя, под которым ты будешь обращаться к AI в коде (env.AI)
+binding = "AI"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "evotor"
+preview_bucket_name = "evotor"
+
+
+
 
 
 [vars]
-EVOTOR_API_TOKEN = "1126f94c-2b19-490e-872c-49ded3be310e"
-BOT_TOKEN = "5405385673:AAFvJDIlR4BqQmnXDBGS8XOzEGSpVmE1w84"
+EVOTOR_API_TOKEN = "d786c889-9851-48d3-bafc-c0ed41ca1cc2"
+BOT_TOKEN = "8410825865:AAFKN8i1X8xV7hf1VJq3gvsgNOclPQSRPnY"
+R2_PUBLIC_URL = "c1e9f63e6135bb4fa5600e83bf4a1a4b.r2.cloudflarestorage.com/evotor"
+

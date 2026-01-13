@@ -2,6 +2,7 @@ import type React from "react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import ScheduleTableView from "../../components/ScheduleTableView";
+import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 
 interface Shop {
   uuid: string;
@@ -38,6 +39,8 @@ const ScheduleTable: React.FC = () => {
   );
   const [scheduleTable, setScheduleTable] = useState<ScheduleTableEntry[]>([]);
   const [isSaving, setIsSaving] = useState(false); // Добавлено состояние для отслеживания сохранения
+
+  useTelegramBackButton();
 
   const navigate = useNavigate();
 

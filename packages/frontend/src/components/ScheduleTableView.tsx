@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 
 interface ScheduleTableProps {
   scheduleTable: Array<{
@@ -53,30 +54,21 @@ const ScheduleTableView: React.FC<ScheduleTableProps> = ({ scheduleTable }) => {
   };
 
   const formatDate = (dateValue: string | number): string => {
-    // Преобразуем значение в строку, если оно является числом
     const dateString = String(dateValue);
-
-    // Попробуем создать объект Date
     const date = new Date(dateString);
     if (Number.isNaN(date.getTime())) {
-      // Если дата некорректна, возвращаем сообщение об ошибке
       return dateString;
     }
-
-    // const format = (d: Date) =>
-    //   `${d.getUTCDate().toStrƒng().padStart(2, "0")}.${(d.getUTCMonth() + 1)
-    //     .toString()
-    //     .padStart(2, "0")}.${d.getUTCFullYear()}`;
-
-    // Форматируем дату в формате дд.мм.гггг
-    // const day = date.getDate().toString().padStart(1, "0");
-    // const month = (date.getMonth() + 1).toString().padStart(2, "0");
-    // const year = date.getFullYear();
     return `${dateString}`;
   };
 
   return (
-    <div className="overflow-x-auto w-full bg-custom-gray dark:bg-gray-900 rounded-t-lg">
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="overflow-x-auto w-full bg-custom-gray dark:bg-gray-900 rounded-t-lg"
+    >
       <table className="min-w-full table-auto bg-custom-gray dark:bg-gray-900 rounded-lg shadow-md">
         <thead className="bg-gray-100 dark:bg-gray-700">
           <tr>
@@ -89,9 +81,14 @@ const ScheduleTableView: React.FC<ScheduleTableProps> = ({ scheduleTable }) => {
                 <div className="flex items-center">
                   {tableHeaders[key as keyof typeof tableHeaders]}
                   {sortConfig.key === key && (
-                    <span className="ml-1">
+                    <motion.span
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="ml-1 inline-block"
+                    >
                       {sortConfig.direction === "asc" ? "↑" : "↓"}
-                    </span>
+                    </motion.span>
                   )}
                 </div>
               </th>
@@ -99,9 +96,12 @@ const ScheduleTableView: React.FC<ScheduleTableProps> = ({ scheduleTable }) => {
           </tr>
         </thead>
         <tbody>
-          {sortedData.map((row) => (
-            <tr
+          {sortedData.map((row, rowIndex) => (
+            <motion.tr
               key={row.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, delay: rowIndex * 0.03 }}
               className="border-t border-gray-200 dark:border-gray-700"
             >
               {Object.keys(tableHeaders).map((key) => {
@@ -110,11 +110,11 @@ const ScheduleTableView: React.FC<ScheduleTableProps> = ({ scheduleTable }) => {
                 const isWeekend =
                   key === "date" &&
                   (() => {
-                    const dateString = String(value); // Преобразуем значение в строку
+                    const dateString = String(value);
                     const date = new Date(dateString);
-                    if (Number.isNaN(date.getTime())) return false; // Если дата некорректна, не считаем её выходным
+                    if (Number.isNaN(date.getTime())) return false;
                     const day = date.getDay();
-                    return day === 0 || day === 6; // Воскресенье (0) или суббота (6)
+                    return day === 0 || day === 6;
                   })();
 
                 return (
@@ -127,24 +127,29 @@ const ScheduleTableView: React.FC<ScheduleTableProps> = ({ scheduleTable }) => {
                     }`}
                   >
                     {key === "date" ? (
-                      formatDate(value) // Преобразуем дату в читаемый формат
+                      formatDate(value)
                     ) : (
                       <span className="break-all">{value}</span>
                     )}
                   </td>
                 );
               })}
-            </tr>
+            </motion.tr>
           ))}
         </tbody>
       </table>
-      <button
+      <motion.button
         onClick={handleBack}
-        className="btn bg-blue-700 text-white p-2 rounded w-full"
+        className="btn bg-blue-700 text-white p-2 rounded w-full mt-4"
+        whileHover={{ scale: 1.04 }}
+        whileTap={{ scale: 0.97 }}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.1 }}
       >
         Назад
-      </button>
-    </div>
+      </motion.button>
+    </motion.div>
   );
 };
 

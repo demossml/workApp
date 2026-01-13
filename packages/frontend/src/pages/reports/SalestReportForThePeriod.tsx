@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { DateRangePicker } from "../../components/DateRangePicker";
-import { GoBackButton } from "../../components/GoBackButton";
+import { motion } from "framer-motion";
+import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 
 type PaymentData = {
   sell: Record<string, number>;
@@ -21,13 +22,10 @@ type ReportData = {
 
 const formatAmount = (amount: number): number | string => {
   const roundedSum = amount.toFixed(2);
-
-  // Проверка на целое число
   if (Number.parseFloat(roundedSum) % 1 === 0) {
-    return Number.parseInt(roundedSum, 10); // Возвращаем целое число
+    return Number.parseInt(roundedSum, 10);
   }
-
-  return Number.parseFloat(roundedSum); // Возвращаем с двумя знаками после запятой
+  return Number.parseFloat(roundedSum);
 };
 
 export default function SalesTodayReport() {
@@ -37,26 +35,21 @@ export default function SalesTodayReport() {
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
+  useTelegramBackButton();
+
   const submitForecast = async () => {
-    // Проверяем, что все необходимые данные выбраны
     if (!startDate || !endDate) {
       alert("Пожалуйста, выберите все параметры для формирования прогноза.");
       return;
     }
-    const data = {
-      startDate: startDate, // Устанавливаем начало дня
-      endDate: endDate,
-    };
-
-    setLoading(true); // Устанавливаем состояние загрузки
-    setError(null); // Сбрасываем предыдущую ошибку
+    const data = { startDate, endDate };
+    setLoading(true);
+    setError(null);
 
     try {
       const response = await fetch("/api/evotor/sales-garden-report", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
       if (!response.ok) {
@@ -68,24 +61,37 @@ export default function SalesTodayReport() {
       console.error(err);
       setError("Не удалось получить отчет");
     } finally {
-      setLoading(false); // Сбрасываем состояние загрузки
+      setLoading(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4"
+      >
         <div className="flex items-center mb-4">
-          {/* Loading spinner */}
           <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
           <h1 className="ml-4 text-xl sm:text-2xl text-gray-800 font-bold" />
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   if (error) {
-    return <div className="text-red-500 text-center mt-4">Ошибка: {error}</div>;
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="text-red-500 text-center mt-4"
+      >
+        Ошибка: {error}
+      </motion.div>
+    );
   }
 
   if (reportData) {
@@ -101,35 +107,32 @@ export default function SalesTodayReport() {
     } = reportData;
 
     const totalPayments: Record<string, number> = {};
-
-    // Агрегируем данные по платежам
     Object.values(salesDataByShopName).forEach((data) => {
       Object.entries(data.sell).forEach(([paymentType, amount]) => {
         totalPayments[paymentType] = (totalPayments[paymentType] || 0) + amount;
       });
-
       Object.entries(data.refund).forEach(([paymentType, amount]) => {
         totalPayments[paymentType] = (totalPayments[paymentType] || 0) + amount;
       });
     });
 
     return (
-      <div className="fixed  w-screen h-screen px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900 overflow-y-auto">
-        <GoBackButton />
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="fixed w-screen h-screen px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900 overflow-y-auto"
+      >
         <h2 className="text-xl font-bold">Сводный финансовый отчет</h2>
-
         <div className="mt-4">
           <h3 className="text-xl font-bold">
             За период с {startDate} по {endDate}
           </h3>
         </div>
-
         <ul className="mt-4 space-y-4">
-          {Object.entries(salesDataByShopName).map(([shopName, data]) => {
-            const shopCashData = cashOutcomeData[shopName] || {}; // Данные о выплатах для магазина
-            const shopCash = cash[shopName] || 0; // Остаток денежных средств для магазина
-
-            // Логика для вычисления totalShopPayments с округлением
+          {Object.entries(salesDataByShopName).map(([shopName, data], idx) => {
+            const shopCashData = cashOutcomeData[shopName] || {};
+            const shopCash = cash[shopName] || 0;
             const totalShopPayments = Object.values(shopCashData).reduce(
               (total, amount) => total + amount,
               0
@@ -137,11 +140,20 @@ export default function SalesTodayReport() {
             const formattedShopPayments = formatAmount(totalShopPayments);
 
             return (
-              <li key={shopName} className="bg-white shadow-md rounded-lg p-4">
+              <motion.li
+                key={shopName}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.4,
+                  delay: idx * 0.07,
+                  ease: "easeInOut",
+                }}
+                className="bg-white shadow-md rounded-lg p-4"
+              >
                 <div className="flex items-center justify-between">
                   <strong className="text-lg">{shopName}</strong>
                 </div>
-
                 <div className="mt-2">
                   <h4 className="font-semibold">Продажи:</h4>
                   <ul>
@@ -155,13 +167,11 @@ export default function SalesTodayReport() {
                       </li>
                     ))}
                   </ul>
-
                   <div className="flex justify-between text-gray-700 mt-1">
                     <span className="font-semibold">Всего продажи:</span>
                     <span className="font-bold">{data.totalSell} ₽</span>
                   </div>
                 </div>
-
                 {Object.keys(data.refund).length > 0 && (
                   <div className="mt-2">
                     <h4 className="font-semibold">Возвраты:</h4>
@@ -180,8 +190,6 @@ export default function SalesTodayReport() {
                     </ul>
                   </div>
                 )}
-
-                {/* Добавляем блок с данными о выплатах */}
                 {Object.keys(shopCashData).length > 0 && (
                   <div className="mt-2">
                     <h4 className="font-semibold">Выплаты:</h4>
@@ -202,25 +210,26 @@ export default function SalesTodayReport() {
                     </ul>
                   </div>
                 )}
-
                 {Object.keys(shopCashData).length > 0 && (
                   <div className="flex justify-between text-gray-700 mt-1">
                     <span className="font-semibold">Всего выплаты:</span>
                     <span className="font-bold">{formattedShopPayments} ₽</span>
                   </div>
                 )}
-
-                {/* Добавляем блок с остатком денежных средств */}
                 <div className="flex justify-between text-gray-700 mt-1">
                   <span className="font-semibold">Нал. в кассе:</span>
                   <span className="font-bold">{formatAmount(shopCash)} ₽</span>
                 </div>
-              </li>
+              </motion.li>
             );
           })}
         </ul>
-
-        <div className="mt-6 space-y-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+          className="mt-6 space-y-4"
+        >
           <h3 className="text-xl font-semibold">Общий итог:</h3>
           <div className="bg-white shadow-md rounded-lg p-4">
             <ul>
@@ -248,15 +257,12 @@ export default function SalesTodayReport() {
                   {formatAmount(totalPayments["Нал. средствами:"] || 0)} ₽
                 </span>
               </li>
-
               <li className="flex font-bold justify-between text-gray-700 mt-1">
                 <span>Итого продажи:</span>
                 <span className="font-bold">
                   {formatAmount(grandTotalSell)} ₽
                 </span>
               </li>
-
-              {/* Добавляем общий остаток денежных средств */}
               <li className="flex font-bold justify-between text-gray-700 mt-1">
                 <span>Итого нал. в кассе:</span>
                 <span className="font-bold">
@@ -268,37 +274,48 @@ export default function SalesTodayReport() {
               </li>
             </ul>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     );
   }
+
   return (
-    <div className="fixed  w-screen h-screen px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900">
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="fixed w-screen h-screen px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900"
+    >
       <h1 className="text-xl font-bold"> Сводный финансовый отчет</h1>
-      <GoBackButton />
+
       <div className="w-full">
         <DateRangePicker
           onDateChange={(start, end) => {
             setStartDate(start);
             setEndDate(end);
           }}
-        />{" "}
+        />
       </div>
-
-      {/* Кнопка "Сформировать прогноз" */}
-      <button
-        onClick={submitForecast} // Вызываем функцию отправки данных
-        className={`w-full p-2 rounded-md  dark:text-gray-400 mt-8 ${
+      <motion.button
+        onClick={submitForecast}
+        className={`w-full p-2 rounded-md dark:text-gray-400 mt-8 ${
           startDate && endDate
-            ? " bg-blue-400 dark:hover:bg-blue-500"
+            ? "bg-blue-400 dark:hover:bg-blue-500"
             : "bg-gray-700"
         }`}
-        disabled={
-          !(startDate && endDate) // Блокируем кнопку, если не выбраны все параметры
-        }
+        disabled={!(startDate && endDate)}
+        whileHover={{
+          scale: startDate && endDate ? 1.04 : 1,
+        }}
+        whileTap={{
+          scale: startDate && endDate ? 0.97 : 1,
+        }}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.1 }}
       >
         Сгенерировать отчет
-      </button>
-    </div>
+      </motion.button>
+    </motion.div>
   );
 }

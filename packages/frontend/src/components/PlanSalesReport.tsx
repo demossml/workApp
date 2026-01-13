@@ -1,5 +1,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { LoadingSpinner } from "./LoadingSpinner";
 
 interface SalesData {
   [shopName: string]: {
@@ -13,9 +15,11 @@ export const PlanSalesReport: React.FC = () => {
   const [salesData, setSalesData] = useState<SalesData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedShop, setExpandedShop] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchSalesData = async () => {
+      setIsLoading(false);
       try {
         const response = await fetch("/api/evotor/plan-for-today");
         if (!response.ok) {
@@ -26,6 +30,8 @@ export const PlanSalesReport: React.FC = () => {
       } catch (err) {
         console.error(err);
         setError("Не удалось загрузить данные о продажах");
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -42,6 +48,9 @@ export const PlanSalesReport: React.FC = () => {
         Ошибка: {error}
       </div>
     );
+  }
+  if (isLoading) {
+    return <LoadingSpinner />;
   }
 
   if (!salesData) {
@@ -70,9 +79,12 @@ export const PlanSalesReport: React.FC = () => {
         : [];
 
       return (
-        <li
+        <motion.li
           key={shopName}
           className={`bg-custom-gray dark:bg-gray-800 shadow-md mt-2 rounded-lg p-0 border-l-4 ${colorClass}`}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20 }}
         >
           <button
             onClick={() => toggleExpand(shopName)}
@@ -98,11 +110,13 @@ export const PlanSalesReport: React.FC = () => {
             </div>
           </button>
 
-          {/* Контейнер для списка товаров внутри плитки */}
-          <div
-            className={`${
-              expandedShop === shopName ? "max-h-[500px]" : "max-h-0"
-            } overflow-hidden transition-all duration-300 ease-in-out`}
+          <motion.div
+            animate={{
+              maxHeight: expandedShop === shopName ? 500 : 0,
+              opacity: expandedShop === shopName ? 1 : 0,
+            }}
+            transition={{ duration: 0.1, ease: "easeInOut" }}
+            className="overflow-hidden transition-all duration-300 ease-in-out"
           >
             {expandedShop === shopName && (
               <div className="mt-4 bg-custom-gray dark:bg-gray-700 p-3 rounded">
@@ -129,8 +143,8 @@ export const PlanSalesReport: React.FC = () => {
                 )}
               </div>
             )}
-          </div>
-        </li>
+          </motion.div>
+        </motion.li>
       );
     }
   );

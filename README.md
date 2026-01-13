@@ -14,7 +14,6 @@ $ pnpm run deploy
 ### Dev Stack
 
 - telegram bot (button + mini app) ->
-- cloudflared (dev.evotop.cc) ->
 - vite (http://localhost:5137) ->
 - wrangler (http://localhost:8787)
 
@@ -23,3 +22,5 @@ $ pnpm run deploy
 ```sh
 $ pnpm run dev
 ```
+
+https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=<YOUR_WEBHOOK_URL>

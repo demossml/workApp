@@ -1,5 +1,6 @@
 import type React from "react";
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 
 type ShopSelectorProps = {
   userId: string;
@@ -60,7 +61,17 @@ export const ShopSelectorNew: React.FC<ShopSelectorProps> = ({
   };
 
   return (
-    <div>
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -10, scale: 0.95 }}
+      transition={{
+        duration: 0.4,
+        ease: "easeOut",
+        type: "spring",
+        stiffness: 80,
+      }}
+    >
       <div className="flex items-center justify-between w-full mb-4">
         <span className="text-gray-700 dark:text-gray-400 text-sm">
           Магазин
@@ -106,6 +117,6 @@ export const ShopSelectorNew: React.FC<ShopSelectorProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 };
