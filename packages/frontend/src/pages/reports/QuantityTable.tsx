@@ -28,7 +28,7 @@ export default function QuantityTableProps() {
   const [isLoadingReport, setIsLoadingReport] = useState<boolean>(false);
 
   const [isLoadingShops, setIsLoadingShops] = useState<boolean>(false);
-  const [selectedShop, setSelectedShop] = useState<string | null>(null); // Добавляем состояние для выбранного магазина
+  const [selectedShop, setSelectedShop] = useState<string | null>(null);
 
   const { data } = useMe();
   const userId = data?.id.toString();
