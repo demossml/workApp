@@ -1,6 +1,7 @@
 // sendDeadStocksToTelegram.ts
 
 import type { Evotor } from "../src/evotor";
+import { logger } from "../src/logger";
 import { formatDeadStocksMessage } from "./formatDeadStocksMessage";
 import type { DeadStockItem } from "./formatDeadStocksMessage";
 import { sendTelegramMessage } from "./sendTelegramMessage";
@@ -14,11 +15,30 @@ export async function sendDeadStocksToTelegram(
 	TELEGRAM_BOT_TOKEN: string,
 	evotor: Evotor,
 ): Promise<unknown> {
-	const text = await formatDeadStocksMessage(
-		evotor,
-		params.shopUuid,
-		params.items,
-	);
+	try {
+		if (!params.chatId || !params.shopUuid || !params.items?.length) {
+			throw new Error(
+				"Missing required parameters for dead stocks notification",
+			);
+		}
 
-	return sendTelegramMessage(params.chatId, text, TELEGRAM_BOT_TOKEN);
+		const text = await formatDeadStocksMessage(
+			evotor,
+			params.shopUuid,
+			params.items,
+		);
+
+		if (!text || text.trim().length === 0) {
+			throw new Error("Empty message generated for dead stocks");
+		}
+
+		return sendTelegramMessage(params.chatId, text, TELEGRAM_BOT_TOKEN);
+	} catch (error) {
+		logger.error("Failed to send dead stocks to Telegram", {
+			shopUuid: params.shopUuid,
+			itemsCount: params.items?.length || 0,
+			error: error instanceof Error ? error.message : String(error),
+		});
+		throw error;
+	}
 }

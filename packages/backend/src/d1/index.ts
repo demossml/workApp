@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import type {
 	D1Database,
 	// D1PreparedStatement,
@@ -14,9 +15,9 @@ export async function createSalaryBonusTable(db: D1Database): Promise<void> {
         );
         `;
 		await db.prepare(createTableQuery).run();
-		// console.log("Таблица 'salary_bonus' успешно создана или уже существует.");
+		// logger.debug("Таблица 'salary_bonus' успешно создана или уже существует.");
 	} catch (err) {
-		console.error("Ошибка при создании таблицы:", err);
+		logger.error("Ошибка при создании таблицы:", err);
 	}
 }
 
@@ -32,7 +33,7 @@ export async function saveSalaryAndBonus(
 		const checkStatement = db.prepare(checkQuery);
 		const result = await checkStatement.bind(data).first();
 
-		// console.log("Результат проверки существующей записи:", result);
+		// logger.debug("Результат проверки существующей записи:", result);
 
 		if (result) {
 			// Если запись существует, обновляем её
@@ -43,7 +44,7 @@ export async function saveSalaryAndBonus(
             `;
 			const updateStatement = db.prepare(updateQuery);
 			await updateStatement.bind(salary, bonus, data).run();
-			console.log(`Запись с датой ${data} обновлена.`);
+			logger.debug(`Запись с датой ${data} обновлена.`);
 		} else {
 			// Если запись не существует, добавляем новую
 			const insertQuery = `
@@ -52,10 +53,10 @@ export async function saveSalaryAndBonus(
             `;
 			const insertStatement = db.prepare(insertQuery);
 			await insertStatement.bind(data, salary, bonus).run();
-			console.log(`Новая запись с датой ${data} добавлена.`);
+			logger.debug(`Новая запись с датой ${data} добавлена.`);
 		}
 	} catch (err) {
-		console.error("Ошибка при добавлении или обновлении записи:", err);
+		logger.error("Ошибка при добавлении или обновлении записи:", err);
 	}
 }
 
@@ -87,14 +88,14 @@ export async function getSalaryAndBonus(
 
 		// Проверяем, есть ли результаты в поле results
 		if (result?.results && result.results.length > 0) {
-			// console.log("Полученные данные:", result.results[0]);
+			// logger.debug("Полученные данные:", result.results[0]);
 			// Преобразуем результат к типу SalaryBonus после приведения к unknown
 			return result.results[0] as unknown as SalaryBonus;
 		}
-		console.log("Нет записей до указанной даты.");
+		logger.debug("Нет записей до указанной даты.");
 		return null; // Если записей нет, возвращаем null
 	} catch (err) {
-		console.error("Ошибка при получении зарплаты и премии:", err);
+		logger.error("Ошибка при получении зарплаты и премии:", err);
 		return null; // Возвращаем null в случае ошибки
 	}
 }
@@ -111,9 +112,9 @@ export async function createAccessoriesTable(db: D1Database): Promise<void> {
             );
         `;
 		await db.prepare(createTableQuery).run();
-		// console.log("Таблица 'accessories' успешно создана или уже существует.");
+		// logger.debug("Таблица 'accessories' успешно создана или уже существует.");
 	} catch (err) {
-		console.error("Ошибка при создании таблицы:", err);
+		logger.error("Ошибка при создании таблицы:", err);
 	}
 }
 
@@ -127,7 +128,7 @@ export async function saveOrUpdateUUIDs(
             DELETE FROM accessories;
         `;
 		await db.prepare(deleteQuery).run();
-		// console.log("Все существующие записи удалены из таблицы.");
+		// logger.debug("Все существующие записи удалены из таблицы.");
 
 		// Проходим по каждому UUID в массиве и вставляем его
 		const insertQuery = `
@@ -138,10 +139,10 @@ export async function saveOrUpdateUUIDs(
 
 		for (const uuid of uuids) {
 			await insertStatement.bind(uuid).run();
-			// console.log(`Добавлен новый UUID: ${uuid}`);
+			// logger.debug(`Добавлен новый UUID: ${uuid}`);
 		}
 	} catch (err) {
-		console.error("Ошибка при сохранении UUID:", err);
+		logger.error("Ошибка при сохранении UUID:", err);
 	}
 }
 
@@ -162,13 +163,13 @@ export async function getAllUuid(db: D1Database): Promise<string[]> {
 			const uuids = result.results as Array<{ uuid: string }>;
 			return uuids.map((row) => row.uuid); // Извлекаем UUID из результата
 		}
-		console.error(
+		logger.error(
 			"Не удалось получить UUID, структура результата некорректна:",
 			result,
 		);
 		return []; // Возвращаем пустой массив в случае, если структура результата некорректна
 	} catch (err) {
-		console.error("Ошибка при получении UUID:", err);
+		logger.error("Ошибка при получении UUID:", err);
 		return []; // Возвращаем пустой массив в случае ошибки
 	}
 }
@@ -185,9 +186,9 @@ export async function createPlanTable(db: D1Database): Promise<void> {
             );
         `;
 		await db.prepare(createTableQuery).run();
-		// console.log("Таблица 'plan' успешно создана или уже существует.");
+		// logger.debug("Таблица 'plan' успешно создана или уже существует.");
 	} catch (err) {
-		console.error("Ошибка при создании таблицы:", err);
+		logger.error("Ошибка при создании таблицы:", err);
 	}
 }
 
@@ -234,7 +235,7 @@ export async function updatePlan(
 				await updateStatement.bind(sum, date, shopUuid).run();
 			}
 
-			// console.log(`Обновлено ${checkResult.count} записей для даты ${date}`);
+			// logger.debug(`Обновлено ${checkResult.count} записей для даты ${date}`);
 		} else {
 			// Если записи нет, вставляем новые данные
 			const insertQuery = `
@@ -249,12 +250,12 @@ export async function updatePlan(
 				await insertStatement.bind(date, shopUuid, sum).run();
 			}
 
-			// console.log(
+			// logger.debug(
 			// 	`Добавлено ${Object.keys(planByShops).length} новых записей для даты ${date}`,
 			// );
 		}
 	} catch (err) {
-		console.error("Ошибка при обновлении плана:", err);
+		logger.error("Ошибка при обновлении плана:", err);
 	}
 }
 
@@ -281,22 +282,22 @@ export async function getPlan(
 		const results = result.results; // Доступ к массиву results
 
 		if (!results || results.length === 0) {
-			// console.log(`Данных для даты ${date} не найдено.`);
+			// logger.debug(`Данных для даты ${date} не найдено.`);
 			return null; // Возвращаем null, если данных нет
 		}
 
-		// console.log(results); // Просматриваем результаты запроса
+		// logger.debug(results); // Просматриваем результаты запроса
 
 		const planByShops: Record<string, number> = {};
 		for (const item of results) {
 			planByShops[item.shopUuid] = item.sum; // Присваиваем значение sum для каждого shopUuid
 		}
 
-		// console.log(planByShops); // Посмотрите итоговое значение
+		// logger.debug(planByShops); // Посмотрите итоговое значение
 
 		return planByShops;
 	} catch (err) {
-		console.error(`Ошибка при получении плана для даты ${date}:`, err);
+		logger.error(`Ошибка при получении плана для даты ${date}:`, err);
 		return null;
 	}
 }
@@ -320,10 +321,10 @@ export async function getUuidsByParentUuidList(
 
 		// Извлекаем UUID из результата
 		const uuids = result.results?.map((row) => row.uuid) || [];
-		// console.log('UUIDs успешно получены:', uuids);
+		// logger.debug('UUIDs успешно получены:', uuids);
 		return uuids;
 	} catch (err) {
-		console.error("Ошибка при получении UUIDs:", err);
+		logger.error("Ошибка при получении UUIDs:", err);
 		throw err;
 	}
 }
@@ -347,10 +348,10 @@ export async function createSalaryTable(db: D1Database): Promise<void> {
         `;
 		// Выполнение SQL-запроса для создания таблицы
 		await db.prepare(createTableQuery).run();
-		// console.log("Таблица 'salaryData' успешно создана или уже существует.");
+		// logger.debug("Таблица 'salaryData' успешно создана или уже существует.");
 	} catch (err) {
 		// Логирование ошибки при создании таблицы
-		console.error("Ошибка при создании таблицы:", err);
+		logger.error("Ошибка при создании таблицы:", err);
 	}
 }
 
@@ -374,7 +375,7 @@ export async function saveSalaryData(
 
 		// Если запись существует, пропускаем вставку
 		if (existingRecord) {
-			// console.log(
+			// logger.debug(
 			// 	`Запись с датой '${dataReport.date}' и shopUuid '${dataReport.shopUuid}' уже существует. Пропуск записи.`,
 			// );
 			return;
@@ -409,10 +410,10 @@ export async function saveSalaryData(
 			)
 			.run();
 
-		// console.log("Данные успешно сохранены в таблицу 'salaryData'.");
+		// logger.debug("Данные успешно сохранены в таблицу 'salaryData'.");
 	} catch (err) {
 		// Логирование ошибки при сохранении данных
-		console.error("Ошибка при сохранении данных в таблицу:", err);
+		logger.error("Ошибка при сохранении данных в таблицу:", err);
 	}
 }
 
@@ -440,7 +441,7 @@ export async function getSalaryData(
 			.first();
 
 		if (existingRecord) {
-			// console.log(
+			// logger.debug(
 			// 	`Запись с датой ${date} и shopUuid ${shopUuid} уже существует. Пропуск операции.`,
 			// );
 			return null; // Если запись уже существует, возвращаем null
@@ -466,7 +467,7 @@ export async function getSalaryData(
 
 		// Если данные найдены, возвращаем результат
 		if (result) {
-			// console.log(
+			// logger.debug(
 			// 	`Данные зарплаты найдены для сотрудника ${employeeUuid} на дату ${date}:`,
 			// 	result,
 			// );
@@ -474,13 +475,13 @@ export async function getSalaryData(
 		}
 
 		// Если данные не найдены, возвращаем null
-		// console.log(
+		// logger.debug(
 		// 	`Данные зарплаты не найдены для сотрудника ${employeeUuid} на дату ${date}.`,
 		// );
 		return null;
 	} catch (err) {
 		// Логирование ошибки
-		console.error("Ошибка при извлечении данных из таблицы salaryData:", err);
+		logger.error("Ошибка при извлечении данных из таблицы salaryData:", err);
 		throw err;
 	}
 }

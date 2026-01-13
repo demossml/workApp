@@ -1,7 +1,7 @@
 import type { Next } from "hono";
 import { Evotor } from "./evotor";
 import type { IContext } from "./types";
-import { assert, isValidSign } from "./utils";
+import { isValidSign } from "./utils";
 import { drizzle } from "drizzle-orm/d1";
 
 export const initializeDrizzle = (c: IContext) => {
@@ -23,43 +23,56 @@ export const initialize = (c: IContext, next: Next) => {
 };
 
 export const authenticate = async (c: IContext, next: Next) => {
-	const initData = c.req.header("initData") || "guest";
+	try {
+		const initData = c.req.header("initData") || "guest";
 
-	// режим "гость"
-	if (initData === "guest") {
-		const manualId = c.req.header("telegram-id");
+		// режим "гость"
+		if (initData === "guest") {
+			const manualId = c.req.header("telegram-id");
 
-		if (manualId) {
-			// пользователь ввёл Telegram ID вручную
-			c.set("user", {
-				id: manualId,
-				first_name: "",
-				last_name: "",
-				username: "",
-				photo_url: "",
-			});
-			c.set("userId", manualId);
+			if (manualId) {
+				// пользователь ввёл Telegram ID вручную
+				c.set("user", {
+					id: manualId,
+					first_name: "",
+					last_name: "",
+					username: "",
+					photo_url: "",
+				});
+				c.set("userId", manualId);
+			} else {
+				// гость без ID
+				c.set("user", {
+					id: "",
+					first_name: "",
+					last_name: "",
+					username: "",
+					photo_url: "",
+				});
+				c.set("userId", "");
+			}
 		} else {
-			// гость без ID
-			c.set("user", {
-				id: "",
-				first_name: "",
-				last_name: "",
-				username: "",
-				photo_url: "",
-			});
-			c.set("userId", "");
+			// проверка WebApp initData
+			const payload = Object.fromEntries(new URLSearchParams(initData));
+			const isValid = await isValidSign(c.env.BOT_TOKEN, payload);
+
+			if (!isValid) {
+				return c.json({ error: "Invalid signature" }, 401);
+			}
+
+			const user = JSON.parse(payload.user);
+			c.set("user", user);
+			c.set("userId", user.id.toString());
 		}
-	} else {
-		// проверка WebApp initData
-		const payload = Object.fromEntries(new URLSearchParams(initData));
-		const isValid = await isValidSign(c.env.BOT_TOKEN, payload);
-		assert(isValid, "invalid signature");
 
-		const user = JSON.parse(payload.user);
-		c.set("user", user);
-		c.set("userId", user.id.toString());
+		return next();
+	} catch (error) {
+		return c.json(
+			{
+				error: "Authentication failed",
+				message: error instanceof Error ? error.message : "Unknown error",
+			},
+			401,
+		);
 	}
-
-	return next();
 };

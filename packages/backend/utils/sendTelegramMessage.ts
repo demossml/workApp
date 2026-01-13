@@ -1,3 +1,5 @@
+import { logger } from "../src/logger";
+
 export interface TelegramSendMessageResponse {
 	ok: boolean;
 	result?: unknown;
@@ -10,6 +12,14 @@ export async function sendTelegramMessage(
 	TELEGRAM_BOT_TOKEN: string,
 ) {
 	try {
+		if (!TELEGRAM_BOT_TOKEN) {
+			throw new Error("TELEGRAM_BOT_TOKEN is not configured");
+		}
+
+		if (!chatId || !text) {
+			throw new Error("chatId and text are required");
+		}
+
 		const response = await fetch(
 			`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
 			{
@@ -26,6 +36,11 @@ export async function sendTelegramMessage(
 			},
 		);
 
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`Telegram API error (${response.status}): ${errorText}`);
+		}
+
 		const data = (await response.json()) as TelegramSendMessageResponse;
 
 		if (!data.ok) {
@@ -34,9 +49,13 @@ export async function sendTelegramMessage(
 			);
 		}
 
+		logger.debug("Telegram message sent successfully", { chatId });
 		return data.result;
 	} catch (error) {
-		console.error("Ошибка при отправке сообщения в Telegram:", error);
+		logger.error("Failed to send Telegram message", {
+			chatId,
+			error: error instanceof Error ? error.message : String(error),
+		});
 		throw error;
 	}
 }

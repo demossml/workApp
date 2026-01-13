@@ -6,6 +6,7 @@ import {
 	getDateRangesForWeeks,
 	getDocumentsBySales,
 } from "../utils";
+import { logger } from "../logger";
 import type {
 	Document,
 	Employee,
@@ -315,6 +316,37 @@ export class Evotor {
 	}
 
 	/**
+	 * Получает имена нескольких сотрудников по их UUID (батч-запрос).
+	 * Оптимизация для избежания N+1 запросов.
+	 *
+	 * @param {string[]} employeeUuids - Массив UUID сотрудников.
+	 * @returns {Promise<Record<string, string>>} - Объект { uuid: name }
+	 * @throws {Error} - Если возникла ошибка при получении списка сотрудников.
+	 */
+	async getEmployeeNamesByUuids(
+		employeeUuids: string[],
+	): Promise<Record<string, string>> {
+		try {
+			const employeesResponse: Employee[] = await this.getEmployees();
+
+			if (!Array.isArray(employeesResponse)) {
+				throw new Error("Некорректный ответ: отсутствует список сотрудников");
+			}
+
+			const result: Record<string, string> = {};
+			for (const uuid of employeeUuids) {
+				const employee = employeesResponse.find((e) => e.uuid === uuid);
+				result[uuid] = employee ? employee.name : "Сотрудник не найден";
+			}
+
+			return result;
+		} catch (error) {
+			this._logError("Ошибка при получении имен сотрудников (батч)", error);
+			throw error;
+		}
+	}
+
+	/**
 	 * Получает роль сотрудника по фамилии.
 	 *
 	 * Этот метод обращается к списку сотрудников и ищет сотрудника с указанной фамилией.
@@ -407,7 +439,7 @@ export class Evotor {
 				const response = await this._fetchData(url);
 				return Array.isArray(response) ? response : [];
 			} catch (intervalError) {
-				console.error(
+				logger.error(
 					`Ошибка для интервала ${startDate} - ${endDate}:`,
 					intervalError,
 				);
@@ -431,12 +463,15 @@ export class Evotor {
 		until: string,
 	): Promise<Document[]> {
 		const shopUuids = await this.getShopUuids();
-		let allDocs: Document[] = [];
 
-		for (const shopId of shopUuids) {
-			const docs = await this.getDocumentsBySellPayback(shopId, since, until);
-			allDocs = allDocs.concat(docs);
-		}
+		// Оптимизация: параллельное выполнение запросов вместо последовательного
+		const docsPromises = shopUuids.map((shopId) =>
+			this.getDocumentsBySellPayback(shopId, since, until),
+		);
+		const docsResults = await Promise.all(docsPromises);
+
+		// Объединяем все результаты в один массив
+		const allDocs = docsResults.flat();
 		return allDocs;
 	}
 
@@ -871,10 +906,9 @@ export class Evotor {
 					}
 				}
 			} else {
-				console.warn("Список магазинов пуст или не был получен.");
+				logger.warn("Список магазинов пуст или не был получен.");
 			}
 
-			// Возвращаем собранные данные
 			return reportData;
 		} catch (error) {
 			// Логируем общую ошибку метода
@@ -1234,10 +1268,10 @@ export class Evotor {
 			// console.log("Полученные документы:", documents);
 
 			const doc = getDocumentsBySales(db, shopId, since, until);
-			console.log("since:", since);
-			console.log("until", until);
+			logger.debug("since:", since);
+			logger.debug("until", until);
 
-			console.log("Полученные документы: doc", JSON.stringify(doc));
+			logger.debug("Полученные документы: doc", JSON.stringify(doc));
 
 			const salesSummary: Record<
 				string,
@@ -1276,7 +1310,7 @@ export class Evotor {
 			// console.log(`Итоговый отчет о продажах:`, salesSummary);
 			return salesSummary;
 		} catch (error) {
-			console.error(
+			logger.error(
 				`Ошибка при выполнении getSalesSumQuantity для магазина ${shopId}`,
 				error,
 			);
@@ -1407,7 +1441,7 @@ export class Evotor {
 
 			return sortedSalesByShopName;
 		} catch (error) {
-			console.error(
+			logger.error(
 				"getSalesToday: ошибка при получении данных о продажах",
 				error,
 			);
@@ -1609,7 +1643,7 @@ export class Evotor {
 				grandTotaRefund,
 			};
 		} catch (error) {
-			console.error(
+			logger.error(
 				"getSalesData: ошибка при получении данных о продажах",
 				error,
 			);
@@ -1764,6 +1798,37 @@ export class Evotor {
 				error,
 			);
 			throw error; // Пробрасываем ошибку дальше
+		}
+	}
+
+	/**
+	 * Получает названия нескольких магазинов по их UUID (батч-запрос).
+	 * Оптимизация для избежания N+1 запросов.
+	 *
+	 * @param {string[]} shopUuids - Массив UUID магазинов.
+	 * @returns {Promise<Record<string, string>>} - Объект { uuid: name }
+	 * @throws {Error} - Если возникла ошибка при получении списка магазинов.
+	 */
+	async getShopNamesByUuids(
+		shopUuids: string[],
+	): Promise<Record<string, string>> {
+		try {
+			const shopsResponse: Shop[] = await this.getShops();
+
+			if (!Array.isArray(shopsResponse)) {
+				throw new Error("Некорректный ответ: отсутствует список магазинов");
+			}
+
+			const result: Record<string, string> = {};
+			for (const uuid of shopUuids) {
+				const shop = shopsResponse.find((s) => s.uuid === uuid);
+				result[uuid] = shop ? shop.name : "Магазин не найден";
+			}
+
+			return result;
+		} catch (error) {
+			this._logError("Ошибка при получении названий магазинов (батч)", error);
+			throw error;
 		}
 	}
 
@@ -2399,12 +2464,12 @@ export class Evotor {
 	 */
 	private _logError(message: string, error: unknown): void {
 		if (error instanceof Error) {
-			console.error(`${message}: ${error.message}`); // Логирование сообщения ошибки
+			logger.error(`${message}: ${error.message}`); // Логирование сообщения ошибки
 			if ((error as any).response) {
-				console.error(`Ответ API: ${JSON.stringify((error as any).response)}`); // Логирование ответа API
+				logger.error(`Ответ API: ${JSON.stringify((error as any).response)}`); // Логирование ответа API
 			}
 		} else {
-			console.error(`${message}: Неизвестная ошибка`, error); // Логирование неизвестной ошибки
+			logger.error(`${message}: Неизвестная ошибка`, error); // Логирование неизвестной ошибки
 		}
 	}
 

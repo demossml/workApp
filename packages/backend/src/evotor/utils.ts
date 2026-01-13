@@ -3,6 +3,7 @@ import {
 	getDocumentsBySales,
 	getDocumentsBySalesPeriod,
 } from "../utils";
+import { logger } from "../logger";
 
 import type { D1Database } from "@cloudflare/workers-types";
 
@@ -164,7 +165,7 @@ export async function getSalesgardenReportData(
 
 		return { salesDataByShopName, grandTotalSell, grandTotalRefund };
 	} catch (error) {
-		console.error(
+		logger.error(
 			`getSalesgardenReportData: Ошибка при получении данных для магазинов ${shopUuids.join(", ")}`,
 			error,
 		);
@@ -199,7 +200,7 @@ export async function getSalesDataG(
 			Promise.all(
 				shopUuids.map(async (uuid) => {
 					const docs = await getDocumentsBySales(db, uuid, since, until);
-					console.log(
+					logger.debug(
 						`📄 Получено ${docs.length} документов для магазина ${uuid}`,
 					);
 					// Логируем структуру первого документа для отладки
@@ -232,7 +233,7 @@ export async function getSalesDataG(
 				.map((doc: any, index: number) => {
 					// Проверка наличия документа
 					if (!doc) {
-						console.warn(
+						logger.warn(
 							`⚠️ Пропущен документ ${index + 1} для "${shopName}" — документ отсутствует`,
 						);
 						return null;
@@ -241,7 +242,7 @@ export async function getSalesDataG(
 					// Используем closeDate как основное поле для времени
 					const timestamp = doc.closeDate;
 					if (!timestamp) {
-						console.warn(
+						logger.warn(
 							`⚠️ Пропущен документ ${index + 1} для "${shopName}" — отсутствует closeDate`,
 						);
 						return null;
@@ -250,7 +251,7 @@ export async function getSalesDataG(
 					const originalDate = new Date(timestamp);
 					// Проверка валидности даты
 					if (originalDate.toString() === "Invalid Date") {
-						console.warn(
+						logger.warn(
 							`⚠️ Пропущен документ ${index + 1} для "${shopName}" — некорректная дата: ${timestamp}`,
 						);
 						return null;
@@ -265,7 +266,7 @@ export async function getSalesDataG(
 						typeof closeFprint.total !== "number" ||
 						Number.isNaN(closeFprint.total)
 					) {
-						console.warn(
+						logger.warn(
 							`⚠️ Пропущен документ ${index + 1} для "${shopName}" — отсутствует или некорректный total в DOCUMENT_CLOSE_FPRINT`,
 						);
 						return null;
@@ -296,7 +297,7 @@ export async function getSalesDataG(
 
 		return chartData;
 	} catch (error) {
-		console.error(
+		logger.error(
 			`❌ getSalesData: Ошибка при получении данных о продажах для магазинов ${shopUuids.join(", ")}`,
 			error,
 		);

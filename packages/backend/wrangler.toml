@@ -29,12 +29,11 @@ binding = "R2"
 bucket_name = "evotor"
 preview_bucket_name = "evotor"
 
-
-
-
+# Секретные переменные вынесены в .dev.vars (для разработки) и Cloudflare Secrets (для production)
+# Для локальной разработки создайте файл .dev.vars в этой директории
+# Для production используйте: wrangler secret put EVOTOR_API_TOKEN и wrangler secret put BOT_TOKEN
 
 [vars]
-EVOTOR_API_TOKEN = "d786c889-9851-48d3-bafc-c0ed41ca1cc2"
-BOT_TOKEN = "8410825865:AAFKN8i1X8xV7hf1VJq3gvsgNOclPQSRPnY"
+# Только публичные переменные!
 R2_PUBLIC_URL = "c1e9f63e6135bb4fa5600e83bf4a1a4b.r2.cloudflarestorage.com/evotor"
 

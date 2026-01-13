@@ -4,6 +4,26 @@ import { cors } from "hono/cors";
 // import fs from "fs";
 // import os from "os";
 import type { IEnv, SaveDeadStocksRequest } from "./types";
+import { logger } from "./logger";
+import {
+	EmployeeByShopSchema,
+	SchedulesTableSchema,
+	SchedulesTableViewSchema,
+	GetFileSchema,
+	RegisterSchema,
+	SalarySchema,
+	SalesResultSchema,
+	DeadStockSchema,
+	OpenStoreSchema,
+	IsOpenStoreSchema,
+	GroupsByShopSchema,
+	SubmitGroupsSchema,
+	StockReportSchema,
+	OrderSchema,
+	SalesGardenReportSchema,
+	ProfitReportSchema,
+	validate,
+} from "./validation";
 // import { createWorkersAI } from 'workers-ai-provider';
 // import { Ai } from "@cloudflare/ai";
 // import { z } from 'zod';
@@ -65,7 +85,6 @@ export const api = new Hono<IEnv>()
 	.use("*", cors())
 
 	.get("/api/user", (c) => {
-		// console.log(c.var.user);
 		return c.json(c.var.user);
 	})
 
@@ -73,7 +92,6 @@ export const api = new Hono<IEnv>()
 
 	.get("/api/employee-name", async (c) => {
 		const employeeName = await c.var.evotor.getEmployeeLastName(c.var.userId);
-		// console.log("employeeName:", employeeName);
 
 		assert(employeeName, "not an employee");
 		return c.json({ employeeName });
@@ -83,13 +101,12 @@ export const api = new Hono<IEnv>()
 		const employeeNameAndUuid = await c.var.evotor.getEmployeesByLastName(
 			c.var.user.id.toString(),
 		);
-		// console.log(employeeNameAndUuid);
 		assert(employeeNameAndUuid, "not an employee");
 		return c.json({ employeeNameAndUuid });
 	})
 
 	.get("/api/documents", async (c) => {
-		console.log("documents");
+		logger.debug("Fetching documents");
 		const db = c.get("db");
 		const shopsUuid = await c.var.evotor.getShopUuids();
 		const newDate = new Date(); // Получаем текущую дату
@@ -109,7 +126,7 @@ export const api = new Hono<IEnv>()
 		const documents = await c.var.evotor.getDocumentsIndexForShops(shopQueries);
 		await saveNewIndexDocuments(db, documents);
 
-		console.log("documents:", documents);
+		logger.debug("Documents fetched", { count: documents.length });
 
 		const latestCloseDates = await getLatestCloseDates(db, shopsUuid);
 
@@ -139,28 +156,35 @@ export const api = new Hono<IEnv>()
 		// });
 		const result = getHoroscopeByDateTask(c, { date: "08-06-2025" });
 
-		// console.log(employeeNameAndUuid);
 		return c.json({ result });
 	})
 
 	.get("/api/employee/name-uuid", async (c) => {
 		const employeeNameAndUuid =
 			await c.var.evotor.getEmployeesLastNameAndUuid();
-		// console.log("employeeNameAndUuid:", employeeNameAndUuid);
 
 		assert(employeeNameAndUuid, "not an employee");
 		return c.json({ employeeNameAndUuid });
 	})
 
 	.post("/api/employee/and-store/name-uuid", async (c) => {
-		const data = await c.req.json();
-		const { shop } = data;
+		try {
+			const data = await c.req.json();
+			const { shop } = validate(EmployeeByShopSchema, data);
 
-		const employeeNameAndUuid = await c.var.evotor.getEmployeesByShopId(shop);
-		// console.log("employeeNameAndUuid:", employeeNameAndUuid);
+			const employeeNameAndUuid = await c.var.evotor.getEmployeesByShopId(shop);
 
-		assert(employeeNameAndUuid, "not an employee");
-		return c.json({ employeeNameAndUuid });
+			assert(employeeNameAndUuid, "not an employee");
+			return c.json({ employeeNameAndUuid });
+		} catch (error) {
+			return c.json(
+				{
+					error:
+						error instanceof Error ? error.message : "Invalid request data",
+				},
+				400,
+			);
+		}
 	})
 
 	.post("/api/schedules/table", async (c) => {
@@ -168,24 +192,20 @@ export const api = new Hono<IEnv>()
 			const db = c.get("db");
 			// Получаем данные из тела запроса
 			const data = await c.req.json();
-			const { month, year, schedules } = data;
-			console.log(month, year);
+			const { month, year, schedules } = validate(SchedulesTableSchema, data);
+			logger.debug("Processing schedules table", { month, year });
 
 			// await deleteScheduleTable(db);
 
 			await createScheduleTable(db);
 
 			const { start, end } = getMonthStartAndEnd(year, month); // Май 2025
-			// console.log(`Начало месяца: ${start}`); // Ожидается: "2025-05-01"
-			// console.log(`Конец месяца: ${end}`);
 
 			const data_r = await transformScheduleDataD(schedules);
-			// console.log("data_r:", data_r);
 
 			await updateSchedule(db, data_r);
 
 			const result = await getScheduleByPeriod(db, start, end);
-			// console.log("result:", result);
 
 			const evo = c.var.evotor;
 			if (!result) {
@@ -196,7 +216,7 @@ export const api = new Hono<IEnv>()
 			// Возвращаем успешный ответ
 			return c.json({ scheduleTable });
 		} catch (error) {
-			console.error("Ошибка при обработке запроса:", error);
+			logger.error("Ошибка при обработке запроса:", error);
 			return c.json({ error: "Ошибка при обработке данных" }, 500);
 		}
 	})
@@ -206,7 +226,7 @@ export const api = new Hono<IEnv>()
 			const db = c.get("db");
 			// Получаем данные из тела запроса
 			const data = await c.req.json();
-			const { month, year, shopId } = data;
+			const { month, year, shopId } = validate(SchedulesTableViewSchema, data);
 
 			const { start, end } = getMonthStartAndEnd(year, month);
 
@@ -221,13 +241,13 @@ export const api = new Hono<IEnv>()
 			// Возвращаем успешный ответ
 			return c.json({ scheduleTable });
 		} catch (error) {
-			console.error("Ошибка при обработке запроса:", error);
+			logger.error("Ошибка при обработке запроса:", error);
 			return c.json({ error: "Ошибка при обработке данных" }, 500);
 		}
 	})
 
 	.get("/api/ai-report", async (c) => {
-		console.log("AI report request received");
+		logger.info("AI report request received");
 		const evo = c.var.evotor;
 
 		// const shopsUuid = await c.var.evotor.getShopUuids();
@@ -236,30 +256,26 @@ export const api = new Hono<IEnv>()
 		const docs = await evo.getAllDocumentsByTypes(start, end);
 
 		const docFiltered = await evo.extractSalesInfo(docs);
-		// console.log("docs:", JSON.stringify(docFiltered, null, 2));
 
 		const result = await analyzeDocsStaffTask(c, docFiltered);
-		// console.log({ result });
 
 		// const result = await sum2Numbers(c, { a: 1, b: 2 });
 		return c.json({ result });
 	})
 
 	.get("/api/ai-association-rules", async (c) => {
-		console.log("AI report request received");
+		logger.info("AI association rules request received");
 		const evo = c.var.evotor;
 
 		// const shopsUuid = await c.var.evotor.getShopUuids();
 		const [start, end] = getPeriodRangeEvotor(3);
-		console.log("start:", start, "end:", end);
+		logger.debug("Period range", { start, end });
 
 		const docs = await evo.getAllDocumentsByTypes(start, end);
 
 		const docFiltered = await evo.extractSalesInfo(docs);
-		// console.log("docs:", JSON.stringify(docFiltered, null, 2));
 
 		const result = await analyzeDocsStaffTask(c, docFiltered);
-		// console.log({ result });
 
 		// const result = await sum2Numbers(c, { a: 1, b: 2 });
 		return c.json({ result });
@@ -268,19 +284,45 @@ export const api = new Hono<IEnv>()
 	.get("/api/schedules", async (c) => {
 		const date = formatDate(new Date());
 		const shopsUuid = await c.var.evotor.getShopUuids();
-		const dataReport: Record<string, string> = {};
 
-		for (const uuid of shopsUuid) {
-			const shopName = await c.var.evotor.getShopName(uuid);
-			const data = await getData(date, uuid, c.get("db"));
+		// Оптимизация: получаем все названия магазинов за один батч-запрос
+		const shopNamesMap = await c.var.evotor.getShopNamesByUuids(shopsUuid);
+
+		// Оптимизация: получаем данные для всех магазинов параллельно
+		const dataPromises = shopsUuid.map((uuid) =>
+			getData(date, uuid, c.get("db")),
+		);
+		const dataResults = await Promise.all(dataPromises);
+
+		// Собираем уникальные userIds для батч-запроса имен сотрудников
+		const userIds = [
+			...new Set(
+				dataResults
+					.filter((data): data is NonNullable<typeof data> => data !== null)
+					.map((data) => data.userId as string),
+			),
+		];
+
+		// Оптимизация: получаем все имена сотрудников за один батч-запрос
+		const employeeNamesMap =
+			userIds.length > 0
+				? await c.var.evotor.getEmployeeNamesByUuids(userIds)
+				: {};
+
+		// Формируем результат
+		const dataReport: Record<string, string> = {};
+		for (let i = 0; i < shopsUuid.length; i++) {
+			const uuid = shopsUuid[i];
+			const shopName = shopNamesMap[uuid];
+			const data = dataResults[i];
 
 			if (data) {
 				const date = new Date(data.dateTime);
 				date.setHours(date.getHours() + 3);
 
-				// Явное приведение типа data.userId к строке
 				const userId = data.userId as string;
-				const employeeName = await c.var.evotor.getEmployeeLastName(userId);
+				const employeeName =
+					employeeNamesMap[userId] || "Неизвестный сотрудник";
 				dataReport[shopName] =
 					`${employeeName} открыта в  ${date.toISOString().slice(11, 16)}`;
 			} else {
@@ -303,87 +345,91 @@ export const api = new Hono<IEnv>()
 	})
 
 	.post("/api/get-file", async (c) => {
-		const data = await c.req.json();
+		try {
+			const data = await c.req.json();
+			const { date, shop } = validate(GetFileSchema, data);
 
-		const { date, shop } = data;
-		// console.log(data);
+			const sinceDateOpening: string = formatDate(new Date(date));
 
-		const sinceDateOpening: string = formatDate(new Date(date));
+			const dataOpening = await getData(sinceDateOpening, shop, c.get("db"));
 
-		const dataOpening = await getData(sinceDateOpening, shop, c.get("db"));
+			const dataUrlPhoto: string[] = [];
 
-		// console.log(dataOpening);
+			const keysPhoto = [
+				"photoCashRegisterPhoto",
+				"photoСabinetsPhoto",
+				"photoShowcasePhoto1",
+				"photoShowcasePhoto2",
+				"photoShowcasePhoto3",
+				"photoMRCInputput",
+				"photoTerritory1",
+				"photoTerritory2",
+			];
 
-		const dataUrlPhoto: string[] = [];
+			const dataReport: Record<string, string> = {};
 
-		const keysPhoto = [
-			"photoCashRegisterPhoto",
-			"photoСabinetsPhoto",
-			"photoShowcasePhoto1",
-			"photoShowcasePhoto2",
-			"photoShowcasePhoto3",
-			"photoMRCInputput",
-			"photoTerritory1",
-			"photoTerritory2",
-		];
+			// Формируем данные о пересчёте денег
+			const countingMoneyKeyBase = "РСХОЖДЕНИЙ ПО КАССЕ (ПЕРЕСЧЕТ ДЕНЕГ)";
 
-		const dataReport: Record<string, string> = {};
-
-		// Формируем данные о пересчёте денег
-		const countingMoneyKeyBase = "РСХОЖДЕНИЙ ПО КАССЕ (ПЕРЕСЧЕТ ДЕНЕГ)";
-
-		if (dataOpening !== null) {
-			for (const [key, value] of Object.entries(dataOpening)) {
-				if (keysPhoto.includes(key)) {
-					if (value !== null) {
-						const urlFile = await getTelegramFile(value, c.env.BOT_TOKEN);
-						dataUrlPhoto.push(urlFile); // Добавляем значение в результат
+			if (dataOpening !== null) {
+				for (const [key, value] of Object.entries(dataOpening)) {
+					if (keysPhoto.includes(key)) {
+						if (value !== null) {
+							const urlFile = await getTelegramFile(value, c.env.BOT_TOKEN);
+							dataUrlPhoto.push(urlFile); // Добавляем значение в результат
+						}
 					}
-				}
 
-				if (
-					dataOpening?.countingMoney === null ||
-					String(dataOpening?.countingMoney) === "converge"
-				) {
-					dataReport[`✅${countingMoneyKeyBase}`] = "НЕТ";
-				}
-				if (
-					dataOpening?.countingMoney === null ||
-					String(dataOpening?.countingMoney) === "more"
-				) {
-					const diffSign = "+";
-					dataReport[`🔴${countingMoneyKeyBase}`] =
-						`${diffSign}${dataOpening.CountingMoneyMessage}`;
-				}
-				if (
-					dataOpening?.countingMoney === null ||
-					String(dataOpening?.countingMoney) === "less"
-				) {
-					const diffSign = "-";
-					dataReport[`🔴${countingMoneyKeyBase}`] =
-						`${diffSign}${dataOpening.CountingMoneyMessage}`;
-				}
+					if (
+						dataOpening?.countingMoney === null ||
+						String(dataOpening?.countingMoney) === "converge"
+					) {
+						dataReport[`✅${countingMoneyKeyBase}`] = "НЕТ";
+					}
+					if (
+						dataOpening?.countingMoney === null ||
+						String(dataOpening?.countingMoney) === "more"
+					) {
+						const diffSign = "+";
+						dataReport[`🔴${countingMoneyKeyBase}`] =
+							`${diffSign}${dataOpening.CountingMoneyMessage}`;
+					}
+					if (
+						dataOpening?.countingMoney === null ||
+						String(dataOpening?.countingMoney) === "less"
+					) {
+						const diffSign = "-";
+						dataReport[`🔴${countingMoneyKeyBase}`] =
+							`${diffSign}${dataOpening.CountingMoneyMessage}`;
+					}
 
-				// Дополнительная информация
-				const shopName = await c.var.evotor.getShopName(shop); // Получаем имя магазина
-				const employeeName = await c.var.evotor.getEmployeeLastName(
-					dataOpening.userId,
-				);
+					// Дополнительная информация
+					const shopName = await c.var.evotor.getShopName(shop); // Получаем имя магазина
+					const employeeName = await c.var.evotor.getEmployeeLastName(
+						dataOpening.userId,
+					);
 
-				dataReport["МАГАЗИН:"] = shopName;
-				dataReport["СОТРУДНИК:"] = employeeName || "Нет данных";
-				const date = new Date(dataOpening.dateTime);
-				date.setHours(date.getHours() + 3);
-				dataReport["ВРЕМЯ ОТКРЫТИЯ TT"] = date.toISOString().slice(11, 16);
+					dataReport["МАГАЗИН:"] = shopName;
+					dataReport["СОТРУДНИК:"] = employeeName || "Нет данных";
+					const date = new Date(dataOpening.dateTime);
+					date.setHours(date.getHours() + 3);
+					dataReport["ВРЕМЯ ОТКРЫТИЯ TT"] = date.toISOString().slice(11, 16);
+				}
 			}
+
+			assert(dataReport, "not an employee");
+			assert(dataUrlPhoto, "not an employee");
+
+			return c.json({ dataReport, dataUrlPhoto });
+		} catch (error) {
+			return c.json(
+				{
+					error:
+						error instanceof Error ? error.message : "Invalid request data",
+				},
+				400,
+			);
 		}
-		// console.log(dataReport);
-		// console.log(dataUrlPhoto);
-
-		assert(dataReport, "not an employee");
-		assert(dataUrlPhoto, "not an employee");
-
-		return c.json({ dataReport, dataUrlPhoto });
 	})
 
 	.get("/api/employee-role", async (c) => {
@@ -395,30 +441,40 @@ export const api = new Hono<IEnv>()
 			userId === "5700958253" || userId === "475039971"
 				? "SUPERADMIN"
 				: employeeRoleEvo;
-		console.log("employeeRole:", employeeRole);
+		logger.debug("Employee role retrieved", { userId, employeeRole });
 
 		assert(employeeRole, "not an employee");
 		return c.json({ employeeRole });
 	})
 
 	.post("/api/register", async (c) => {
-		const data = await c.req.json(); // Разбор JSON тела
-		// console.log("user", c.var.user.id.toString());
+		try {
+			const data = await c.req.json(); // Разбор JSON тела
 
-		// Извлекаем данные из JSON
-		const { userId } = data;
-		c.set("userId", String(userId));
+			// Извлекаем данные из JSON
+			const { userId } = validate(RegisterSchema, data);
+			c.set("userId", String(userId));
 
-		const employeeRoleEvo = await c.var.evotor.getEmployeeRole(userId);
-		const employeeRole = employeeRoleEvo !== null;
-		console.log("employeeRole:", employeeRole);
+			const employeeRoleEvo = await c.var.evotor.getEmployeeRole(userId);
+			const employeeRole = employeeRoleEvo !== null;
+			logger.debug("User registration attempt", { userId, employeeRole });
 
-		if (!employeeRole) {
-			return c.json({ success: false, message: "not an employee" }, 403);
+			if (!employeeRole) {
+				return c.json({ success: false, message: "not an employee" }, 403);
+			}
+
+			assert(employeeRole, "not an employee");
+			return c.json({ success: true, employeeRole });
+		} catch (error) {
+			return c.json(
+				{
+					success: false,
+					message:
+						error instanceof Error ? error.message : "Invalid request data",
+				},
+				400,
+			);
 		}
-
-		assert(employeeRole, "not an employee");
-		return c.json({ success: true, employeeRole });
 	})
 
 	.post("/api/upload-photos-batch", async (c) => {
@@ -444,7 +500,7 @@ export const api = new Hono<IEnv>()
 				files.length !== categories.length ||
 				files.length !== fileKeys.length
 			) {
-				console.log("❌ Ошибка структуры FormData");
+				logger.warn("Invalid batch structure in FormData");
 				return c.json(
 					{ success: false, error: "Invalid batch structure" },
 					400,
@@ -470,22 +526,22 @@ export const api = new Hono<IEnv>()
 				const fileKey = fileKeys[i];
 
 				if (!allowed.includes(category)) {
-					console.log("❌ Неверная категория:", category);
+					logger.warn("Invalid category", { category });
 					continue;
 				}
 
 				if (!(file instanceof File)) {
-					console.log("❌ Не файл:", file);
+					logger.warn("Invalid file object");
 					continue;
 				}
 
 				const key = `${dateFolder}/${category}/${file.name}`;
 
-				console.log(`➡️ Сохранение файла ${i + 1}/${files.length}:`, key);
+				logger.debug("Saving file", { index: i + 1, total: files.length, key });
 
 				await saveFileToR2(c.env.R2, file, key);
 
-				console.log(`✅ Сохранено: ${key}`);
+				logger.debug("File saved", { key });
 
 				saved.push({ key, category, fileKey });
 			}
@@ -495,7 +551,7 @@ export const api = new Hono<IEnv>()
 				saved,
 			});
 		} catch (error) {
-			console.error("🔥 Ошибка batch загрузки:", error);
+			logger.error("Batch upload error", error);
 			return c.json(
 				{
 					success: false,
@@ -532,7 +588,8 @@ export const api = new Hono<IEnv>()
 			}
 
 			const allowed = ["area", "stock", "cash", "mrc"] as const;
-			if (!allowed.includes(category as any)) {
+			type AllowedCategory = (typeof allowed)[number];
+			if (!allowed.includes(category as AllowedCategory)) {
 				return c.json({ success: false, error: "Invalid category" }, 400);
 			}
 
@@ -545,11 +602,11 @@ export const api = new Hono<IEnv>()
 			const uniqueName = `${Date.now()}_${file.name}`;
 			const key = `${folder}/${uniqueName}`;
 
-			console.log(`📁 Сохраняем файл ${file.name} → ${key}`);
+			logger.debug("Saving file", { fileName: file.name, key });
 
 			await saveFileToR2(c.env.R2, file, key);
 
-			console.log("✅ Файл успешно сохранён:", key);
+			logger.debug("File saved successfully", { key });
 
 			return c.json({
 				success: true,
@@ -558,14 +615,16 @@ export const api = new Hono<IEnv>()
 				key,
 			});
 		} catch (err) {
-			console.error("❌ Ошибка upload-photos:", err);
+			logger.error("Upload photos error", err);
 			return c.json({ success: false, error: "Server error" }, 500);
 		}
 	})
 
 	.post("/api/upload", async (c) => {
 		const formData = await c.req.formData();
-		console.log("formData entries:", Array.from(formData.entries()));
+		logger.debug("Upload request", {
+			entriesCount: Array.from(formData.entries()).length,
+		});
 
 		const file = formData.get("photos") as File | null;
 		if (!file || !(file instanceof File)) {
@@ -577,14 +636,11 @@ export const api = new Hono<IEnv>()
 		try {
 			const savedKey = `uploads/${crypto.randomUUID()}_${file.name}`;
 			const arrayBuffer = await file.arrayBuffer();
-			console.log(
-				"Processing file:",
-				file.name,
-				"type:",
-				file.type,
-				"size:",
-				file.size,
-			);
+			logger.debug("Processing file", {
+				name: file.name,
+				type: file.type,
+				size: file.size,
+			});
 
 			await c.env.R2.put(savedKey, arrayBuffer, {
 				httpMetadata: { contentType: file.type || "application/octet-stream" },
@@ -592,14 +648,14 @@ export const api = new Hono<IEnv>()
 
 			// const publicUrl = `${baseUrl}/${savedKey}`;
 			const publicUrl = `https://pub-a1a3c60dd9754ffba505cb0039a032fa.r2.dev/${savedKey}`;
-			console.log("Saved:", publicUrl);
+			logger.debug("File saved to R2", { publicUrl });
 
 			return c.json({
 				url: publicUrl,
 				name: file.name,
 			});
 		} catch (error) {
-			console.error("Error saving file:", file.name, error);
+			logger.error("Error saving file", { fileName: file.name, error });
 			return c.json({ error: `Ошибка сохранения файла: ${error}` }, 500);
 		}
 	})
@@ -689,7 +745,7 @@ export const api = new Hono<IEnv>()
 			let datPlan: Record<string, number> = {};
 
 			if (!plan) {
-				console.log("План не найден, генерируем новый...");
+				logger.debug("План не найден, генерируем новый");
 				datPlan = await c.var.evotor.getPlan(newDate, productUuids);
 				await updatePlan(datPlan, datePlan, db);
 			} else {
@@ -700,18 +756,19 @@ export const api = new Hono<IEnv>()
 			const shopUuids: string[] = await c.var.evotor.getShopUuids();
 			salesData = {};
 
-			// Сбор данных продаж для каждого магазина
-			for (const shopId of shopUuids) {
-				try {
-					// Получение UUID продуктов для магазина
-					const shopProductUuids: string[] = await getProductsByGroup(
-						c.get("db"),
-						shopId,
-						groupIdsVape,
-					);
+			// Оптимизация: получаем все названия магазинов за один батч-запрос
+			const shopNamesMap = await c.var.evotor.getShopNamesByUuids(shopUuids);
 
-					// Получение названия магазина
-					const shopName = await c.var.evotor.getShopName(shopId);
+			// Оптимизация: параллельно получаем UUID продуктов для всех магазинов
+			const shopProductsPromises = shopUuids.map((shopId) =>
+				getProductsByGroup(c.get("db"), shopId, groupIdsVape),
+			);
+			const shopProductsResults = await Promise.all(shopProductsPromises);
+
+			// Оптимизация: параллельно получаем данные продаж для всех магазинов
+			const salesPromises = shopUuids.map(async (shopId, index) => {
+				try {
+					const shopProductUuids = shopProductsResults[index];
 
 					// Получение данных продаж и количества проданных товаров
 					const [sumSalesData, podQuantity] = await Promise.all([
@@ -724,26 +781,35 @@ export const api = new Hono<IEnv>()
 						),
 					]);
 
-					// Формирование данных для магазина
-					salesData[shopName] = {
-						datePlan: datPlan[shopId] || 0, // План на день
-						dataSales: sumSalesData || 0, // Сумма продаж
-						dataQuantity: podQuantity || {}, // Количество проданных товаров
+					return {
+						shopId,
+						sumSalesData,
+						podQuantity,
 					};
 				} catch (err) {
-					console.error(`Ошибка при обработке магазина ${shopId}:`, err);
+					logger.error(`Ошибка при обработке магазина ${shopId}:`, err);
+					return {
+						shopId,
+						sumSalesData: 0,
+						podQuantity: {},
+					};
 				}
+			});
+			const salesResults = await Promise.all(salesPromises);
+
+			// Формируем результат
+			for (const { shopId, sumSalesData, podQuantity } of salesResults) {
+				const shopName = shopNamesMap[shopId];
+				salesData[shopName] = {
+					datePlan: datPlan[shopId] || 0,
+					dataSales: sumSalesData || 0,
+					dataQuantity: podQuantity || {},
+				};
 			}
 
-			// Проверка на наличие данных
-			if (Object.keys(salesData).length === 0) {
-				throw new Error("Не удалось получить данные продаж.");
-			}
-
-			// console.log("Данные продаж успешно сформированы:", salesData);
 			return c.json({ salesData });
 		} catch (err) {
-			console.error("Ошибка при обработке запроса:", err);
+			logger.error("Ошибка при обработке запроса plan-for-today", err);
 			return c.json(
 				{ error: "Ошибка при обработке запроса. Проверьте логи." },
 				500,
@@ -762,44 +828,52 @@ export const api = new Hono<IEnv>()
 	})
 
 	.post("/api/evotor/groups-by-shop", async (c) => {
-		const data = await c.req.json();
-		const { shopUuid } = data;
-		// console.log("Полученные данные:", data);
-		// await createProductsTableIfNotExists(c.get("db"));
+		try {
+			const data = await c.req.json();
+			const { shopUuid } = validate(GroupsByShopSchema, data);
+			// await createProductsTableIfNotExists(c.get("db"));
 
-		// const shopUuids = await c.var.evotor.getShopUuids();
-		// console.log(shopUuids);
+			// const shopUuids = await c.var.evotor.getShopUuids();
 
-		// for (const shopU of shopUuids) {
-		// 	const test = await c.var.evotor.getProductsShopUuidsT(shopU);
-		// 	console.log(test);
-		// 	await updateOrInsertData(test, c.get("db"));
-		// }
+			// for (const shopU of shopUuids) {
+			// 	const test = await c.var.evotor.getProductsShopUuidsT(shopU);
+			// 	console.log(test);
+			// 	await updateOrInsertData(test, c.get("db"));
+			// }
 
-		const groupsData = await getGroupsByNameUuid(c.get("db"), shopUuid);
-		// console.log(groupsData);
-		// Получение списка магазинов
-		// const groupsData = await c.var.evotor.getGroupsByNameUuid(shopUuid);
-		if (groupsData) {
-			const excludedUuids = [
-				"3f51bb7f-f3a2-11e8-b973-ccb0da458b5a",
-				"be7939b7-d6e6-11ea-b9a5-ccb0da458b5a",
-			];
+			const groupsData = await getGroupsByNameUuid(c.get("db"), shopUuid);
+			// Получение списка магазинов
+			// const groupsData = await c.var.evotor.getGroupsByNameUuid(shopUuid);
+			if (groupsData) {
+				const excludedUuids = [
+					"3f51bb7f-f3a2-11e8-b973-ccb0da458b5a",
+					"be7939b7-d6e6-11ea-b9a5-ccb0da458b5a",
+				];
 
-			const groups = groupsData.filter(
-				(group) => !excludedUuids.includes(group.uuid),
+				const groups = groupsData.filter(
+					(group) => !excludedUuids.includes(group.uuid),
+				);
+
+				assert(groups, "not an result");
+
+				return c.json({ groups });
+			}
+			return c.json({ error: "No data found" }, 404);
+		} catch (error) {
+			return c.json(
+				{
+					error:
+						error instanceof Error ? error.message : "Invalid request data",
+				},
+				400,
 			);
-
-			assert(groups, "not an result");
-
-			return c.json({ groups });
 		}
 	})
 
 	.post("/api/evotor/salary", async (c) => {
 		try {
-			const { employee, startDate, endDate } = await c.req.json();
-			console.log("data:", await c.req.json());
+			const data = await c.req.json();
+			const { employee, startDate, endDate } = validate(SalarySchema, data);
 			const db = c.get("db");
 
 			const sincetDate = formatDateWithTime(new Date(startDate), false);
@@ -834,22 +908,40 @@ export const api = new Hono<IEnv>()
 
 			const result = [];
 
-			for (const date_ of dates) {
+			// Оптимизация: сначала собираем все openShopUuids параллельно
+			const sessionPromises = dates.map((date_) => {
+				const date = new Date(date_);
+				const since = formatDateWithTime(date, false);
+				const until = formatDateWithTime(date, true);
+				return c.var.evotor.getFirstOpenSession(since, until, employee);
+			});
+			const openShopUuids = await Promise.all(sessionPromises);
+
+			// Получаем уникальные UUID магазинов
+			const uniqueShopUuids = [
+				...new Set(openShopUuids.filter(Boolean) as string[]),
+			];
+
+			// Оптимизация: получаем все названия магазинов за один батч-запрос
+			const shopNamesMap =
+				uniqueShopUuids.length > 0
+					? await c.var.evotor.getShopNamesByUuids(uniqueShopUuids)
+					: {};
+
+			// Обрабатываем результаты
+			for (let i = 0; i < dates.length; i++) {
+				const date_ = dates[i];
 				const date = new Date(date_);
 				const since = formatDateWithTime(date, false);
 				const until = formatDateWithTime(date, true);
 				const datePlan = formatDate(date);
 
-				const openShopUuid = await c.var.evotor.getFirstOpenSession(
-					since,
-					until,
-					employee,
-				);
+				const openShopUuid = openShopUuids[i];
 				if (!openShopUuid) continue;
 
 				const dataReport = {
 					date: datePlan,
-					shopName: await c.var.evotor.getShopName(openShopUuid),
+					shopName: shopNamesMap[openShopUuid] || "Неизвестный магазин",
 					bonusAccessories: 0,
 					dataPlan: 0,
 					salesDataVape: 0,
@@ -931,7 +1023,7 @@ export const api = new Hono<IEnv>()
 
 			return c.json({ result, totalReport });
 		} catch (error) {
-			console.error("Ошибка при разборе JSON:", error);
+			logger.error("Ошибка при разборе JSON:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
 	})
@@ -941,7 +1033,7 @@ export const api = new Hono<IEnv>()
 			const data = await c.req.json(); // Разбор JSON тела
 
 			// Извлекаем данные из JSON
-			const { groups, salary, bonus } = data;
+			const { groups, salary, bonus } = validate(SubmitGroupsSchema, data);
 			const newDate = new Date();
 			const date = formatDate(newDate);
 			await createSalaryBonusTable(c.get("db"));
@@ -967,7 +1059,7 @@ export const api = new Hono<IEnv>()
 
 			return c.json({ groupsName, salary, bonus });
 		} catch (error) {
-			console.error("Ошибка при разборе JSON:", error);
+			logger.error("Ошибка при разборе JSON:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
 	})
@@ -979,7 +1071,6 @@ export const api = new Hono<IEnv>()
 		// Получение списка магазинов
 		const shops: ShopUuidName[] | null = await c.var.evotor.getShopNameUuids();
 		if (shops) {
-			// console.log(shops);
 			// Добавление магазинов в shopOptions
 			shops.forEach((shop) => {
 				shopOptions[shop.uuid] = shop.name;
@@ -1029,10 +1120,10 @@ export const api = new Hono<IEnv>()
 	.post("/api/evotor/sales-result", async (c) => {
 		try {
 			const data = await c.req.json(); // Разбор JSON тела
-			// console.log(data);
-
-			// Извлекаем данные из JSON
-			const { startDate, endDate, shopUuid, groups } = data;
+			const { startDate, endDate, shopUuid, groups } = validate(
+				SalesResultSchema,
+				data,
+			);
 
 			const sincetDate = new Date(startDate); // Преобразуем в объект Date
 			const untilDate = new Date(endDate); // Преобразуем в объект Date
@@ -1061,13 +1152,12 @@ export const api = new Hono<IEnv>()
 			); // Получаем данные по продажам
 
 			// const sortedSalesDataByValue = sortSalesSummary(salesData, sortCriteria);
-			// console.log(salesData);
 
 			const shopName = await c.var.evotor.getShopName(shopUuid);
 
 			return c.json({ salesData, shopName, startDate, endDate });
 		} catch (error) {
-			console.error("Ошибка при разборе JSON:", error);
+			logger.error("Ошибка при разборе JSON:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
 	})
@@ -1075,10 +1165,10 @@ export const api = new Hono<IEnv>()
 	.post("/api/evotor/dead-stock", async (c) => {
 		try {
 			const data = await c.req.json(); // Разбор JSON тела
-			// console.log(data);
-
-			// Извлекаем данные из JSON
-			const { startDate, endDate, shopUuid, groups } = data;
+			const { startDate, endDate, shopUuid, groups } = validate(
+				DeadStockSchema,
+				data,
+			);
 
 			const sincetDate = new Date(startDate); // Преобразуем в объект Date
 			const untilDate = new Date(endDate); // Преобразуем в объект Date
@@ -1093,7 +1183,7 @@ export const api = new Hono<IEnv>()
 
 			const shopName = await c.var.evotor.getShopName(shopUuid);
 
-			console.log(salesData);
+			logger.debug("Sales data retrieved", { salesData });
 
 			return c.json({
 				salesData: salesData, // МАССИВ элементов
@@ -1102,7 +1192,7 @@ export const api = new Hono<IEnv>()
 				endDate,
 			});
 		} catch (error) {
-			console.error("Ошибка при разборе JSON:", error);
+			logger.error("Ошибка при разборе JSON:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
 	})
@@ -1118,7 +1208,6 @@ export const api = new Hono<IEnv>()
 			},
 			{} as Record<string, string>,
 		);
-		// console.log(shopOptions);
 
 		return c.json({ shopOptions });
 	})
@@ -1127,9 +1216,7 @@ export const api = new Hono<IEnv>()
 		try {
 			// Получаем данные из запроса
 			const data = await c.req.json();
-			// console.log("Полученные данные:", data);
-
-			const { shopUuid, groups } = data;
+			const { shopUuid, groups } = validate(StockReportSchema, data);
 
 			// Получаем список товаров для заданных групп
 			const stockDataResponse = await c.var.evotor.getStockByGroup(
@@ -1137,7 +1224,6 @@ export const api = new Hono<IEnv>()
 				groups,
 				"price",
 			);
-			// console.log("данные:", stockDataResponse);
 
 			// Проверяем, что данные о товарах получены
 			if (!stockDataResponse || Object.keys(stockDataResponse).length === 0) {
@@ -1153,7 +1239,7 @@ export const api = new Hono<IEnv>()
 			return c.json({ stockData: stockDataResponse, shopName });
 		} catch (error) {
 			// Логируем ошибку и возвращаем 500
-			console.error("Ошибка при обработке запроса:", error);
+			logger.error("Ошибка при обработке запроса:", error);
 			return c.json({ error: "Произошла ошибка при обработке запроса." }, 500);
 		}
 	})
@@ -1162,8 +1248,10 @@ export const api = new Hono<IEnv>()
 		try {
 			// Получаем данные из запроса
 			const data = await c.req.json();
-
-			const { startDate, endDate, shopUuid, groups, period } = data;
+			const { startDate, endDate, shopUuid, groups, period } = validate(
+				OrderSchema,
+				data,
+			);
 			const sincetDate = new Date(startDate); // Преобразуем в объект Date
 			const untilDate = new Date(endDate); // Преобразуем в объект Date
 
@@ -1179,14 +1267,11 @@ export const api = new Hono<IEnv>()
 			};
 
 			const order = await c.var.evotor.getOrder(params);
-			// console.log("данные:", order);
 
 			// Проверяем, что данные о товарах получены
 			if (!order || Object.keys(order).length === 0) {
 				return c.json({ error: "Не удалось получить данные заказа." }, 500);
 			}
-
-			// console.log("данные:", order);
 
 			const shopName = await c.var.evotor.getShopName(shopUuid);
 
@@ -1194,7 +1279,7 @@ export const api = new Hono<IEnv>()
 			return c.json({ order, startDate, endDate, shopName });
 		} catch (error) {
 			// Логируем ошибку и возвращаем 500
-			console.error("Ошибка при обработке запроса:", error);
+			logger.error("Ошибка при обработке запроса:", error);
 			return c.json({ error: "Произошла ошибка при обработке запроса." }, 500);
 		}
 	})
@@ -1231,16 +1316,14 @@ export const api = new Hono<IEnv>()
 				cashOutcomeData,
 			});
 		} catch (error) {
-			console.error("Ошибка при обработке запроса:", error);
+			logger.error("Ошибка при обработке запроса:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
 	})
 	.post("/api/evotor/sales-garden-report", async (c) => {
 		try {
 			const data = await c.req.json(); // Разбор JSON тела
-
-			const { startDate, endDate } = data;
-			// console.log(data);
+			const { startDate, endDate } = validate(SalesGardenReportSchema, data);
 
 			const shopUuids = await c.var.evotor.getShopUuids();
 
@@ -1286,7 +1369,6 @@ export const api = new Hono<IEnv>()
 			// const aiWithRun = c.var.ai as any;
 
 			// const response = await analyzeSalesDocuments(f, aiWithRun);
-			// console.log("Результат анализа:", response);
 
 			const cash = await c.var.evotor.getCashByShops();
 
@@ -1302,7 +1384,7 @@ export const api = new Hono<IEnv>()
 				cash,
 			});
 		} catch (error) {
-			console.error("Ошибка при разборе JSON:", error);
+			logger.error("Ошибка при разборе JSON:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
 	})
@@ -1310,18 +1392,11 @@ export const api = new Hono<IEnv>()
 	.post("/api/profit-report", async (c) => {
 		try {
 			// Получаем данные из запроса
-			const body = await c.req.json<{
-				shopUuids: string[];
-				since: string;
-				until: string;
-				dataFrom1C: Record<string, { expenses: number; grossProfit: number }>; // { shopUuid: {expenses, grossProfit} }
-			}>();
-
-			const { shopUuids, since, until, dataFrom1C } = body;
-
-			if (!Array.isArray(shopUuids) || shopUuids.length === 0) {
-				return c.json({ error: "Не переданы UUID магазинов" }, 400);
-			}
+			const body = await c.req.json();
+			const { shopUuids, since, until, dataFrom1C } = validate(
+				ProfitReportSchema,
+				body,
+			);
 
 			// 1. Получаем расходы из Evo
 			const evoData = await c.var.evotor.getExpensesByCategories(
@@ -1373,7 +1448,7 @@ export const api = new Hono<IEnv>()
 				report,
 			});
 		} catch (error) {
-			console.error("Ошибка при формировании отчета:", error);
+			logger.error("Ошибка при формировании отчета:", error);
 			return c.json({ error: "Ошибка при формировании отчета" }, 500);
 		}
 	})
@@ -1381,7 +1456,7 @@ export const api = new Hono<IEnv>()
 	.post("/api/is-open-store", async (c) => {
 		try {
 			const data = await c.req.json();
-			const { userId, date } = data; // date в формате "dd-mm-yyyy"
+			const { userId, date } = validate(IsOpenStoreSchema, data); // date в формате "dd-mm-yyyy"
 
 			const db = c.env.DB;
 
@@ -1390,76 +1465,125 @@ export const api = new Hono<IEnv>()
 
 			return c.json({ exists });
 		} catch (err) {
-			console.error("Ошибка в /api/is-open-store:", err);
+			logger.error("Ошибка в /api/is-open-store:", err);
 			return c.json({ exists: false, error: "Ошибка сервера" }, 500);
 		}
 	})
 	.post("/api/open-store", async (c) => {
-		const data = await c.req.json();
-		const { userId, timestamp } = data;
+		try {
+			const data = await c.req.json();
+			const { userId, timestamp } = validate(OpenStoreSchema, data);
 
-		const db = c.env.DB;
+			const db = c.env.DB;
 
-		// Создаём таблицу, если её нет
-		// await createOpenStorsTable(db);
+			// Создаём таблицу, если её нет
+			// await createOpenStorsTable(db);
 
-		// Сохраняем новую строку открытия магазина
-		await saveOpenStorsTable(db, {
-			date: timestamp,
-			userId,
-			cash: null, // пока нет данных кассы
-			sign: null, // открытие
-			ok: null, // ещё не проверено
-		});
+			// Сохраняем новую строку открытия магазина
+			await saveOpenStorsTable(db, {
+				date: timestamp,
+				userId,
+				cash: null, // пока нет данных кассы
+				sign: null, // открытие
+				ok: null, // ещё не проверено
+			});
 
-		return c.json({ ok: true });
+			return c.json({ ok: true });
+		} catch (error) {
+			return c.json(
+				{
+					error:
+						error instanceof Error ? error.message : "Invalid request data",
+				},
+				400,
+			);
+		}
 	})
 	.post("/api/dead-stocks/update", async (c) => {
-		const db = c.get("drizzle");
+		try {
+			const db = c.get("drizzle");
 
-		const { shopUuid, items } = await c.req.json<
-			SaveDeadStocksRequest & { userId: number }
-		>();
+			const { shopUuid, items } = await c.req.json<
+				SaveDeadStocksRequest & { userId: number }
+			>();
 
-		// ID группы Telegram (из env)
-		const TELEGRAM_GROUP_ID = "5700958253";
+			if (!shopUuid || !items || !Array.isArray(items)) {
+				return c.json({ success: false, error: "Invalid request data" }, 400);
+			}
 
-		// 1️⃣ ОТПРАВКА В TELEGRAM (ДО сохранения)
-		await sendDeadStocksToTelegram(
-			{
-				chatId: TELEGRAM_GROUP_ID,
-				shopUuid,
-				items,
-			},
-			c.env.BOT_TOKEN,
-			c.var.evotor,
-		);
+			// ID группы Telegram (из env)
+			const TELEGRAM_GROUP_ID = "5700958253";
 
-		// 2️⃣ СОХРАНЕНИЕ В БД
-		await saveDeadStocks(db, shopUuid, items);
+			// 1️⃣ ОТПРАВКА В TELEGRAM (ДО сохранения)
+			try {
+				await sendDeadStocksToTelegram(
+					{
+						chatId: TELEGRAM_GROUP_ID,
+						shopUuid,
+						items,
+					},
+					c.env.BOT_TOKEN,
+					c.var.evotor,
+				);
+			} catch (telegramError) {
+				logger.error("Failed to send to Telegram", telegramError);
+				// Продолжаем выполнение даже если Telegram недоступен
+			}
 
-		return c.json({ success: true });
+			// 2️⃣ СОХРАНЕНИЕ В БД
+			await saveDeadStocks(db, shopUuid, items);
+
+			return c.json({ success: true });
+		} catch (error) {
+			logger.error("Dead stocks update failed", error);
+			return c.json(
+				{
+					success: false,
+					error:
+						error instanceof Error
+							? error.message
+							: "Failed to update dead stocks",
+				},
+				500,
+			);
+		}
 	})
 	.post("/api/finish-opening", async (c) => {
-		const db = c.env.DB;
+		try {
+			const db = c.env.DB;
 
-		const data = await c.req.json();
+			const data = await c.req.json();
 
-		const { ok, discrepancy, userId } = data;
-		console.log("discrepancy:", discrepancy);
-		console.log("ok:", ok);
+			const { ok, discrepancy, userId } = data;
 
-		let cash = null;
-		let sign = null;
+			if (!userId) {
+				return c.json({ success: false, error: "Missing userId" }, 400);
+			}
 
-		if (!ok && discrepancy) {
-			cash = Number(discrepancy.amount);
-			sign = discrepancy.type; // "+" или "-"
+			logger.debug("Processing discrepancy data", { discrepancy, ok });
+
+			let cash = null;
+			let sign = null;
+
+			if (!ok && discrepancy) {
+				cash = Number(discrepancy.amount);
+				sign = discrepancy.type; // "+" или "-"
+			}
+
+			await updateOpenStore(db, userId, { cash, sign });
+
+			return c.json({ success: true });
+		} catch (error) {
+			logger.error("Finish opening failed", error);
+			return c.json(
+				{
+					success: false,
+					error:
+						error instanceof Error ? error.message : "Failed to finish opening",
+				},
+				500,
+			);
 		}
-
-		await updateOpenStore(db, userId, { cash, sign });
-
-		return c.json({ success: true });
 	});
 
 export type IAPI = typeof api;

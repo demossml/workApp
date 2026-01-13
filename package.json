@@ -13,7 +13,9 @@
     "dev": "turbo run dev --filter=@work-app/{backend,frontend}",
     "deploy": "turbo run deploy",
     "format": "prettier . --write",
-    "lint": "pnpm biome lint --write --unsafe ."
+    "lint": "pnpm biome lint --write --unsafe .",
+    "deploy:with-frontend-build": "pnpm --filter frontend build && pnpm run deploy"
+
   },
   "prettier": {
     "trailingComma": "es5",

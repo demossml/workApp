@@ -1,3 +1,15 @@
 .turbo
 node_modules
 dist
+
+# Секретные файлы - НИКОГДА не коммитить!
+.dev.vars
+*.dev.vars
+.env
+.env.*
+!.env.example
+wrangler.toml.local
+
+# Cloudflare Workers
+.wrangler/
+worker/

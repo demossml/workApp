@@ -2,6 +2,7 @@ import type { ZodSchema } from "zod";
 import zodToJsonSchema from "zod-to-json-schema";
 import type { IContext } from "../types";
 import { type ITool, tools } from "./tools";
+import { logger } from "../logger";
 
 export type RoleScopedChatInput = {
 	role: "system" | "user" | "assistant" | "tool";
@@ -35,7 +36,7 @@ async function runWithRetry<T>(fn: () => Promise<T>, retries = 5): Promise<T> {
 				msg.includes("InferenceUpstreamError: 10000: Authentication error") &&
 				attempt < retries
 			) {
-				console.warn(`AI auth error, retrying attempt ${attempt}...`);
+				logger.warn(`AI auth error, retrying attempt ${attempt}...`);
 				await new Promise((res) => setTimeout(res, 500 * attempt));
 				continue;
 			}
@@ -130,7 +131,7 @@ export const runWithTools = async (
 					name,
 				});
 			} catch (e) {
-				console.error("Tool call error:", e);
+				logger.error("Tool call error:", e);
 				messages.push({
 					role: "tool",
 					content: `Error: ${e instanceof Error ? e.message : String(e)}`,
@@ -143,7 +144,7 @@ export const runWithTools = async (
 	}
 
 	// Обработка JSON-ответа без tool calls
-	console.log("RESPONSE:", response);
+	logger.debug("RESPONSE:", response);
 	return response;
 };
 
@@ -265,7 +266,7 @@ export const createTask =
 		try {
 			params.inputSchema.parse(input);
 		} catch (e: any) {
-			console.error("Input validation error:", e.issues ?? e);
+			logger.error("Input validation error:", e.issues ?? e);
 			throw new Error(`Invalid input: ${JSON.stringify(e.issues ?? e)}`);
 		}
 
@@ -313,7 +314,7 @@ Respond only with JSON, using output schema.${params.asCsv ? " Входные д
 			const parsed = JSON.parse(response);
 			return params.outputSchema.parse(parsed);
 		} catch (e) {
-			console.error("Response parsing or validation error:", e);
+			logger.error("Response parsing or validation error:", e);
 			throw new Error(`Failed to parse or validate response:  ${response}`);
 		}
 	};
