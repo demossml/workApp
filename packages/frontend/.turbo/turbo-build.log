@@ -4,22 +4,22 @@
 > tsc -b && vite build && cp -R dist ../backend/
 
 [36mvite v5.4.20 [32mbuilding for production...[36m[39m
-[2K[1Gtransforming (1) [2mindex.html[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (26) [2m../../node_modules/react/cjs/react-jsx-runtime.production.min.js[22m[2K[1Gtransforming (52) [2m../../node_modules/react-router-dom/dist/index.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (73) [2msrc/pages/reports/SaleRepor.tsx[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (1078) [2m../../node_modules/@tanstack/query-core/build/modern/queriesObserver.js[22m[2K[1Gtransforming (1145) [2m../../node_modules/lucide-react/dist/esm/icons/loader.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (1948) [2m../../node_modules/@tanstack/react-query/build/modern/useBaseQuery.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2086) [2m../../node_modules/framer-motion/dist/es/render/VisualElement.mjs[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2195) [2m../../node_modules/react-dom/client.js[22m[2K[1G[2K[1G[2K[1Gtransforming (2295) [2m../../node_modules/react-remove-scroll/dist/es2015/medium.js[22m[2K[1Gtransforming (2453) [2m../../node_modules/lodash/_baseCreate.js[22m[2K[1Gtransforming (2703) [2m../../node_modules/react-transition-group/esm/ReplaceTransition.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[32m✓[39m 3043 modules transformed.
-[2K[1Grendering chunks (1)...[2K[1Grendering chunks (2)...[2K[1G[2K[1Gcomputing gzip size (0)...[2K[1Gcomputing gzip size (1)...[2K[1Gcomputing gzip size (2)...[2K[1Gcomputing gzip size (3)...[2K[1Gcomputing gzip size (4)...[2K[1G[2mdist/[22m[32mmanifest.webmanifest                        [39m[1m[2m  0.43 kB[22m[1m[22m
-[2mdist/[22m[32mindex.html                                  [39m[1m[2m  0.96 kB[22m[1m[22m[2m │ gzip:   0.58 kB[22m
-[2mdist/[22m[2massets/[22m[35mindex-DTrzX4g7.css                   [39m[1m[2m 46.68 kB[22m[1m[22m[2m │ gzip:   8.42 kB[22m
-[2mdist/[22m[2massets/[22m[36mworkbox-window.prod.es5-B9K5rw8f.js  [39m[1m[2m  5.72 kB[22m[1m[22m[2m │ gzip:   2.36 kB[22m
-[2mdist/[22m[2massets/[22m[36mindex-DnTohu3A.js                    [39m[1m[33m967.07 kB[39m[22m[2m │ gzip: 288.14 kB[22m
+[2K[1Gtransforming (1) [2mindex.html[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (25) [2m../../node_modules/react/index.js[22m[2K[1Gtransforming (35) [2m../../node_modules/@tanstack/react-query/build/modern/useSuspenseQueries.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (74) [2msrc/pages/reports/SalarysReport.tsx[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (1085) [2msrc/components/Topbar.tsx[22m[2K[1Gtransforming (1850) [2m../../node_modules/motion-utils/dist/es/easing/utils/map.mjs[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (1971) [2m../../node_modules/lucide-react/dist/esm/defaultAttributes.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2261) [2m../../node_modules/recharts/es6/cartesian/ReferenceArea.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2320) [2m../../node_modules/lodash/_baseSum.js[22m[2K[1Gtransforming (2631) [2m../../node_modules/react-transition-group/esm/ReplaceTransition.js[22m[2K[1Gtransforming (2978) [2m../../node_modules/lodash/sortBy.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[32m✓[39m 3051 modules transformed.
+[2K[1Grendering chunks (1)...[2K[1Grendering chunks (2)...[2K[1G[2K[1Gcomputing gzip size (0)...[2K[1Gcomputing gzip size (1)...[2K[1Gcomputing gzip size (2)...[2K[1Gcomputing gzip size (3)...[2K[1Gcomputing gzip size (4)...[2K[1G[2mdist/[22m[32mmanifest.webmanifest                        [39m[1m[2m    0.43 kB[22m[1m[22m
+[2mdist/[22m[32mindex.html                                  [39m[1m[2m    0.96 kB[22m[1m[22m[2m │ gzip:   0.58 kB[22m
+[2mdist/[22m[2massets/[22m[35mindex-C0cbOcP7.css                   [39m[1m[2m   66.15 kB[22m[1m[22m[2m │ gzip:  10.98 kB[22m
+[2mdist/[22m[2massets/[22m[36mworkbox-window.prod.es5-B9K5rw8f.js  [39m[1m[2m    5.72 kB[22m[1m[22m[2m │ gzip:   2.36 kB[22m
+[2mdist/[22m[2massets/[22m[36mindex-CynR8zUy.js                    [39m[1m[33m1,041.00 kB[39m[22m[2m │ gzip: 302.77 kB[22m
 [33m
 (!) Some chunks are larger than 500 kB after minification. Consider:
 - Using dynamic import() to code-split the application
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
-[32m✓ built in 2.50s[39m
+[32m✓ built in 2.41s[39m
 
 [36mPWA v1.0.3[39m
 mode      [35mgenerateSW[39m
-precache  [32m9 entries[39m [2m(1003.46 KiB)[22m
+precache  [32m9 entries[39m [2m(1097.44 KiB)[22m
 files generated
   [2mdist/sw.js[22m
   [2mdist/workbox-1be04862.js[22m

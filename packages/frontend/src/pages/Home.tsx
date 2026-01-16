@@ -1,6 +1,10 @@
 import { ErrorDisplay } from "../components/ErrorDisplay";
 import { LoadingSpinner } from "../components/LoadingSpinner";
-import PlanSalesFinancialReport from "../components/PlanSalesFinancialReport";
+// import PlanSalesFinancialReport from "../components/PlanSalesFinancialReport";
+import PlanStatusCards from "../components/PlanStatusCards";
+import DashboardSummary from "../components/DashboardSummary";
+import TodayAlerts from "../components/TodayAlerts";
+import QuickActions from "../components/QuickActions";
 import { RegisterUser } from "../components/RegisterUser";
 import { useEmployeeRole } from "../hooks/useApi";
 
@@ -37,15 +41,22 @@ export default function Home() {
   const isSuperAdmin = data.employeeRole === "SUPERADMIN";
 
   return (
-    <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-8 sm:pt-12 px-4 sm:px-6">
-      {/* Плитки */}
+    <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-20 sm:pt-24 px-4 sm:px-6 pb-24">
       <div className="w-full max-w-7xl">
-        {(isCashier || isAdmin || isSuperAdmin) && <PlanSalesFinancialReport />}
-      </div>
+        {/* План продаж - карточки статусов */}
+        {(isSuperAdmin || isCashier || isAdmin) && <PlanStatusCards />}
 
-      {/* Кнопки */}
-      <div className="w-full max-w-md mt-6">
-        {/* Дополнительные компоненты можно добавить здесь */}
+        {/* Детальный отчет по магазинам */}
+        {/* {(isCashier || isAdmin) && <PlanSalesFinancialReport />} */}
+
+        {/* Сводка за день - для всех ролей */}
+        {(isSuperAdmin || isAdmin || isCashier) && <DashboardSummary />}
+
+        {/* Критические оповещения - только для админов */}
+        {isSuperAdmin && <TodayAlerts />}
+
+        {/* Быстрые действия - в зависимости от роли */}
+        <QuickActions employeeRole={data.employeeRole} />
       </div>
     </div>
   );

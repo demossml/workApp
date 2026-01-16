@@ -1,5 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  Smartphone,
+  Clock,
+  DollarSign,
+  Banknote,
+  RotateCcw,
+  Package,
+  BarChart3,
+} from "lucide-react";
 import ShopSalesMiniChart from "./ShopSalesMiniChart";
 import { useGetReportAndPlan } from "../hooks/useReportData";
 import { useShopCharts } from "../hooks/useShopCharts";
@@ -25,25 +34,28 @@ const renderKeyValueList = (
   if (loading) {
     return (
       <div className="space-y-2">
-        <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
-        <div className="w-2/3 h-2 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+        <div className="w-full h-3 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+        <div className="w-2/3 h-3 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+        <div className="w-4/5 h-3 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
       </div>
     );
   }
   if (!data || Object.keys(data).length === 0) {
     return (
-      <p className="text-xs text-gray-500 dark:text-gray-400">{emptyMessage}</p>
+      <p className="text-sm text-gray-500 dark:text-gray-400">{emptyMessage}</p>
     );
   }
   return (
-    <ul className="space-y-1">
+    <ul className="space-y-2">
       {Object.entries(data).map(([key, value]) => (
         <li
           key={key}
-          className="flex justify-between text-gray-800 dark:text-gray-200 text-xs"
+          className="flex justify-between items-center text-gray-800 dark:text-gray-200 text-sm py-2 border-b border-gray-100 dark:border-gray-700 last:border-0"
         >
-          <span>{key}</span>
-          <span className="font-semibold">{formatAmount(value)} ₽</span>
+          <span className="font-medium">{key}</span>
+          <span className="font-bold text-blue-600 dark:text-blue-400">
+            {formatAmount(value)} ₽
+          </span>
         </li>
       ))}
     </ul>
@@ -181,21 +193,23 @@ export default function PlanSalesFinancialReport() {
   const planData = error ? null : (data?.planData ?? null);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4 sm:px-6 lg:px-8">
+    <div className="w-full mb-8">
+      {/* Заголовок секции */}
+
       {/* Кнопка разворачивания для Telegram */}
       {isMiniApp && !isExpanded && (
         <motion.button
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           onClick={expandApp}
-          className="w-full max-w-md mx-auto mb-4 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
+          className="w-full mb-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl text-sm font-medium hover:from-blue-600 hover:to-blue-700 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
         >
-          <span>📱</span>
+          <Smartphone className="w-5 h-5" />
           Развернуть на весь экран для лучшего обзора
         </motion.button>
       )}
 
-      <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+      <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {shopNames.map((shopName) => {
           const data = reportData?.salesDataByShopName[shopName] || {
             sell: {},
@@ -208,13 +222,6 @@ export default function PlanSalesFinancialReport() {
 
           const isPlanMet =
             plan !== null && planSales !== null ? planSales >= plan : null;
-
-          const colorClass =
-            isPlanMet === null
-              ? "border-blue-400"
-              : isPlanMet
-                ? "border-green-400"
-                : "border-red-400";
 
           const statusText =
             isPlanMet === null
@@ -237,52 +244,74 @@ export default function PlanSalesFinancialReport() {
               }))
             : [];
 
+          // Определяем градиент в зависимости от статуса плана
+          const gradientClass =
+            isPlanMet === null
+              ? "from-blue-500 to-blue-600"
+              : isPlanMet
+                ? "from-green-500 to-green-600"
+                : "from-red-500 to-red-600";
+
           return (
             <motion.li
               key={shopName}
-              className={`bg-white dark:bg-gray-800 border-l-4 ${colorClass} rounded-2xl shadow-md hover:shadow-lg transition-all duration-200`}
-              whileHover={{ scale: 1.02 }}
+              className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden"
+              whileHover={{ scale: 1.02, y: -4 }}
               whileTap={{ scale: 0.98 }}
             >
+              {/* Градиентная полоска сверху */}
+              <div className={`h-1.5 bg-gradient-to-r ${gradientClass}`} />
+
               <button
                 onClick={() => toggleShopDetails(shopName)}
-                className="w-full text-left p-4"
+                className="w-full text-left p-3"
               >
-                <div className="flex justify-between items-center">
-                  <strong className="text-sm sm:text-base text-gray-900 dark:text-white truncate">
-                    {shopName}
-                  </strong>
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex-1">
+                    <strong className="text-sm font-bold text-gray-900 dark:text-white block mb-0.5">
+                      {shopName}
+                    </strong>
+                    {openTimes.data?.[shopName] && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> {openTimes.data[shopName]}
+                      </p>
+                    )}
+                  </div>
                   <span
-                    className={`text-xs sm:text-sm font-medium ${statusClass}`}
+                    className={`text-xs font-semibold px-3 py-1 rounded-full ${statusClass} ${
+                      isPlanMet === null
+                        ? "bg-blue-50 dark:bg-blue-900/30"
+                        : isPlanMet
+                          ? "bg-green-50 dark:bg-green-900/30"
+                          : "bg-red-50 dark:bg-red-900/30"
+                    }`}
                   >
                     {statusText}
                   </span>
                 </div>
 
-                {openTimes.data?.[shopName] && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {openTimes.data[shopName]}
-                  </p>
-                )}
-
-                <div className="grid grid-cols-3 gap-3 mt-3 text-gray-600 dark:text-gray-300">
-                  <div>
-                    <p className="text-xs">План:</p>
+                <div className="grid grid-cols-3 gap-3 mt-2">
+                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-2">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                      План:
+                    </p>
                     {loading || shopsLoading ? (
-                      <div className="w-16 h-2 bg-gray-300 dark:bg-gray-600 rounded animate-pulse" />
+                      <div className="w-full h-5 bg-gray-200 dark:bg-gray-600 rounded animate-pulse" />
                     ) : (
-                      <p className="font-semibold text-xs">
+                      <p className="font-bold text-sm text-gray-900 dark:text-white">
                         {plan !== null ? formatAmount(plan) : "-"} ₽
                       </p>
                     )}
                   </div>
 
-                  <div>
-                    <p className="text-xs">Продажи:</p>
+                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-2">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                      Продажи:
+                    </p>
                     {loading ? (
-                      <div className="w-16 h-2 bg-gray-300 dark:bg-gray-600 rounded animate-pulse" />
+                      <div className="w-full h-5 bg-gray-200 dark:bg-gray-600 rounded animate-pulse" />
                     ) : (
-                      <p className="font-semibold text-xs">
+                      <p className="font-bold text-sm text-gray-900 dark:text-white">
                         {planSales !== null
                           ? `${formatAmount(planSales)} ₽`
                           : "Нет данных"}
@@ -290,12 +319,14 @@ export default function PlanSalesFinancialReport() {
                     )}
                   </div>
 
-                  <div>
-                    <p className="text-xs">Выручка:</p>
+                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-2">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                      Выручка:
+                    </p>
                     {loading ? (
-                      <div className="w-16 h-2 bg-gray-300 dark:bg-gray-600 rounded animate-pulse" />
+                      <div className="w-full h-5 bg-gray-200 dark:bg-gray-600 rounded animate-pulse" />
                     ) : (
-                      <p className="font-semibold text-xs">
+                      <p className="font-bold text-sm text-gray-900 dark:text-white">
                         {formatAmount(data.totalSell)} ₽
                       </p>
                     )}
@@ -306,100 +337,95 @@ export default function PlanSalesFinancialReport() {
               <AnimatePresence>
                 {openedShop === shopName && (
                   <motion.div
-                    initial={{ opacity: 0, y: -5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -5 }}
-                    transition={{ duration: 0.2 }}
-                    className="bg-gray-100 dark:bg-gray-700 p-4 rounded-b-2xl space-y-4"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                    className="border-t border-gray-200 dark:border-gray-700"
                   >
-                    {/* Кнопка закрытия для мобильных устройств
-                    {isTelegramMiniApp && (
-                      <div className="flex justify-end">
-                        <button
-                          onClick={closeShopDetails}
-                          className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 bg-white dark:bg-gray-600 px-2 py-1 rounded-md transition-colors"
-                        >
-                          Закрыть ✕
-                        </button>
-                      </div>
-                    )} */}
-
-                    <section>
-                      <h4 className="text-xs font-semibold mb-1">
-                        Продажи по типам оплаты:
-                      </h4>
-                      {renderKeyValueList(data.sell, loading)}
-                    </section>
-
-                    <section>
-                      <h4 className="text-xs font-semibold mb-1">Выплаты:</h4>
-                      {renderKeyValueList(
-                        reportData?.cashOutcomeData?.[shopName],
-                        loading
-                      )}
-                    </section>
-
-                    {Object.keys(data.refund).length > 0 && (
-                      <section>
-                        <h4 className="text-xs font-semibold mb-1">
-                          Возвраты:
+                    <div className="p-5 space-y-5 bg-gray-50 dark:bg-gray-700/30">
+                      <section className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                          <DollarSign className="w-4 h-4" /> Продажи по типам
+                          оплаты
                         </h4>
-                        {renderKeyValueList(data.refund, loading)}
+                        {renderKeyValueList(data.sell, loading)}
                       </section>
-                    )}
 
-                    <section>
-                      <h4 className="text-xs font-semibold mb-1">
-                        План по товарам:
-                      </h4>
-                      {planQuantityArray.length > 0 ? (
-                        <ul className="space-y-1">
-                          {planQuantityArray.map((item, idx) => (
-                            <li
-                              key={idx}
-                              className="flex justify-between text-gray-800 dark:text-gray-200 text-xs"
-                            >
-                              <span>{item.productName}</span>
-                              <span className="font-semibold">
-                                {item.quantity as string} шт.
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Данные отсутствуют
-                        </p>
-                      )}
-                    </section>
+                      <section className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                          <Banknote className="w-4 h-4" /> Выплаты
+                        </h4>
+                        {renderKeyValueList(
+                          reportData?.cashOutcomeData?.[shopName],
+                          loading
+                        )}
+                      </section>
 
-                    <section>
-                      <h4 className="text-xs font-semibold mb-1">
-                        График продаж:
-                      </h4>
-                      {chartData.isLoading ? (
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Загрузка...
-                        </p>
-                      ) : chartData.error ? (
-                        <p className="text-xs text-red-500">
-                          Ошибка загрузки: {chartData.error.message}
-                        </p>
-                      ) : chartData.data?.[shopName] ? (
-                        <div className="w-full overflow-x-auto">
-                          <ShopSalesMiniChart
-                            todayData={chartData.data[shopName].nowDataSales}
-                            sevenDaysAgoData={
-                              chartData.data[shopName].sevenDaysDataSales
-                            }
-                          />
-                        </div>
-                      ) : (
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Нет данных
-                        </p>
+                      {Object.keys(data.refund).length > 0 && (
+                        <section className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
+                          <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                            <RotateCcw className="w-4 h-4" /> Возвраты
+                          </h4>
+                          {renderKeyValueList(data.refund, loading)}
+                        </section>
                       )}
-                    </section>
+
+                      <section className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                          <Package className="w-4 h-4" /> План по товарам
+                        </h4>
+                        {planQuantityArray.length > 0 ? (
+                          <ul className="space-y-2">
+                            {planQuantityArray.map((item) => (
+                              <li
+                                key={`${shopName}-${item.productName}`}
+                                className="flex justify-between text-gray-800 dark:text-gray-200 text-sm py-2 border-b border-gray-100 dark:border-gray-700 last:border-0"
+                              >
+                                <span className="font-medium">
+                                  {item.productName}
+                                </span>
+                                <span className="font-bold text-blue-600 dark:text-blue-400">
+                                  {item.quantity as string} шт.
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Данные отсутствуют
+                          </p>
+                        )}
+                      </section>
+
+                      <section className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                          <BarChart3 className="w-4 h-4" /> График продаж
+                        </h4>
+                        {chartData.isLoading ? (
+                          <div className="flex items-center justify-center py-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+                          </div>
+                        ) : chartData.error ? (
+                          <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">
+                            Ошибка загрузки: {chartData.error.message}
+                          </p>
+                        ) : chartData.data?.[shopName] ? (
+                          <div className="w-full overflow-x-auto">
+                            <ShopSalesMiniChart
+                              todayData={chartData.data[shopName].nowDataSales}
+                              sevenDaysAgoData={
+                                chartData.data[shopName].sevenDaysDataSales
+                              }
+                            />
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Нет данных
+                          </p>
+                        )}
+                      </section>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>

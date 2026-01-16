@@ -24,6 +24,15 @@ export const TelegramUserIdSchema = z
 	.min(1, "ID пользователя не может быть пустым")
 	.max(20, "Некорректный ID пользователя");
 
+/**
+ * Schema for AI Insights request
+ */
+export const AiInsightsRequestSchema = z.object({
+	startDate: DateStringSchema,
+	endDate: DateStringSchema,
+	shopUuid: UuidSchema,
+});
+
 // ============================================
 // СХЕМЫ ДЛЯ ENDPOINTS
 // ============================================

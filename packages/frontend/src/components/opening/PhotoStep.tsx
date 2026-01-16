@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import PhotoUpload from "./PhotoUpload";
 import type { StoreOpeningStep } from "../../pages/opening/types";
+import {
+  addToUploadQueue,
+  removeFromQueue,
+  updateFileStatus,
+  getPendingFiles,
+} from "../../helpers/uploadQueue";
 
 interface PhotoStepProps {
   setCurrentStep: React.Dispatch<React.SetStateAction<StoreOpeningStep>>;
@@ -183,10 +190,8 @@ export default function PhotoStep({ setCurrentStep, userId }: PhotoStepProps) {
     {}
   );
   const [uploadedFiles, setUploadedFiles] = useState<Set<string>>(new Set());
-  // const [compressionQueue, setCompressionQueue] = useState<Set<string>>(
-  //   new Set()
-  // );
   const [isUploading, setIsUploading] = useState(false);
+  const [canProceed, setCanProceed] = useState(false);
 
   // Функция для создания уникального ключа файла
   const createFileKey = (
@@ -209,7 +214,7 @@ export default function PhotoStep({ setCurrentStep, userId }: PhotoStepProps) {
   };
 
   // Функция для обработки успешной загрузки
-  const handleUploadSuccess = (fileKey: string) => {
+  const handleUploadSuccess = async (fileKey: string) => {
     setFileUploadStatus((prev) => ({
       ...prev,
       [fileKey]: {
@@ -220,6 +225,9 @@ export default function PhotoStep({ setCurrentStep, userId }: PhotoStepProps) {
     }));
 
     setUploadedFiles((prev) => new Set(prev).add(fileKey));
+
+    // Удаляем из очереди после успешной загрузки
+    await removeFromQueue(fileKey);
   };
 
   // Функция для обработки ошибки загрузки
@@ -286,7 +294,8 @@ export default function PhotoStep({ setCurrentStep, userId }: PhotoStepProps) {
             },
           }));
 
-          // setCompressionQueue((prev) => new Set(prev).add(fileKey));
+          // Добавляем файл в очередь IndexedDB
+          await addToUploadQueue(file, category, userId, fileKey);
 
           let compressedFile: File;
           try {
@@ -313,17 +322,14 @@ export default function PhotoStep({ setCurrentStep, userId }: PhotoStepProps) {
               ...prev,
               [fileKey]: {
                 ...prev[fileKey],
-                progress: 5, // 5% если сжатие пропущено
+                progress: 5,
                 status: "uploading",
               },
             }));
-            // } finally {
-            //   setCompressionQueue((prev) => {
-            //     const newSet = new Set(prev);
-            //     newSet.delete(fileKey);
-            //     return newSet;
-            //   });
           }
+
+          // Обновляем статус в очереди
+          await updateFileStatus(fileKey, "uploading");
 
           // Загружаем файл
           await uploadSingleFile(
@@ -400,16 +406,26 @@ export default function PhotoStep({ setCurrentStep, userId }: PhotoStepProps) {
       return fileUploadStatus[fileKey]?.status === "success";
     });
 
-  // Переход на следующий шаг когда все загружено
-  useEffect(() => {
-    if (allRequiredPhotosUploaded && !isUploading) {
-      const timer = setTimeout(() => {
-        setCurrentStep("cash_check");
-      }, 1000);
+  // Проверка минимальных требований для продолжения
+  const minRequirementsMet =
+    photos.area.length >= 1 &&
+    photos.stock.length >= 2 &&
+    photos.cash.length >= 1 &&
+    photos.mrc.length >= 1;
 
-      return () => clearTimeout(timer);
-    }
-  }, [allRequiredPhotosUploaded, isUploading, setCurrentStep]);
+  // Обновляем возможность продолжения
+  useEffect(() => {
+    setCanProceed(minRequirementsMet && !isUploading);
+  }, [minRequirementsMet, isUploading]);
+
+  // Функция перехода на следующий шаг
+  const handleProceed = async () => {
+    // Сохраняем незагруженные файлы в очередь для фоновой загрузки
+    const pendingFiles = await getPendingFiles(userId);
+    console.log(`📦 Незагруженных файлов в очереди: ${pendingFiles.length}`);
+
+    setCurrentStep("cash_check");
+  };
 
   // Статистика загрузки для отображения
   // const uploadStats = {
@@ -464,50 +480,80 @@ export default function PhotoStep({ setCurrentStep, userId }: PhotoStepProps) {
         />
       </div>
 
-      {/* Общая статистика загрузки */}
-      {/* {uploadStats.total > 0 && (
-        <div className="p-4 bg-blue-50 rounded-lg">
-          <h3 className="font-medium text-blue-900 mb-2">Статус загрузки:</h3>
-          <div className="grid grid-cols-5 gap-4 text-sm">
-            <div className="text-center">
-              <div className="text-blue-600 font-semibold">
-                {uploadStats.total}
-              </div>
-              <div className="text-gray-600">Всего</div>
-            </div>
-            <div className="text-center">
-              <div className="text-green-600 font-semibold">
-                {uploadStats.success}
-              </div>
-              <div className="text-gray-600">Успешно</div>
-            </div>
-            <div className="text-center">
-              <div className="text-blue-600 font-semibold">
-                {uploadStats.uploading}
-              </div>
-              <div className="text-gray-600">Загружается</div>
-            </div>
-            <div className="text-center">
-              <div className="text-yellow-600 font-semibold">
-                {uploadStats.compressing}
-              </div>
-              <div className="text-gray-600">Сжимается</div>
-            </div>
-            <div className="text-center">
-              <div className="text-red-600 font-semibold">
-                {uploadStats.error}
-              </div>
-              <div className="text-gray-600">Ошибки</div>
+      {/* Статус загрузки */}
+      {Object.keys(fileUploadStatus).length > 0 && (
+        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-medium text-blue-900 dark:text-blue-100">
+              Статус загрузки
+            </h3>
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              {
+                Object.values(fileUploadStatus).filter(
+                  (s) => s.status === "success"
+                ).length
+              }{" "}
+              / {Object.keys(fileUploadStatus).length}
             </div>
           </div>
 
-          {allRequiredPhotosUploaded && (
-            <div className="mt-3 p-2 bg-green-100 text-green-800 rounded text-center">
-              ✅ Все фото успешно загружены! Переходим к следующему шагу...
+          {/* Прогресс бар */}
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-3">
+            <motion.div
+              className="bg-blue-600 h-2 rounded-full"
+              initial={{ width: 0 }}
+              animate={{
+                width: `${
+                  (Object.values(fileUploadStatus).filter(
+                    (s) => s.status === "success"
+                  ).length /
+                    Object.keys(fileUploadStatus).length) *
+                  100
+                }%`,
+              }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
+
+          {/* Информация о незагруженных */}
+          {!allRequiredPhotosUploaded && minRequirementsMet && (
+            <div className="text-xs text-amber-600 dark:text-amber-400">
+              ⚠️ Некоторые фото еще загружаются. Вы можете продолжить - загрузка
+              продолжится в фоне.
             </div>
           )}
         </div>
-      )} */}
+      )}
+
+      {/* Кнопка продолжения */}
+      {minRequirementsMet && (
+        <motion.button
+          onClick={handleProceed}
+          disabled={!canProceed}
+          className={`w-full py-3 rounded-xl shadow font-medium transition-colors ${
+            canProceed
+              ? "bg-blue-600 text-white hover:bg-blue-700"
+              : "bg-gray-300 text-gray-500 cursor-not-allowed"
+          }`}
+          whileTap={canProceed ? { scale: 0.97 } : {}}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          {isUploading
+            ? "Загрузка... Можно продолжить"
+            : allRequiredPhotosUploaded
+              ? "Все готово! Продолжить"
+              : "Продолжить (загрузка в фоне)"}
+        </motion.button>
+      )}
+
+      {!minRequirementsMet && (
+        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-700 dark:text-amber-300">
+          📸 Загрузите минимум: 1 фото территории, 2 фото витрины, 1 фото кассы,
+          1 фото МРЦ
+        </div>
+      )}
 
       {/* Индикатор активной загрузки */}
       {isUploading && (

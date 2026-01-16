@@ -1,4 +1,5 @@
 import { Route, Routes } from "react-router";
+import { useEffect, useState } from "react";
 import { Topbar } from "./components/Topbar";
 import { BottomNavigation } from "./components/BottomNavigation";
 import { PWAInstall } from "./pwa";
@@ -18,17 +19,80 @@ import SalesTodayReport from "./pages/reports/SalesTodayReport";
 import SchedulesReport from "./pages/reports/SchedulesReport";
 import { useEmployeeRole } from "./hooks/useApi";
 import { useTheme } from "./hooks/useTheme";
+import { useUser } from "./hooks/userProvider";
 import StoreOpeningPage from "./pages/opening/StoreOpeningPage";
 import DeadStocks from "./pages/deadstock/DeadStock";
+import {
+  startBackgroundUpload,
+  hasFilesInQueue,
+} from "./helpers/backgroundUploader";
 
 function App() {
   const { data } = useEmployeeRole();
+  const tg = useUser();
+  const userId = tg?.id?.toString();
+
   useTheme();
+
+  const [uploadStatus, setUploadStatus] = useState<{
+    isUploading: boolean;
+    uploaded: number;
+    total: number;
+  }>({ isUploading: false, uploaded: 0, total: 0 });
+
+  // Фоновая загрузка файлов при открытии приложения
+  useEffect(() => {
+    if (!userId) return;
+
+    const checkAndUpload = async () => {
+      const hasFiles = await hasFilesInQueue(userId);
+
+      if (hasFiles) {
+        console.log(
+          "📤 Обнаружены файлы в очереди, начинаю фоновую загрузку..."
+        );
+        setUploadStatus({ isUploading: true, uploaded: 0, total: 0 });
+
+        try {
+          const result = await startBackgroundUpload(
+            userId,
+            (uploaded, total) => {
+              setUploadStatus({ isUploading: true, uploaded, total });
+            }
+          );
+
+          console.log(
+            `✅ Фоновая загрузка завершена: ${result.uploaded} успешно, ${result.failed} ошибок`
+          );
+        } catch (error) {
+          console.error("❌ Ошибка фоновой загрузки:", error);
+        } finally {
+          setUploadStatus({ isUploading: false, uploaded: 0, total: 0 });
+        }
+      }
+    };
+
+    // Запускаем проверку через 2 секунды после загрузки
+    const timer = setTimeout(checkAndUpload, 2000);
+
+    return () => clearTimeout(timer);
+  }, [userId]);
 
   return (
     <>
       <Topbar />
       <PWAInstall />
+      {/* Индикатор фоновой загрузки */}
+      {uploadStatus.isUploading && uploadStatus.total > 0 && (
+        <div className="fixed top-16 right-4 z-50 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg animate-pulse">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">
+              Загружаю фото: {uploadStatus.uploaded} / {uploadStatus.total}
+            </span>
+          </div>
+        </div>
+      )}
       {/* <div className="pb-20"> */} {/* отступ снизу под меню */}
       <Routes>
         <Route path="/" element={<Home />} />

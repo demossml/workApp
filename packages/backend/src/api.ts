@@ -22,6 +22,7 @@ import {
 	OrderSchema,
 	SalesGardenReportSchema,
 	ProfitReportSchema,
+	AiInsightsRequestSchema,
 	validate,
 } from "./validation";
 // import { createWorkersAI } from 'workers-ai-provider';
@@ -31,7 +32,13 @@ import {
 
 // const JWT_SECRET = "your_secret_key"; // Секретный ключ для подписи токена
 
-import { analyzeDocsStaffTask, getHoroscopeByDateTask } from "./ai";
+import {
+	analyzeDocsStaffTask,
+	getHoroscopeByDateTask,
+	analyzeDocsInsightsTask,
+	analyzeDocsAnomaliesTask,
+	analyzeDocsPatternsTask,
+} from "./ai";
 import type { ShopUuidName } from "./evotor/types";
 import {
 	assert,
@@ -59,7 +66,7 @@ import {
 	getTelegramFile,
 	getTodayRangeEvotor,
 	getUuidsByParentUuidList,
-	isOpenStoreExists,
+	getOpenStoreDetails,
 	replaceUuidsWithNames,
 	saveFileToR2,
 	saveNewIndexDocuments,
@@ -76,6 +83,7 @@ import {
 	getDocumentsByCashOutcomeData,
 	getSalesDataG,
 	getSalesgardenReportData,
+	getTopProductsData,
 } from "./evotor/utils";
 import { saveDeadStocks } from "./db/repositories/saveDeadStocks";
 import { sendDeadStocksToTelegram } from "../utils/sendDeadStocksToTelegram";
@@ -279,6 +287,161 @@ export const api = new Hono<IEnv>()
 
 		// const result = await sum2Numbers(c, { a: 1, b: 2 });
 		return c.json({ result });
+	})
+
+	.post("/api/ai/insights", async (c) => {
+		try {
+			const data = await c.req.json();
+			const { startDate, endDate, shopUuid } = validate(
+				AiInsightsRequestSchema,
+				data,
+			);
+
+			logger.info("AI insights request", { startDate, endDate, shopUuid });
+
+			const db = c.get("drizzle");
+			const evo = c.var.evotor;
+
+			// 🔹 Проверяем кэш
+			const { getAiInsightsFromCache, saveAiInsightsToCache } = await import(
+				"./db/repositories/aiInsightsCache.js"
+			);
+			const cachedResult = await getAiInsightsFromCache(
+				db,
+				shopUuid,
+				startDate,
+				endDate,
+			);
+
+			if (cachedResult) {
+				logger.info("AI insights cache hit", { startDate, endDate, shopUuid });
+				return c.json({
+					...cachedResult,
+					cached: true,
+				});
+			}
+
+			logger.info("AI insights cache miss, running analysis", {
+				startDate,
+				endDate,
+				shopUuid,
+			});
+
+			// Конвертируем YYYY-MM-DD в формат Evotor API
+			const since = formatDateWithTime(new Date(startDate), false);
+			const until = formatDateWithTime(new Date(endDate), true);
+
+			// Получаем документы за указанный период для конкретного магазина
+			const docs = await evo.getDocumentsBySellPayback(shopUuid, since, until);
+
+			if (!docs || docs.length === 0) {
+				return c.json(
+					{
+						insights: [],
+						anomalies: [],
+						patterns: [],
+						message: "Нет данных за указанный период",
+					},
+					200,
+				);
+			}
+
+			// Извлекаем информацию о продажах
+			const salesInfo = await evo.extractSalesInfo(docs);
+
+			// 🔹 Обогащаем данные дополнительным контекстом
+			const {
+				calculateSalesMetrics,
+				calculateTopProducts,
+				getTimeContext,
+				getPreviousPeriodDates,
+			} = await import("./ai/dataEnrichment.js");
+
+			// Текущий период
+			const currentMetrics = calculateSalesMetrics(salesInfo);
+			const topProducts = calculateTopProducts(salesInfo);
+			const timeContext = salesInfo[0]
+				? getTimeContext(salesInfo[0].closeDate)
+				: undefined;
+
+			// Получаем данные за предыдущий период для сравнения
+			const { previousStart, previousEnd } = getPreviousPeriodDates(
+				startDate,
+				endDate,
+			);
+			const prevSince = formatDateWithTime(new Date(previousStart), false);
+			const prevUntil = formatDateWithTime(new Date(previousEnd), true);
+
+			let previousMetrics:
+				| {
+						revenue: number;
+						transactionsCount: number;
+						averageCheck: number;
+						margin: number;
+				  }
+				| undefined;
+			try {
+				const prevDocs = await evo.getDocumentsBySellPayback(
+					shopUuid,
+					prevSince,
+					prevUntil,
+				);
+				if (prevDocs && prevDocs.length > 0) {
+					const prevSalesInfo = await evo.extractSalesInfo(prevDocs);
+					const prevStats = calculateSalesMetrics(prevSalesInfo);
+					previousMetrics = {
+						revenue: prevStats.totalRevenue,
+						transactionsCount: prevStats.totalTransactions,
+						averageCheck: prevStats.averageCheck,
+						margin: prevStats.totalMargin,
+					};
+				}
+			} catch (error) {
+				logger.warn("Could not fetch previous period data", error);
+			}
+
+			// Формируем расширенные данные для AI
+			const enrichedData = {
+				currentPeriod: {
+					salesInfo,
+					...currentMetrics,
+				},
+				previousPeriod: previousMetrics,
+				topProducts,
+				timeContext,
+			};
+
+			// Запускаем параллельно все AI-анализы с расширенными данными
+			const [insightsResult, anomaliesResult, patternsResult] =
+				await Promise.all([
+					analyzeDocsInsightsTask(c, enrichedData),
+					analyzeDocsAnomaliesTask(c, enrichedData),
+					analyzeDocsPatternsTask(c, enrichedData),
+				]);
+
+			const result = {
+				insights: insightsResult.insights,
+				anomalies: anomaliesResult.anomalies,
+				patterns: patternsResult.patterns,
+				documentsCount: docs.length,
+			};
+
+			// 🔹 Сохраняем в кэш
+			await saveAiInsightsToCache(db, shopUuid, startDate, endDate, result);
+
+			return c.json({
+				...result,
+				cached: false,
+			});
+		} catch (error) {
+			logger.error("AI insights error:", error);
+			return c.json(
+				{
+					error: error instanceof Error ? error.message : "AI analysis failed",
+				},
+				500,
+			);
+		}
 	})
 
 	.get("/api/schedules", async (c) => {
@@ -666,6 +829,74 @@ export const api = new Hono<IEnv>()
 		assert(salesData, "No sales data found");
 
 		return c.json({ salesData });
+	})
+
+	.get("/api/evotor/current-work-shop", async (c) => {
+		try {
+			const userId = c.var.userId;
+			const evo = c.var.evotor;
+
+			// Получаем сегодняшнюю дату
+			const today = new Date();
+			const since = formatDateWithTime(today, false);
+			const until = formatDateWithTime(today, true);
+
+			// Получаем фамилию сотрудника по userId (telegram ID)
+			const employeeData = await evo.getEmployeesByLastName(userId);
+
+			if (!employeeData || employeeData.length === 0) {
+				return c.json({
+					uuid: "",
+					name: "",
+					isWorkingToday: false,
+				});
+			}
+
+			const employeeUuid = employeeData[0].uuid;
+
+			// Получаем UUID магазина, где сотрудник открыл смену сегодня
+			const shopUuid = await evo.getFirstOpenSession(
+				since,
+				until,
+				employeeUuid,
+			);
+
+			if (!shopUuid) {
+				return c.json({
+					uuid: "",
+					name: "",
+					isWorkingToday: false,
+				});
+			}
+
+			// Получаем информацию о магазине
+			const shops = await evo.getShops();
+			const currentShop = shops.find((shop) => shop.uuid === shopUuid);
+
+			if (!currentShop) {
+				return c.json({
+					uuid: shopUuid,
+					name: "",
+					isWorkingToday: true,
+				});
+			}
+
+			return c.json({
+				uuid: currentShop.uuid,
+				name: currentShop.name,
+				isWorkingToday: true,
+			});
+		} catch (error) {
+			logger.error("Ошибка при получении текущего магазина:", error);
+			return c.json(
+				{
+					uuid: "",
+					name: "",
+					isWorkingToday: false,
+				},
+				500,
+			);
+		}
 	})
 
 	.get("/api/evotor/sales-today-graf", async (c) => {
@@ -1295,11 +1526,22 @@ export const api = new Hono<IEnv>()
 
 			const shopUuids = await evo.getShopUuids();
 
-			const { salesDataByShopName, grandTotalSell, grandTotalRefund } =
-				await getSalesgardenReportData(db, evo, shopUuids, since, until);
+			const {
+				salesDataByShopName,
+				grandTotalSell,
+				grandTotalRefund,
+				totalChecks,
+			} = await getSalesgardenReportData(db, evo, shopUuids, since, until);
 
 			const cashOutcomeData = await getDocumentsByCashOutcomeData(
 				db,
+				evo,
+				shopUuids,
+				since,
+				until,
+			);
+
+			const topProducts = await getTopProductsData(
 				evo,
 				shopUuids,
 				since,
@@ -1314,6 +1556,8 @@ export const api = new Hono<IEnv>()
 				grandTotalRefund,
 				grandTotalCashOutcome,
 				cashOutcomeData,
+				totalChecks,
+				topProducts,
 			});
 		} catch (error) {
 			logger.error("Ошибка при обработке запроса:", error);
@@ -1460,10 +1704,17 @@ export const api = new Hono<IEnv>()
 
 			const db = c.env.DB;
 
-			// Разбираем дату и проверяем наличие записи
-			const exists = await isOpenStoreExists(db, userId, date);
+			// Получаем детальную информацию об открытии
+			const details = await getOpenStoreDetails(db, userId, date);
 
-			return c.json({ exists });
+			if (!details) {
+				return c.json(
+					{ exists: false, error: "Ошибка при получении данных" },
+					500,
+				);
+			}
+
+			return c.json(details);
 		} catch (err) {
 			logger.error("Ошибка в /api/is-open-store:", err);
 			return c.json({ exists: false, error: "Ошибка сервера" }, 500);

@@ -2998,6 +2998,100 @@ export async function isOpenStoreExists(
 	}
 }
 
+export async function getOpenStoreDetails(
+	db: D1Database,
+	userId: string,
+	dateDDMMYYYY: string,
+): Promise<{
+	exists: boolean;
+	openTime?: string;
+	hasPhotos?: boolean;
+	photoCount?: number;
+	hasCashCheck?: boolean;
+	completionPercent?: number;
+} | null> {
+	try {
+		// Разбираем дату dd-mm-yyyy
+		const [day, month, year] = dateDDMMYYYY.split("-").map(Number);
+
+		// Начало и конец дня в формате ISO
+		const startDate = new Date(
+			Date.UTC(year, month - 1, day, 0, 0, 0),
+		).toISOString();
+		const endDate = new Date(
+			Date.UTC(year, month - 1, day, 23, 59, 59),
+		).toISOString();
+
+		// Получаем запись об открытии
+		const record = await db
+			.prepare(
+				`SELECT * 
+				 FROM openStors 
+				 WHERE userId = ? 
+				   AND date BETWEEN ? AND ?
+				 ORDER BY date DESC
+				 LIMIT 1`,
+			)
+			.bind(userId, startDate, endDate)
+			.first<{
+				date: string;
+				cash?: number;
+				sign?: number;
+				ok?: number;
+			}>();
+
+		if (!record) {
+			return { exists: false };
+		}
+
+		// Подсчитываем загруженные фото из openShops
+		const photoQuery = await db
+			.prepare(
+				`SELECT 
+					photoCashRegisterPhoto,
+					photoСabinetsPhoto,
+					photoShowcasePhoto1,
+					photoShowcasePhoto2,
+					photoShowcasePhoto3,
+					photoMRCPhoto1,
+					photoMRCPhoto2
+				FROM openShops
+				WHERE userId = ? AND date LIKE ?`,
+			)
+			.bind(userId, `${dateDDMMYYYY}%`)
+			.first<Record<string, string | null>>();
+
+		let photoCount = 0;
+		if (photoQuery) {
+			const photos = Object.values(photoQuery);
+			photoCount = photos.filter((p) => p !== null && p !== "").length;
+		}
+
+		// Проверяем наличие данных о кассе
+		const hasCashCheck =
+			record.cash !== null || record.sign !== null || record.ok !== null;
+
+		// Вычисляем процент завершения (фото + касса)
+		const totalSteps = 7 + 3; // 7 фото + 3 поля кассы
+		let completedSteps = photoCount;
+		if (record.cash !== null) completedSteps++;
+		if (record.sign !== null) completedSteps++;
+		if (record.ok !== null) completedSteps++;
+
+		return {
+			exists: true,
+			openTime: record.date,
+			hasPhotos: photoCount > 0,
+			photoCount,
+			hasCashCheck,
+			completionPercent: Math.round((completedSteps / totalSteps) * 100),
+		};
+	} catch (err) {
+		console.error("Ошибка при получении деталей открытия:", err);
+		return null;
+	}
+}
+
 export async function createDeadStocksTable(db: D1Database): Promise<void> {
 	try {
 		const createTableQuery =

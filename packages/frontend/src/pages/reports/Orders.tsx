@@ -211,9 +211,17 @@ export default function Order() {
       return;
     }
 
+    // Форматируем даты в YYYY-MM-DD
+    const formatDateToYYYYMMDD = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+
     const data = {
-      startDate: new Date(startDate.setHours(0, 0, 0, 0)).toISOString(), // Устанавливаем начало дня
-      endDate: new Date(endDate.setHours(23, 59, 59, 999)).toISOString(),
+      startDate: formatDateToYYYYMMDD(startDate),
+      endDate: formatDateToYYYYMMDD(endDate),
       shopUuid: selectedShop,
       groups: selectedGroups,
       period: selectedPeriod,

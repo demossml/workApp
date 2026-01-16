@@ -304,3 +304,64 @@ export const salesInfoSchema = z.object({
 	transactions: z.array(transactionSaleSchema),
 	paymentData: z.array(paymentInfoSchema),
 });
+
+// Схема для статистики за предыдущий период
+export const periodComparisonSchema = z.object({
+	revenue: z.number().describe("Выручка за предыдущий период"),
+	transactionsCount: z
+		.number()
+		.describe("Количество чеков за предыдущий период"),
+	averageCheck: z.number().describe("Средний чек за предыдущий период"),
+	margin: z.number().describe("Маржа за предыдущий период (в процентах)"),
+});
+
+// Схема для топ товаров
+export const topProductSchema = z.object({
+	productName: z.string().describe("Название товара"),
+	revenue: z.number().describe("Выручка от товара"),
+	quantity: z.number().describe("Количество проданных единиц"),
+	margin: z.number().describe("Маржа товара (в процентах)"),
+});
+
+// Схема для контекста времени
+export const timeContextSchema = z.object({
+	dayOfWeek: z.string().describe("День недели (пн, вт, ср...)"),
+	isWeekend: z.boolean().describe("Выходной день"),
+	isHoliday: z.boolean().describe("Праздничный день"),
+	hour: z.number().optional().describe("Час дня (0-23)"),
+	season: z.string().describe("Время года (зима, весна, лето, осень)"),
+});
+
+// Схема расширенных данных для AI-анализа
+export const extendedAnalysisDataSchema = z.object({
+	currentPeriod: z.object({
+		salesInfo: z.array(salesInfoSchema),
+		totalRevenue: z.number().describe("Общая выручка за текущий период"),
+		totalTransactions: z.number().describe("Общее количество чеков"),
+		averageCheck: z.number().describe("Средний чек"),
+		totalMargin: z.number().describe("Общая маржа (в процентах)"),
+	}),
+	previousPeriod: periodComparisonSchema
+		.optional()
+		.describe("Данные за предыдущий аналогичный период для сравнения"),
+	topProducts: z
+		.array(topProductSchema)
+		.optional()
+		.describe("Топ-5 самых продаваемых товаров"),
+	timeContext: timeContextSchema
+		.optional()
+		.describe("Контекст времени и сезонности"),
+	shopMetrics: z
+		.object({
+			averageCheckLast30Days: z
+				.number()
+				.optional()
+				.describe("Средний чек за последние 30 дней"),
+			averageMarginLast30Days: z
+				.number()
+				.optional()
+				.describe("Средняя маржа за последние 30 дней"),
+		})
+		.optional()
+		.describe("Средние показатели магазина"),
+});

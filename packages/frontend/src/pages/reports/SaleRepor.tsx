@@ -5,6 +5,7 @@ import { GroupSelector } from "../../components/GroupSelector";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { ErrorDisplay } from "../../components/ErrorDisplay";
 import { DynamicTable } from "../../components/DynamicTable";
+import AiInsights, { type AiInsightsData } from "../../components/AiInsights";
 import { useMe } from "../../hooks/useApi";
 import { motion } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
@@ -34,6 +35,11 @@ export default function SalesReport() {
   const [isLoadingShops, setIsLoadingShops] = useState(false);
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
+
+  // AI Insights state
+  const [aiInsights, setAiInsights] = useState<AiInsightsData | null>(null);
+  const [isLoadingAi, setIsLoadingAi] = useState(false);
+  const [showAiInsights, setShowAiInsights] = useState(false);
 
   // Состояния для отслеживания открытых модальных окон
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
@@ -230,6 +236,33 @@ export default function SalesReport() {
     return `${shopName}, ${formattedStartDate} → ${formattedEndDate}`;
   };
 
+  // 🔹 AI Анализ
+  const runAiAnalysis = async () => {
+    if (!selectedShop || !startDate || !endDate) return;
+
+    setIsLoadingAi(true);
+    setShowAiInsights(true);
+    try {
+      const response = await fetch("/api/ai/insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startDate,
+          endDate,
+          shopUuid: selectedShop,
+        }),
+      });
+      if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
+      const data: AiInsightsData = await response.json();
+      setAiInsights(data);
+    } catch (err) {
+      console.error(err);
+      setError("Не удалось получить AI анализ");
+    } finally {
+      setIsLoadingAi(false);
+    }
+  };
+
   // 🔹 Состояния загрузки / ошибки
   if (isLoadingReport) return <LoadingSpinner />;
   if (error) return <ErrorDisplay error={error} />;
@@ -296,6 +329,33 @@ export default function SalesReport() {
           <div className="flex-1 min-h-0 w-full">
             <DynamicTable data={tableData} />
           </div>
+
+          {/* AI Insights Section */}
+          {showAiInsights && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-6"
+            >
+              <AiInsights
+                data={aiInsights}
+                isLoading={isLoadingAi}
+                onAnalyze={runAiAnalysis}
+              />
+            </motion.div>
+          )}
+
+          {/* AI Button */}
+          {!showAiInsights && (
+            <motion.button
+              onClick={runAiAnalysis}
+              className="mt-4 w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-3 rounded-xl font-medium hover:shadow-lg transition-all"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              ✨ Запустить AI анализ
+            </motion.button>
+          )}
         </motion.div>
       </motion.div>
     );

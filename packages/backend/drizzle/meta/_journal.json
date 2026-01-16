@@ -8,6 +8,13 @@
       "when": 1768040202441,
       "tag": "0000_magical_risque",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1768303289660,
+      "tag": "0001_material_lady_vermin",
+      "breakpoints": true
     }
   ]
 }

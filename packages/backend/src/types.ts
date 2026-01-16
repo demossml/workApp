@@ -48,3 +48,25 @@ export interface SaveDeadStocksRequest {
 	shopUuid: string;
 	items: DeadStockItem[];
 }
+
+export interface AiInsightsData {
+	insights: Array<{
+		priority: "high" | "medium" | "low";
+		action: string;
+		reason: string;
+		expectedResult: string;
+	}>;
+	anomalies: Array<{
+		type: string;
+		reason: string;
+		details?: string;
+		priority: "high" | "medium" | "low";
+	}>;
+	patterns: Array<{
+		category: "product" | "time" | "employee" | "trend" | "other";
+		pattern: string;
+		data: string;
+		recommendation?: string;
+	}>;
+	documentsCount?: number;
+}

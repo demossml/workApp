@@ -86,10 +86,12 @@ export async function getSalesgardenReportData(
 			sell: Record<string, number>;
 			refund: Record<string, number>;
 			totalSell: number;
+			checksCount: number;
 		}
 	>;
 	grandTotalSell: number;
 	grandTotalRefund: number;
+	totalChecks: number;
 }> {
 	const paymentTypeLabels: Record<string, string> = {
 		CARD: "Банковской картой:",
@@ -124,21 +126,25 @@ export async function getSalesgardenReportData(
 				sell: Record<string, number>;
 				refund: Record<string, number>;
 				totalSell: number;
+				checksCount: number;
 			}
 		> = {};
 
 		let grandTotalSell = 0;
 		let grandTotalRefund = 0;
+		let totalChecks = 0;
 
 		for (const { uuid, docs } of documentsByShop) {
 			const sellMap = new Map<string, number>();
 			const refundMap = new Map<string, number>();
 			let totalSell = 0;
 			let totalRefund = 0;
+			let checksCount = 0;
 
 			for (const { type: docType, transactions } of docs) {
 				const isRefund = docType === "PAYBACK";
 				const targetMap = isRefund ? refundMap : sellMap;
+				checksCount++;
 
 				for (const { type, paymentType, sum } of transactions) {
 					if (type !== "PAYMENT" || !paymentType) continue;
@@ -158,17 +164,105 @@ export async function getSalesgardenReportData(
 				sell: Object.fromEntries(sellMap),
 				refund: Object.fromEntries(refundMap),
 				totalSell,
+				checksCount,
 			};
 			grandTotalSell += totalSell;
 			grandTotalRefund += totalRefund;
+			totalChecks += checksCount;
 		}
 
-		return { salesDataByShopName, grandTotalSell, grandTotalRefund };
+		return {
+			salesDataByShopName,
+			grandTotalSell,
+			grandTotalRefund,
+			totalChecks,
+		};
 	} catch (error) {
 		logger.error(
 			`getSalesgardenReportData: Ошибка при получении данных для магазинов ${shopUuids.join(", ")}`,
 			error,
 		);
+		throw error;
+	}
+}
+
+/**
+ * Получает данные о топ-продуктах за период
+ */
+export async function getTopProductsData(
+	evo: any,
+	shopUuids: string[],
+	since: string,
+	until: string,
+) {
+	try {
+		const productStats = new Map<
+			string,
+			{
+				revenue: number;
+				quantity: number;
+				refundRevenue: number;
+				refundQuantity: number;
+			}
+		>();
+
+		// Получаем документы для всех магазинов
+		const docsPromises = shopUuids.map((uuid) =>
+			evo.getDocumentsBySellPayback(uuid, since, until),
+		);
+		const docsResults = await Promise.all(docsPromises);
+
+		// Обрабатываем все документы
+		for (const docs of docsResults) {
+			if (!docs || docs.length === 0) continue;
+
+			for (const doc of docs) {
+				const isRefund = doc.type === "PAYBACK";
+
+				for (const trans of doc.transactions) {
+					if (trans.type !== "REGISTER_POSITION") continue;
+
+					const productName = trans.commodityName || "Неизвестный товар";
+					const existing = productStats.get(productName) || {
+						revenue: 0,
+						quantity: 0,
+						refundRevenue: 0,
+						refundQuantity: 0,
+					};
+
+					if (isRefund) {
+						existing.refundRevenue += trans.sum || 0;
+						existing.refundQuantity += trans.quantity || 0;
+					} else {
+						existing.revenue += trans.sum || 0;
+						existing.quantity += trans.quantity || 0;
+					}
+
+					productStats.set(productName, existing);
+				}
+			}
+		}
+
+		// Конвертируем в массив и сортируем по чистой выручке
+		const topProducts = Array.from(productStats.entries())
+			.map(([productName, stats]) => ({
+				productName,
+				revenue: stats.revenue,
+				quantity: stats.quantity,
+				refundRevenue: stats.refundRevenue,
+				refundQuantity: stats.refundQuantity,
+				netRevenue: stats.revenue - stats.refundRevenue,
+				netQuantity: stats.quantity - stats.refundQuantity,
+				averagePrice: stats.quantity > 0 ? stats.revenue / stats.quantity : 0,
+				refundRate:
+					stats.revenue > 0 ? (stats.refundRevenue / stats.revenue) * 100 : 0,
+			}))
+			.filter((p) => p.netRevenue > 0) // Только товары с положительной выручкой
+			.sort((a, b) => b.netRevenue - a.netRevenue);
+
+		return topProducts;
+	} catch (error) {
+		logger.error("Ошибка при получении топ-продуктов:", error);
 		throw error;
 	}
 }

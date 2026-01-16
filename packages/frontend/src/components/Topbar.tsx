@@ -1,8 +1,21 @@
 import { useUser } from "../hooks/userProvider";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState } from "react";
-import { X, Download, Cigarette } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import {
+  X,
+  Download,
+  Cigarette,
+  Smartphone,
+  Bell,
+  Shield,
+  User,
+  LogOut,
+  Settings,
+} from "lucide-react";
 import { isTelegramMiniApp, telegram } from "../helpers/telegram";
+import { useEmployeeRole } from "../hooks/useApi";
+import { useGetReportAndPlan } from "../hooks/useReportData";
+import { useGetShopNames } from "../hooks/useGetShopNames";
 
 // Тип события beforeinstallprompt
 interface BeforeInstallPromptEvent extends Event {
@@ -13,8 +26,13 @@ interface BeforeInstallPromptEvent extends Event {
 export const Topbar = () => {
   const user = useUser();
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
 
   const isMiniApp = isTelegramMiniApp();
+  const { data: roleData } = useEmployeeRole();
+  const { data: shopNames = [] } = useGetShopNames();
+  const { data: reportData } = useGetReportAndPlan(shopNames.length > 0);
 
   // Состояние установки PWA (только для браузера)
   const [deferredPrompt, setDeferredPrompt] =
@@ -95,6 +113,56 @@ export const Topbar = () => {
   //   }
   // };
 
+  // Подсчет критических алертов
+  const getAlertsCount = () => {
+    if (!reportData?.reportData?.salesDataByShopName) return 0;
+
+    let alertsCount = 0;
+    const salesData = reportData.reportData.salesDataByShopName;
+    const shops = Object.entries(salesData);
+
+    if (shops.length === 0) return 0;
+
+    // Вычисляем среднюю выручку
+    const avgSales =
+      shops.reduce((sum, [, data]) => sum + (data.totalSell || 0), 0) /
+      shops.length;
+
+    shops.forEach(([, shopData]) => {
+      // Низкие продажи (меньше 50% от средних)
+      if (shopData.totalSell < avgSales * 0.5) alertsCount++;
+
+      // Высокий процент возвратов (>10%)
+      const refundTotal = Object.values(shopData.refund || {}).reduce(
+        (sum, val) => sum + val,
+        0
+      );
+      const refundRate =
+        shopData.totalSell > 0 ? (refundTotal / shopData.totalSell) * 100 : 0;
+      if (refundRate > 10) alertsCount++;
+    });
+
+    return alertsCount;
+  };
+
+  // Закрытие меню при клике вне его
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(event.target as Node)
+      ) {
+        setShowProfileMenu(false);
+      }
+    };
+
+    if (showProfileMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showProfileMenu]);
+
   // Получаем данные пользователя из Telegram, если доступны
   const getUserData = () => {
     if (isMiniApp && telegram.WebApp?.initDataUnsafe?.user) {
@@ -113,36 +181,84 @@ export const Topbar = () => {
   };
 
   const userData = getUserData();
+  const alertsCount = getAlertsCount();
+
+  // Определяем стиль badge роли
+  const getRoleBadge = () => {
+    const role = roleData?.employeeRole;
+    if (!role || role === "null") return null;
+
+    const roleStyles = {
+      SUPERADMIN: {
+        label: "Admin",
+        bg: "from-purple-500 to-purple-600",
+        icon: <Shield className="w-3 h-3" />,
+      },
+      ADMIN: {
+        label: "Manager",
+        bg: "from-blue-500 to-blue-600",
+        icon: <User className="w-3 h-3" />,
+      },
+      CASHIER: {
+        label: "Cashier",
+        bg: "from-green-500 to-green-600",
+        icon: <User className="w-3 h-3" />,
+      },
+    };
+
+    return roleStyles[role as keyof typeof roleStyles] || null;
+  };
+
+  const roleBadge = getRoleBadge();
 
   return (
     <motion.header
       initial={{ y: -40, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="fixed top-0 left-0 w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-md z-50"
+      className="fixed top-0 left-0 w-full bg-gradient-to-r from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-lg z-50"
     >
       <div className="flex items-center justify-between px-1 py-1">
-        {/* Приветствие */}
-        <div className="flex ml-4 gap-2 text-lg font-semibold text-gray-800 dark:text-gray-100">
-          {userData.firstName}
-          {/* {userData.username && (
-            <span className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              @{userData.username}
+        {/* Приветствие и роль */}
+        <div className="flex ml-4 items-center gap-2">
+          <span className="text-lg font-bold text-gray-800 dark:text-gray-100">
+            {userData.firstName}
+          </span>
+          {roleBadge && (
+            <span
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r ${roleBadge.bg} text-white text-xs font-semibold shadow-sm`}
+            >
+              {roleBadge.icon}
+              {roleBadge.label}
             </span>
-          )} */}
+          )}
         </div>
 
-        {/* Аватар и кнопки */}
+        {/* Кнопки и аватар */}
         <div className="flex items-center gap-3">
+          {/* Badge уведомлений */}
+          {alertsCount > 0 && roleData?.employeeRole !== "CASHIER" && (
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="relative"
+            >
+              <Bell className="w-5 h-5 text-orange-500 dark:text-orange-400" />
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                {alertsCount}
+              </span>
+            </motion.div>
+          )}
+
           {/* Кнопка разворачивания для Telegram */}
           {isMiniApp && !isExpanded && (
             <motion.button
               onClick={expandApp}
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="flex items-center gap-1 bg-green-500 text-white text-xs font-medium px-2 py-1 rounded-lg shadow hover:bg-green-600 transition-all"
+              className="flex items-center gap-1 bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-medium px-2 py-1 rounded-lg shadow-md hover:from-green-600 hover:to-green-700 transition-all"
             >
-              📱
+              <Smartphone className="w-3 h-3" />
             </motion.button>
           )}
 
@@ -175,24 +291,122 @@ export const Topbar = () => {
             )}
           </AnimatePresence>
 
-          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
-            {userData.photoUrl ? (
-              <img
-                src={userData.photoUrl}
-                alt="User"
-                className="mr-4 w-9 h-9 rounded-full border border-gray-300 dark:border-gray-600 shadow-sm"
-                onClick={() => {
-                  if (isMiniApp) {
-                    telegram.WebApp.HapticFeedback.impactOccurred("light");
-                  }
-                }}
-              />
-            ) : (
-              <div className="flex items-center mr-4 gap-2">
-                <Cigarette className="w-9 h-9 p-1.5 bg-blue-500 text-white rounded-full border border-gray-300 dark:border-gray-600 shadow-sm" />
-              </div>
-            )}
-          </motion.div>
+          {/* Аватар с меню */}
+          <div className="relative" ref={profileMenuRef}>
+            <motion.button
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                setShowProfileMenu(!showProfileMenu);
+                if (isMiniApp) {
+                  telegram.WebApp.HapticFeedback.impactOccurred("light");
+                }
+              }}
+              className="mr-4"
+            >
+              {userData.photoUrl ? (
+                <img
+                  src={userData.photoUrl}
+                  alt="User"
+                  className="w-9 h-9 rounded-full border-2 border-gray-300 dark:border-gray-600 shadow-md hover:border-blue-500 dark:hover:border-blue-400 transition-colors"
+                />
+              ) : (
+                <div className="w-9 h-9 p-1.5 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-full border-2 border-gray-300 dark:border-gray-600 shadow-md flex items-center justify-center">
+                  <Cigarette className="w-5 h-5" />
+                </div>
+              )}
+            </motion.button>
+
+            {/* Всплывающее меню профиля */}
+            <AnimatePresence>
+              {showProfileMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                  transition={{ duration: 0.2 }}
+                  className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50"
+                >
+                  {/* Заголовок меню */}
+                  <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 text-white">
+                    <div className="flex items-center gap-3">
+                      {userData.photoUrl ? (
+                        <img
+                          src={userData.photoUrl}
+                          alt="User"
+                          className="w-12 h-12 rounded-full border-2 border-white shadow-md"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                          <User className="w-6 h-6" />
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-bold text-sm">
+                          {userData.firstName}
+                        </p>
+                        {userData.username && (
+                          <p className="text-xs opacity-90">
+                            @{userData.username}
+                          </p>
+                        )}
+                        {roleBadge && (
+                          <span className="inline-block mt-1 px-2 py-0.5 bg-white/20 rounded-full text-xs font-semibold">
+                            {roleBadge.label}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Пункты меню */}
+                  <div className="p-2">
+                    <button
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        // Переход в настройки
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+                    >
+                      <Settings className="w-4 h-4" />
+                      <span className="text-sm font-medium">Настройки</span>
+                    </button>
+
+                    {alertsCount > 0 && (
+                      <button
+                        onClick={() => {
+                          setShowProfileMenu(false);
+                          // Переход к алертам
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+                      >
+                        <Bell className="w-4 h-4" />
+                        <span className="text-sm font-medium">Уведомления</span>
+                        <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                          {alertsCount}
+                        </span>
+                      </button>
+                    )}
+
+                    <div className="border-t border-gray-200 dark:border-gray-700 my-2" />
+
+                    <button
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        if (isMiniApp) {
+                          telegram.WebApp.close();
+                        }
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-red-600 dark:text-red-400"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span className="text-sm font-medium">Выйти</span>
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
 
