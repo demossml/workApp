@@ -8,12 +8,12 @@
 		"start": "wrangler dev",
 		"deploy": "wrangler deploy",
 		"db:generate": "drizzle-kit generate",
-  		"db:apply-local": "wrangler d1 migrations apply DB --local",
+		"db:apply-local": "wrangler d1 migrations apply DB --local",
 		"db:apply-remote": "wrangler d1 migrations apply DB --remote"
-
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20250628.0",
+		"@types/react-datepicker": "^7.0.0",
 		"@types/unzip-stream": "^0.3.4",
 		"drizzle-kit": "^0.31.8",
 		"dts-gen": "^0.10.4",

@@ -87,6 +87,7 @@ import {
 } from "./evotor/utils";
 import { saveDeadStocks } from "./db/repositories/saveDeadStocks";
 import { sendDeadStocksToTelegram } from "../utils/sendDeadStocksToTelegram";
+// import { start } from "node:repl";
 
 export const api = new Hono<IEnv>()
 
@@ -194,6 +195,239 @@ export const api = new Hono<IEnv>()
 			);
 		}
 	})
+
+	// Новый endpoint для отчёта за произвольный период
+	.post("/api/evotor/report/financial", async (c) => {
+		try {
+			const db = c.get("db");
+			const evo = c.var.evotor;
+			const startDate = c.req.query("since");
+			const endDate = c.req.query("until");
+			// console.log(
+			// 	"[financial report] Received request with startDate and endDate",
+			// 	{
+			// 		startDate,
+			// 		endDate,
+			// 	},
+			// );
+
+			if (!startDate || !endDate) {
+				return c.json({ error: "since и until обязательны" }, 400);
+			}
+
+			// Конвертируем YYYY-MM-DD в формат Evotor API
+			const since = formatDateWithTime(new Date(startDate), false);
+			const until = formatDateWithTime(new Date(endDate), true);
+			// console.log("[financial report] Converted dates", { since, until });
+			const shopUuids = await evo.getShopUuids();
+			const {
+				salesDataByShopName,
+				grandTotalSell,
+				grandTotalRefund,
+				totalChecks,
+			} = await getSalesgardenReportData(db, evo, shopUuids, since, until);
+			const cashOutcomeData = await getDocumentsByCashOutcomeData(
+				db,
+				evo,
+				shopUuids,
+				since,
+				until,
+			);
+			const topProducts = await getTopProductsData(
+				evo,
+				shopUuids,
+				since,
+				until,
+			);
+			const grandTotalCashOutcome = calculateTotalSum(cashOutcomeData);
+
+			// console.log("[financial report] Calculated values:", {
+			// 	grandTotalSell,
+			// 	grandTotalRefund,
+			// 	netSales: grandTotalSell - grandTotalRefund,
+			// 	totalChecks,
+			// 	shopCount: Object.keys(salesDataByShopName).length,
+			// });
+
+			return c.json({
+				salesDataByShopName,
+				grandTotalSell,
+				grandTotalRefund,
+				grandTotalCashOutcome,
+				cashOutcomeData,
+				totalChecks,
+				topProducts,
+			});
+		} catch (error) {
+			logger.error("Ошибка при обработке запроса:", error);
+			return c.json({ message: "Ошибка обработки данных" }, 400);
+		}
+	})
+
+	.post(
+		"/api/evotor/accessories-sales:role/:role/userId::userId",
+		async (c) => {
+			try {
+				const db = c.get("db");
+				const evo = c.var.evotor;
+
+				// Если что-то пришло в теле, можно логировать
+				const data = await c.req.json().catch(() => null);
+				// Получаем role и userId из параметров маршрута
+				const role = data.role;
+				const userId = data.userId;
+				// console.log("[accessories-sales] role и userId из URL", {
+				// 	role,
+				// 	userId,
+				// });
+				// console.log("[accessories-sales] Request body", data);
+
+				// Даты: из тела запроса или сегодня
+				let since: string;
+				let until: string;
+				if (data?.since && data?.until) {
+					const startData = data.since;
+					const endData = data.until;
+					// Конвертируем YYYY-MM-DD в формат Evotor API
+					since = formatDateWithTime(new Date(startData), false);
+					until = formatDateWithTime(new Date(endData), true);
+				} else {
+					const today = new Date();
+					since = formatDateWithTime(today, false);
+					until = formatDateWithTime(today, true);
+				}
+				// console.log("[accessories-sales] Даты", { since, until });
+
+				// Получаем UUID групп аксессуаров
+				const groupIdsAks = await getAllUuid(db);
+				// console.log("[accessories-sales] groupIdsAks", { groupIdsAks });
+
+				const response: any = {};
+				if (role === "SUPERADMIN") {
+					// Получаем список UUID всех магазинов
+					const shopUuids = await evo.getShopUuids();
+					// console.log("[accessories-sales] shopUuids", { shopUuids });
+					// Получаем UUID всех аксессуаров по каждому магазину
+					const shopProductsPromises = shopUuids.map((shopId) =>
+						getProductsByGroup(db, shopId, groupIdsAks),
+					);
+					const shopProductsResults = await Promise.all(shopProductsPromises);
+					// console.log("[accessories-sales] shopProductsResults", {
+					// 	shopProductsResults,
+					// });
+					// Получаем названия магазинов
+					const shopNamesMap = await evo.getShopNamesByUuids(shopUuids);
+					// console.log("[accessories-sales] shopNamesMap", { shopNamesMap });
+					// Собираем данные по продажам аксессуаров для каждого магазина
+					const salesPromises = shopUuids.map(async (shopId, idx) => {
+						const productUuids = shopProductsResults[idx];
+						const salesData = await evo.getSalesSumQuantitySum(
+							db,
+							shopId,
+							since,
+							until,
+							productUuids,
+						);
+						// console.log("[accessories-sales] salesData", { shopId, salesData });
+						return {
+							shopId,
+							shopName: shopNamesMap[shopId] || shopId,
+							sales: salesData,
+						};
+					});
+					const salesResults = await Promise.all(salesPromises);
+					// console.log("[accessories-sales] salesResults", { salesResults });
+					response.byShop = salesResults.map(({ shopId, shopName, sales }) => ({
+						shopId,
+						shopName,
+						sales: Object.entries(sales).map(([name, data]) => ({
+							name,
+							quantity: data.quantitySale,
+							sum: data.sum,
+						})),
+					}));
+					// Суммарно по всем магазинам
+					const total: Record<string, { quantity: number; sum: number }> = {};
+					for (const { sales } of salesResults) {
+						for (const [name, data] of Object.entries(sales)) {
+							if (!total[name]) total[name] = { quantity: 0, sum: 0 };
+							total[name].quantity += data.quantitySale;
+							total[name].sum += data.sum;
+						}
+					}
+					response.total = Object.entries(total).map(([name, data]) => ({
+						name,
+						quantity: data.quantity,
+						sum: data.sum,
+					}));
+					// console.log("[accessories-sales] response.total", {
+					// total: response.total,
+					// });
+				} else {
+					// Для кассира: определяем магазин, где он сегодня работает
+					const shopUuid = await evo.getFirstOpenSession(
+						since,
+						until,
+						userId || "",
+					);
+					// console.log("[accessories-sales] shopUuid", { shopUuid });
+					if (!shopUuid) {
+						logger.warn(
+							"[accessories-sales] Не найден открытый магазин для пользователя",
+							{ userId },
+						);
+						return c.json(
+							{ error: "Сегодня не найден открытый магазин для пользователя" },
+							404,
+						);
+					}
+					const shopName = await evo.getShopName(shopUuid);
+					// console.log("[accessories-sales] shopName", { shopName });
+					const productUuids = await getProductsByGroup(
+						db,
+						shopUuid,
+						groupIdsAks,
+					);
+					// console.log("[accessories-sales] productUuids", { productUuids });
+					const salesData = await evo.getSalesSumQuantitySum(
+						db,
+						shopUuid,
+						since,
+						until,
+						productUuids,
+					);
+					// console.log("[accessories-sales] salesData (cashier)", { salesData });
+					response.byShop = [
+						{
+							shopId: shopUuid,
+							shopName,
+							sales: Object.entries(salesData).map(([name, data]) => ({
+								name,
+								quantity: data.quantitySale,
+								sum: data.sum,
+							})),
+						},
+					];
+					response.total = response.byShop[0].sales;
+					// console.log("[accessories-sales] response.total (cashier)", {
+					// 	total: response.total,
+					// });
+				}
+
+				// logger.info("[acce/ssories-sales] Финальный ответ", { response });
+				return c.json(response);
+			} catch (error) {
+				logger.error(
+					"Ошибка при получении данных о продажах аксессуаров",
+					error,
+				);
+				return c.json(
+					{ error: "Ошибка при получении данных о продажах аксессуаров" },
+					500,
+				);
+			}
+		},
+	)
 
 	.post("/api/schedules/table", async (c) => {
 		try {

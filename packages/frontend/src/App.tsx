@@ -121,9 +121,13 @@ function App() {
         <Route path="/evotor/open-store" element={<StoreOpeningPage />} />
         <Route path="evotor/dead-stock" element={<DeadStocks />} />
       </Routes>
-      {data?.employeeRole && (
-        <BottomNavigation employeeRole={data.employeeRole} />
-      )}
+      {(() => {
+        const allowedRoles = ["SUPERADMIN", "CASHIER", "ADMIN"];
+        const role = allowedRoles.includes(data?.employeeRole ?? "")
+          ? (data?.employeeRole as "SUPERADMIN" | "CASHIER" | "ADMIN")
+          : "CASHIER";
+        return <BottomNavigation employeeRole={role} />;
+      })()}
     </>
   );
 }

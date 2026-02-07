@@ -1,25 +1,31 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, TrendingDown, Clock } from "lucide-react";
 
+// Интерфейс для структуры данных о продажах
 interface SalesData {
   salesDataByShopName: Record<string, { sell: number; refund: number }>;
   grandTotalSell: number;
 }
 
+// Интерфейс для оповещения
 interface Alert {
-  type: "warning" | "danger" | "info";
-  title: string;
-  message: string;
-  icon: React.ReactNode;
+  type: "warning" | "danger" | "info"; // Тип оповещения
+  title: string; // Заголовок
+  message: string; // Сообщение
+  icon: React.ReactNode; // Иконка
 }
 
 export default function TodayAlerts() {
+  // Состояние для списка оповещений
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Состояние загрузки
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    // Функция для загрузки данных и формирования оповещений
     const fetchData = async () => {
       try {
+        // Запрос к API для получения финансового отчёта за сегодня
         const response = await fetch("/api/evotor/report/financial/today", {
           headers: {
             "Content-Type": "application/json",
@@ -31,9 +37,11 @@ export default function TodayAlerts() {
 
         const newAlerts: Alert[] = [];
 
-        // Проверяем магазины с низкими продажами
+        // --- Оповещение о низких продажах ---
+        // Среднее значение продаж по всем магазинам
         const avgSales =
           data.grandTotalSell / Object.keys(data.salesDataByShopName).length;
+        // Магазины, где продажи ниже 50% среднего
         const lowSalesShops = Object.entries(data.salesDataByShopName).filter(
           ([, shopData]) => shopData.sell < avgSales * 0.5 && shopData.sell > 0
         );
@@ -47,7 +55,8 @@ export default function TodayAlerts() {
           });
         }
 
-        // Проверяем магазины с высокими возвратами
+        // --- Оповещение о высоких возвратах ---
+        // Магазины, где возвраты превышают 10% от продаж
         const highRefundShops = Object.entries(data.salesDataByShopName).filter(
           ([, shopData]) =>
             shopData.refund > 0 &&
@@ -64,8 +73,9 @@ export default function TodayAlerts() {
           });
         }
 
-        // Проверяем время (если после 12:00, а есть магазины без продаж)
+        // --- Оповещение о магазинах без продаж после 12:00 ---
         const currentHour = new Date().getHours();
+        // Магазины, где нет продаж
         const noSalesShops = Object.entries(data.salesDataByShopName).filter(
           ([, shopData]) => shopData.sell === 0
         );
@@ -79,19 +89,23 @@ export default function TodayAlerts() {
           });
         }
 
+        // Сохраняем оповещения в состоянии
         setAlerts(newAlerts);
       } catch (error) {
+        // Обработка ошибки загрузки
         console.error("Ошибка загрузки оповещений:", error);
       } finally {
         setLoading(false);
       }
     };
 
+    // Первый запуск и периодическое обновление каждые 2 минуты
     fetchData();
-    const interval = setInterval(fetchData, 120000); // Обновление каждые 2 минуты
+    const interval = setInterval(fetchData, 120000); // 2 минуты
     return () => clearInterval(interval);
   }, []);
 
+  // Отображение состояния загрузки (скелетон)
   if (loading) {
     return (
       <div className="mb-6">
@@ -108,8 +122,10 @@ export default function TodayAlerts() {
     );
   }
 
+  // Если нет оповещений — ничего не показываем
   if (alerts.length === 0) return null;
 
+  // Функция для выбора стилей оповещения по типу
   const getAlertStyles = (type: Alert["type"]) => {
     switch (type) {
       case "danger":
@@ -121,6 +137,7 @@ export default function TodayAlerts() {
     }
   };
 
+  // Основной рендер компонента: список оповещений
   return (
     <div className="mb-6">
       <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
@@ -132,9 +149,12 @@ export default function TodayAlerts() {
             key={`${alert.type}-${alert.title}`}
             className={`flex items-start gap-3 p-3 rounded-lg border ${getAlertStyles(alert.type)}`}
           >
+            {/* Иконка оповещения */}
             <div className="mt-0.5">{alert.icon}</div>
             <div className="flex-1">
+              {/* Заголовок оповещения */}
               <div className="font-semibold text-sm">{alert.title}</div>
+              {/* Сообщение оповещения */}
               <div className="text-xs opacity-90 mt-0.5">{alert.message}</div>
             </div>
           </div>

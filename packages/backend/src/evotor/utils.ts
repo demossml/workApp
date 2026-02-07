@@ -150,9 +150,11 @@ export async function getSalesgardenReportData(
 					if (type !== "PAYMENT" || !paymentType) continue;
 					const label =
 						paymentTypeLabels[paymentType] || paymentTypeLabels.UNKNOWN;
-					targetMap.set(label, (targetMap.get(label) ?? 0) + sum);
+					// Для возвратов sum приходит отрицательным, берем абсолютное значение
+					const absSum = Math.abs(sum);
+					targetMap.set(label, (targetMap.get(label) ?? 0) + absSum);
 					if (isRefund) {
-						totalRefund += sum;
+						totalRefund += absSum;
 					} else {
 						totalSell += sum;
 					}
@@ -170,6 +172,15 @@ export async function getSalesgardenReportData(
 			grandTotalRefund += totalRefund;
 			totalChecks += checksCount;
 		}
+
+		console.log("[getSalesgardenReportData] Final totals:", {
+			grandTotalSell,
+			grandTotalRefund,
+			netSales: grandTotalSell - grandTotalRefund,
+			totalChecks,
+			shopsCount: documentsByShop.length,
+			shopNames: Object.keys(salesDataByShopName),
+		});
 
 		return {
 			salesDataByShopName,

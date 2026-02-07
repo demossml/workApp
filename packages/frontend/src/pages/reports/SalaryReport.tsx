@@ -145,14 +145,16 @@ export default function SalaryReports() {
       transition={{ duration: 0.4, ease: "easeOut" }}
       className="w-screen mt-8 min-h-screen px-4 py-6 bg-custom-gray dark:bg-gray-900 text-gray-800  dark:text-gray-300"
     >
-      <h2 className="text-2xl font-bold text-center mb-6">Отчет по зарплате</h2>
+      <h2 className="text-2xl font-bold text-center mb-6 text-gray-900 dark:text-white">
+        Отчет по зарплате
+      </h2>
 
       {error && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="text-red-500 text-center mb-4"
+          className="text-red-500 dark:text-red-400 text-center mb-4"
         >
           {error}
         </motion.div>
@@ -164,7 +166,7 @@ export default function SalaryReports() {
             initial={{ scale: 0.7, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
-            className="w-24 h-24 border-8 border-t-transparent border-blue-500 rounded-full animate-spin"
+            className="w-24 h-24 border-8 border-t-transparent border-blue-500 dark:border-blue-400 rounded-full animate-spin"
           />
         </div>
       ) : responseData ? (
@@ -172,11 +174,11 @@ export default function SalaryReports() {
           <div className="space-y-6">
             {/* Результаты по дням */}
             <div>
-              <Card className="bg-custom-gray dark:bg-gray-800  dark:text-gray-300">
+              <Card className="bg-custom-gray dark:bg-gray-800">
                 <CardHeader>
-                  <CardTitle>Период</CardTitle>
+                  <CardTitle className="dark:text-white">Период</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2">
+                <CardContent className="space-y-2 dark:text-gray-300">
                   <p>
                     Начало периода:{" "}
                     {responseData.totalReport?.startDate || startDate}
@@ -193,46 +195,36 @@ export default function SalaryReports() {
                   key={idx}
                   className="bg-custom-gray dark:bg-gray-800 shadow-md"
                 >
-                  <CardContent className="space-y-1">
-                    <div className="flex  dark:text-gray-300 justify-between">
+                  <CardContent className="space-y-1 dark:text-gray-300">
+                    <div className="flex justify-between">
                       <span>Дата:</span>
-                      <span className="font-bold  dark:text-gray-300">
-                        {item.date}
-                      </span>
+                      <span className="font-bold">{item.date}</span>
                     </div>
-                    <div className="flex justify-between  dark:text-gray-300">
+                    <div className="flex justify-between">
                       <span>Имя магазина:</span>
-                      <span className="font-bold  dark:text-gray-300">
-                        {item.shopName}
-                      </span>
+                      <span className="font-bold">{item.shopName}</span>
                     </div>
-                    <div className="flex justify-between  dark:text-gray-300">
+                    <div className="flex justify-between">
                       <span>Бонус за аксессуары:</span>
-                      <span className="font-bold  dark:text-gray-300">
+                      <span className="font-bold">
                         {item.bonusAccessories} ₽
                       </span>
                     </div>
-                    <div className="flex justify-between  dark:text-gray-300">
+                    <div className="flex justify-between">
                       <span>План Vape:</span>
-                      <span className="font-bold  dark:text-gray-300">
-                        {item.dataPlan} ₽
-                      </span>
+                      <span className="font-bold">{item.dataPlan} ₽</span>
                     </div>
-                    <div className="flex justify-between  dark:text-gray-300">
+                    <div className="flex justify-between">
                       <span>Продажи Vape:</span>
-                      <span className="font-bold  dark:text-gray-300">
-                        {item.salesDataVape} ₽
-                      </span>
+                      <span className="font-bold">{item.salesDataVape} ₽</span>
                     </div>
-                    <div className="flex justify-between  dark:text-gray-300">
+                    <div className="flex justify-between">
                       <span>Бонус за продажу Vape:</span>
-                      <span className="font-bold  dark:text-gray-300">
-                        {item.bonusPlan} ₽
-                      </span>
+                      <span className="font-bold">{item.bonusPlan} ₽</span>
                     </div>
-                    <div className="mt-2 flex justify-between font-bold  dark:text-gray-300">
+                    <div className="mt-2 flex justify-between font-bold">
                       <span>Итоговый бонус:</span>
-                      <span className="bg-blue-500  dark:text-gray-300 text-white rounded px-3 py-1 text-xs font-semibold">
+                      <span className="bg-blue-500 dark:bg-blue-600 text-white rounded px-3 py-1 text-xs font-semibold">
                         {item.totalBonus} ₽
                       </span>
                     </div>
@@ -241,32 +233,34 @@ export default function SalaryReports() {
               ))}
 
               {responseData.totalReport && (
-                <Card className="bg-custom-gray dark:text-gray-300 dark:bg-gray-800 shadow-md mt-2">
+                <Card className="bg-custom-gray dark:bg-gray-800 shadow-md mt-2">
                   <CardHeader>
-                    <CardTitle>Общий отчет</CardTitle>
+                    <CardTitle className="dark:text-white">
+                      Общий отчет
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex dark:text-gray-300 justify-between">
+                  <CardContent className="space-y-2 dark:text-gray-300">
+                    <div className="flex justify-between">
                       <span>Имя сотрудника:</span>
-                      <span className="font-bold dark:text-gray-300">
+                      <span className="font-bold">
                         {responseData.totalReport.employeeName || "Не указано"}
                       </span>
                     </div>
-                    <div className="flex dark:text-gray-300 justify-between">
+                    <div className="flex justify-between">
                       <span>Итого по аксессуарам:</span>
-                      <span className="font-bold dark:text-gray-300">
+                      <span className="font-bold">
                         {responseData.totalReport.totalBonusAccessories} ₽
                       </span>
                     </div>
-                    <div className="flex dark:text-gray-300 justify-between">
+                    <div className="flex justify-between">
                       <span>Итого бонус по план Vape:</span>
-                      <span className="font-bold dark:text-gray-300">
+                      <span className="font-bold">
                         {responseData.totalReport.totalBonusPlan} ₽
                       </span>
                     </div>
-                    <div className="flex dark:text-gray-300 justify-between">
+                    <div className="flex justify-between">
                       <span>Итого бонус:</span>
-                      <span className="font-bold dark:text-gray-300">
+                      <span className="font-bold">
                         {responseData.totalReport.totalBonus} ₽
                       </span>
                     </div>
@@ -285,7 +279,9 @@ export default function SalaryReports() {
           className="space-y-4 bg-custom-gray dark:bg-gray-800 p-4 rounded-lg shadow-md"
         >
           <div>
-            <Label htmlFor="start-date">Начало периода:</Label>
+            <Label htmlFor="start-date" className="dark:text-gray-300">
+              Начало периода:
+            </Label>
             <Input
               type="date"
               id="start-date"
@@ -305,7 +301,9 @@ export default function SalaryReports() {
           </div>
 
           <div>
-            <Label htmlFor="end-date">Конец периода:</Label>
+            <Label htmlFor="end-date" className="dark:text-gray-300">
+              Конец периода:
+            </Label>
             <Input
               type="date"
               id="end-date"

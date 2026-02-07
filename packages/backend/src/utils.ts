@@ -2304,6 +2304,10 @@ export async function getDocumentsByPeriod(
 	until: string,
 ): Promise<IndexDocument[]> {
 	try {
+		// Нормализуем формат дат для совместимости с БД (Z -> +0000)
+		const normalizedSince = since.replace(/Z$/, "+0000");
+		const normalizedUntil = until.replace(/Z$/, "+0000");
+
 		const stmt = await db
 			.prepare(
 				`
@@ -2313,7 +2317,7 @@ export async function getDocumentsByPeriod(
 			ORDER BY close_date ASC
 		`,
 			)
-			.bind(shopId, since, until);
+			.bind(shopId, normalizedSince, normalizedUntil);
 
 		const result = await stmt.all();
 
@@ -2355,6 +2359,10 @@ export async function getDocumentsByCashOutcomeByPeriod(
 	until: string,
 ): Promise<IndexDocument[]> {
 	try {
+		// Нормализуем формат дат для совместимости с БД (Z -> +0000)
+		const normalizedSince = since.replace(/Z$/, "+0000");
+		const normalizedUntil = until.replace(/Z$/, "+0000");
+
 		const stmt = await db
 			.prepare(
 				`
@@ -2366,7 +2374,7 @@ export async function getDocumentsByCashOutcomeByPeriod(
 			ORDER BY close_date ASC		
 		`,
 			)
-			.bind(shopId, since, until);
+			.bind(shopId, normalizedSince, normalizedUntil);
 
 		const result = await stmt.all();
 
@@ -2393,6 +2401,10 @@ export async function getDocumentsBySalesPeriod(
 	until: string,
 ): Promise<IndexDocument[]> {
 	try {
+		// Нормализуем формат дат для совместимости с БД (Z -> +0000)
+		const normalizedSince = since.replace(/Z$/, "+0000");
+		const normalizedUntil = until.replace(/Z$/, "+0000");
+
 		const stmt = await db
 			.prepare(
 				`
@@ -2404,7 +2416,7 @@ export async function getDocumentsBySalesPeriod(
 			ORDER BY close_date ASC		
 		`,
 			)
-			.bind(shopId, since, until);
+			.bind(shopId, normalizedSince, normalizedUntil);
 
 		const result = await stmt.all();
 
@@ -2431,6 +2443,10 @@ export async function getDocumentsBySales(
 	until: string,
 ): Promise<IndexDocument[]> {
 	try {
+		// Нормализуем формат дат для совместимости с БД (Z -> +0000)
+		const normalizedSince = since.replace(/Z$/, "+0000");
+		const normalizedUntil = until.replace(/Z$/, "+0000");
+
 		const stmt = await db
 			.prepare(
 				`
@@ -2442,7 +2458,7 @@ export async function getDocumentsBySales(
 			ORDER BY close_date ASC		
 		`,
 			)
-			.bind(shopId, since, until);
+			.bind(shopId, normalizedSince, normalizedUntil);
 
 		const result = await stmt.all();
 

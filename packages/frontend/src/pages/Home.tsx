@@ -2,11 +2,11 @@ import { ErrorDisplay } from "../components/ErrorDisplay";
 import { LoadingSpinner } from "../components/LoadingSpinner";
 // import PlanSalesFinancialReport from "../components/PlanSalesFinancialReport";
 import PlanStatusCards from "../components/PlanStatusCards";
-import DashboardSummary from "../components/DashboardSummary";
 import TodayAlerts from "../components/TodayAlerts";
 import QuickActions from "../components/QuickActions";
 import { RegisterUser } from "../components/RegisterUser";
 import { useEmployeeRole } from "../hooks/useApi";
+import DashboardSummary2 from "../components/dashboard/DashboardSummary";
 
 export default function Home() {
   const { data, error, isLoading } = useEmployeeRole();
@@ -50,7 +50,9 @@ export default function Home() {
         {/* {(isCashier || isAdmin) && <PlanSalesFinancialReport />} */}
 
         {/* Сводка за день - для всех ролей */}
-        {(isSuperAdmin || isAdmin || isCashier) && <DashboardSummary />}
+        {(isSuperAdmin || isAdmin || isCashier) && <DashboardSummary2 />}
+
+        {/* {isSuperAdmin && <DashboardSummary2 />} */}
 
         {/* Критические оповещения - только для админов */}
         {isSuperAdmin && <TodayAlerts />}
