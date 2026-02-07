@@ -22,6 +22,17 @@ import { Popover, PopoverContent, PopoverTrigger } from "../ui";
 import { Calendar } from "../ui";
 import { Cherry } from "lucide-react";
 
+function LoadingAccessories() {
+  return (
+    <div className="bg-blue-100 dark:bg-blue-900 rounded-lg p-4 min-h-[120px] flex flex-col items-center justify-center">
+      <Cherry className="w-12 h-12 text-blue-600 dark:text-blue-400 animate-pulse" />
+      <div className="text-xs text-gray-600 dark:text-gray-300 mt-2">
+        Загрузка...
+      </div>
+    </div>
+  );
+}
+
 function AccessoriesCard({
   value,
   onClick,
@@ -304,9 +315,9 @@ export default function DashboardSummary2() {
             }
           />
         ) : accessoriesSales.loading ? (
-          <LoadingSpinner />
+          <LoadingAccessories />
         ) : accessoriesSales.error ? (
-          <div className="bg-red-100 text-red-700 p-4 rounded">
+          <div className="bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 p-4 rounded min-h-[120px] flex items-center justify-center">
             {accessoriesSales.error}
           </div>
         ) : null}
