@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ShopSelectorNew } from "./ShopSelectorNew";
 import { useMe } from "../hooks/useApi";
 import ScheduleTableView from "./ScheduleTableView";
+import { client } from "../helpers/api";
 
 // Определяем тип для данных расписания
 interface ScheduleEntry {
@@ -33,12 +34,8 @@ const SchedulesView: React.FC = () => {
 
     setIsLoadingTable(true);
     try {
-      const response = await fetch("/api/schedules/table-view", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ month, year, shopId }),
+      const response = await client.api.schedules["table-view"].$post({
+        json: { month, year, shopId },
       });
 
       if (!response.ok) throw new Error("Ошибка при получении табеля");

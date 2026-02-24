@@ -1,51 +1,102 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { SalesData } from "../../components/dashboard/type";
+import { client } from "../../helpers/api";
 
-export function useSalesData(params?: { since?: string; until?: string }) {
+interface UseSalesDataParams {
+  since?: string;
+  until?: string;
+}
+
+interface UseSalesDataReturn {
+  data: SalesData | null;
+  loading: boolean;
+  error: string | null;
+  lastUpdate: Date | null;
+  isUpdating: boolean;
+}
+
+/**
+ * Хук для получения финансовых данных.
+ *
+ * Логика:
+ * - Если переданы since и until → GET /financial?since&until
+ * - Если нет → GET /financial/today
+ * - Автообновление раз в 60 секунд
+ */
+export function useSalesData(params?: UseSalesDataParams): UseSalesDataReturn {
   const [data, setData] = useState<SalesData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsUpdating(true);
-      try {
-        let url = "/api/evotor/report/financial/today";
-        let method = "GET";
+  const abortRef = useRef<AbortController | null>(null);
 
-        // Если переданы параметры периода, используем POST
-        if (params?.since || params?.until) {
-          const q = new URLSearchParams();
-          if (params.since) q.append("since", params.since);
-          if (params.until) q.append("until", params.until);
-          url = `/api/evotor/report/financial?${q.toString()}`;
-          method = "POST";
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchData = async () => {
+      // Отменяем предыдущий запрос (если был)
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      setIsUpdating(true);
+      setError(null);
+
+      try {
+        let res: Response;
+
+        if (params?.since && params?.until) {
+          res = await client.api.evotor.financial.$get({
+            query: {
+              since: params.since,
+              until: params.until,
+            },
+          });
+        } else {
+          res = await client.api.evotor.financial.today.$get();
         }
 
-        const res = await fetch(url, {
-          method,
-          headers: {
-            "x-telegram-id": localStorage.getItem("telegramId") || "",
-            "x-user-id": localStorage.getItem("userId") || "",
-            ...(method === "POST"
-              ? { "Content-Type": "application/json" }
-              : {}),
-          },
-        });
-        const json = await res.json();
-        setData(json);
-        setLastUpdate(new Date());
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        // Проверка HTTP-ошибок
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          throw new Error(
+            err?.error || err?.message || "Ошибка загрузки данных"
+          );
+        }
+
+        const json: SalesData = await res.json();
+
+        if (isMounted) {
+          setData(json);
+          setLastUpdate(new Date());
+        }
+      } catch (err) {
+        if (isMounted && err instanceof Error && err.name !== "AbortError") {
+          setError(err.message);
+        }
       } finally {
-        setLoading(false);
-        setTimeout(() => setIsUpdating(false), 500);
+        if (isMounted) {
+          setLoading(false);
+          setTimeout(() => setIsUpdating(false), 500);
+        }
       }
     };
 
     fetchData();
-    const i = setInterval(fetchData, 60000);
-    return () => clearInterval(i);
+    const interval = setInterval(fetchData, 60000);
+
+    return () => {
+      isMounted = false;
+      abortRef.current?.abort();
+      clearInterval(interval);
+    };
   }, [params?.since, params?.until]);
 
-  return { data, loading, lastUpdate, isUpdating };
+  return { data, loading, error, lastUpdate, isUpdating };
 }

@@ -3,6 +3,7 @@ import { Button } from "./ui/button";
 import { useRef, useState, useEffect } from "react";
 import { Save, Loader } from "lucide-react";
 import { telegram, isTelegramMiniApp } from "../helpers/telegram.ts";
+import { client } from "../helpers/api.ts";
 
 interface SaveAsJpegButtonProps {
   children: React.ReactNode;
@@ -74,9 +75,10 @@ export const SaveAsJpegButton: React.FC<SaveAsJpegButtonProps> = ({
           const formData = new FormData();
           formData.append("photos", file);
 
-          const uploadResponse = await fetch("/api/upload", {
-            method: "POST",
-            body: formData,
+          const uploadResponse = await client.api.uploads.upload.$post({
+            form: {
+              photos: file,
+            },
           });
 
           if (!uploadResponse.ok) {
@@ -86,9 +88,11 @@ export const SaveAsJpegButton: React.FC<SaveAsJpegButtonProps> = ({
             );
           }
 
-          const result = await uploadResponse.json();
+          const result = (await uploadResponse.json()) as
+            | { url: string; name: string }
+            | { code: string; message: string; details?: unknown };
 
-          if (!result.url) {
+          if (!("url" in result) || !result.url) {
             throw new Error("URL не найден в ответе сервера");
           }
 

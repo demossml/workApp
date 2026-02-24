@@ -6,6 +6,7 @@ import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { ErrorDisplay } from "../../components/ErrorDisplay";
 import { DynamicTable } from "../../components/DynamicTable";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { client } from "../../helpers/api";
 
 interface GroupOption {
   name: string;
@@ -40,12 +41,10 @@ export default function QuantityTableProps() {
       setIsLoadingShops(true); // Начало загрузки групп
 
       try {
-        const response = await fetch("/api/evotor/shops", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+        const response = await client.api.evotor.shops.$post({
+          json: {
+            userId: userId || "",
           },
-          body: JSON.stringify({ userId }),
         });
 
         if (!response.ok) {
@@ -79,19 +78,20 @@ export default function QuantityTableProps() {
       const dataGroups = {
         shopUuid: shopUuid,
       };
-      const response = await fetch("/api/evotor/groups-by-shop", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(dataGroups),
+      const response = await client.api.evotor["groups-by-shop"].$post({
+        json: dataGroups,
       });
 
       if (!response.ok) {
         throw new Error(`Ошибка загрузки групп: ${response.status}`);
       }
 
-      const data: { groups: GroupOption[] } = await response.json();
+      const data = (await response.json()) as
+        | { groups: GroupOption[] }
+        | { code: string; message: string; details?: unknown };
+      if (!("groups" in data)) {
+        throw new Error(data.message || "Не удалось загрузить группы");
+      }
       setGroupOptions(data.groups || []);
       setSelectedGroups([]);
     } catch (err) {
@@ -116,12 +116,8 @@ export default function QuantityTableProps() {
     setIsLoadingReport(true);
 
     try {
-      const response = await fetch("/api/evotor/stock-report", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
+      const response = await client.api.evotor["stock-report"].$post({
+        json: data,
       });
 
       if (!response.ok) {

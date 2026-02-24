@@ -8,6 +8,7 @@ import {
 } from "react";
 import { motion, AnimatePresence, useScroll, useSpring } from "framer-motion";
 import { useGetShops } from "../../hooks/useApi";
+import { client } from "../../helpers/api";
 
 /* ===================== TYPES ===================== */
 
@@ -205,10 +206,8 @@ export const DynamicTableDeadStocks = ({
         (item) => item.mark !== null && item.mark !== undefined
       );
 
-      const response = await fetch("/api/dead-stocks/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: changedItems, shopUuid }),
+      const response = await client.api.deadStocks.update.$post({
+        json: { items: changedItems, shopUuid },
       });
 
       if (!response.ok) throw new Error("Сеть ответила с ошибкой");

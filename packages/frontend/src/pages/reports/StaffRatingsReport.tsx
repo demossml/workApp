@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { client } from "../../helpers/api";
 
 type StaffRating = {
   user_id: string;
@@ -18,7 +19,8 @@ export default function StaffRatingsReport() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const response = await fetch("/api/ai-report");
+        const response = await client.api.ai.aiReport.$get();
+
         if (!response.ok) throw new Error("Ошибка загрузки отчёта");
         const json = await response.json();
         setData(json.result?.staffRatings || []);

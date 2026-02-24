@@ -22,6 +22,7 @@ import { Button } from "../../components/ui/button";
 import { useEmployeeNameAndUuid } from "../../hooks/useApi";
 import { SaveAsJpegButton } from "../../components/SaveAsJpegButton";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { client } from "../../helpers/api";
 
 // interface EmployeeOptions {
 //   uuid: string;
@@ -38,8 +39,8 @@ interface TotalReport {
 }
 
 interface ResponseData {
-  status: string;
-  message: string;
+  status?: string;
+  message?: string;
   result?: Array<{
     date: string;
     shopName: string;
@@ -73,38 +74,15 @@ export default function SalaryReports() {
     return result.toISOString().split("T")[0];
   };
 
-  // useEffect(() => {
-  //   const fetchEmployeesData = async () => {
-  //     try {
-  //       const response = await fetch("/api/employee/name-uuid");
-  //       if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
-  //       const data = await response.json();
-
-  //       if (data.employeeNameAndUuid) {
-  //         setEmployeeOptions(data.employeeNameAndUuid);
-  //       } else {
-  //         setError("Список сотрудников не найден в ответе");
-  //       }
-  //     } catch (error) {
-  //       const errorMessage =
-  //         error instanceof Error ? error.message : "Неизвестная ошибка";
-  //       console.error("Ошибка при загрузке:", errorMessage);
-  //       setError("Не удалось загрузить данные сотрудников");
-  //     }
-  //   };
-  //   fetchEmployeesData();
-  // }, []);
-
   const { data } = useEmployeeNameAndUuid();
   const employeeNameAndUuid = data?.employeeNameAndUuid ?? [];
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // if (!selectedEmployee) {
-    //   setError("Пожалуйста, выберите сотрудника");
-    //   return;
-    // }
-    const employee = employeeNameAndUuid.find((emp) => emp.uuid);
+
+    const employee = employeeNameAndUuid.find(
+      (emp: { uuid: string }) => emp.uuid
+    );
 
     if (!employee) {
       setError("Сотрудник не найден");
@@ -116,20 +94,26 @@ export default function SalaryReports() {
     setResponseData(null);
 
     try {
-      const response = await fetch("/api/evotor/salary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await client.api.evotor.salary.$post({
+        json: {
           employee: employee.uuid,
           startDate,
           endDate,
-        }),
+        },
       });
+
       if (response.ok) {
         const result: ResponseData = await response.json();
         setResponseData(result);
       } else {
-        setError("Не удалось отправить данные");
+        const err = (await response.json().catch(() => null)) as
+          | Record<string, unknown>
+          | null;
+        setError(
+          (typeof err?.error === "string" ? err.error : undefined) ||
+            (typeof err?.message === "string" ? err.message : undefined) ||
+            "Не удалось отправить данные"
+        );
       }
     } catch {
       setError("Не удалось отправить данные");

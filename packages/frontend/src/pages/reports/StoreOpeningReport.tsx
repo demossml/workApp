@@ -2,6 +2,7 @@ import { useGetShops } from "../../hooks/useApi";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { client } from "../../helpers/api";
 
 // Определяем тип данных, которые мы ожидаем от сервера
 interface ResponseData {
@@ -42,10 +43,8 @@ export default function StoreOpeningReport() {
     const requestData = { shop: selectedShop, date };
 
     try {
-      const response = await fetch("/api/get-file", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestData),
+      const response = await client.api.uploads.getFile.$post({
+        json: requestData,
       });
 
       if (response.ok) {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, TrendingDown, Clock } from "lucide-react";
+import { client } from "../helpers/api";
 
 // Интерфейс для структуры данных о продажах
 interface SalesData {
@@ -25,24 +26,84 @@ export default function TodayAlerts() {
     // Функция для загрузки данных и формирования оповещений
     const fetchData = async () => {
       try {
-        // Запрос к API для получения финансового отчёта за сегодня
-        const response = await fetch("/api/evotor/report/financial/today", {
-          headers: {
-            "Content-Type": "application/json",
-            "x-telegram-id": localStorage.getItem("telegramId") || "",
-            "x-user-id": localStorage.getItem("userId") || "",
+        const today = new Date().toISOString().split("T")[0]; // Сегодняшняя дата YYYY-MM-DD
+
+        const response = await client.api.evotor.financial.$get({
+          query: {
+            since: today,
+            until: today,
           },
         });
-        const data: SalesData = await response.json();
 
+        // Если сервер вернул ошибку (например 400), пробрасываем её в catch
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null);
+          console.error("[TodayAlerts] Ошибка ответа API:", errorData);
+          throw new Error("Ошибка запроса финансового отчёта");
+        }
+
+        const data = await response.json();
+
+        // Проверяем, что это действительно SalesData
+        if (
+          !data ||
+          typeof data !== "object" ||
+          !("salesDataByShopName" in data) ||
+          !("grandTotalSell" in data)
+        ) {
+          console.warn("[TodayAlerts] Некорректные данные о продажах:", data);
+          setAlerts([
+            {
+              type: "danger",
+              title: "Ошибка данных",
+              message: "Получены некорректные данные о продажах",
+              icon: <AlertTriangle className="w-5 h-5" />,
+            },
+          ]);
+          return;
+        }
+
+        // Приводим salesDataByShopName к нужному виду (sell/refund — суммы)
+        const normalizedSalesDataByShopName: Record<
+          string,
+          { sell: number; refund: number }
+        > = {};
+        for (const [shop, shopData] of Object.entries(
+          data.salesDataByShopName as Record<
+            string,
+            { sell?: Record<string, unknown>; refund?: Record<string, unknown> }
+          >
+        )) {
+          normalizedSalesDataByShopName[shop] = {
+            sell: shopData?.sell
+              ? (Object.values(shopData.sell) as number[]).reduce(
+                  (a, b) => a + b,
+                  0
+                )
+              : 0,
+            refund: shopData?.refund
+              ? (Object.values(shopData.refund) as number[]).reduce(
+                  (a, b) => a + b,
+                  0
+                )
+              : 0,
+          };
+        }
+        const salesData: SalesData = {
+          salesDataByShopName: normalizedSalesDataByShopName,
+          grandTotalSell: data.grandTotalSell,
+        };
         const newAlerts: Alert[] = [];
 
         // --- Оповещение о низких продажах ---
         // Среднее значение продаж по всем магазинам
         const avgSales =
-          data.grandTotalSell / Object.keys(data.salesDataByShopName).length;
+          salesData.grandTotalSell /
+          Object.keys(salesData.salesDataByShopName).length;
         // Магазины, где продажи ниже 50% среднего
-        const lowSalesShops = Object.entries(data.salesDataByShopName).filter(
+        const lowSalesShops = Object.entries(
+          salesData.salesDataByShopName
+        ).filter(
           ([, shopData]) => shopData.sell < avgSales * 0.5 && shopData.sell > 0
         );
 
@@ -57,12 +118,15 @@ export default function TodayAlerts() {
 
         // --- Оповещение о высоких возвратах ---
         // Магазины, где возвраты превышают 10% от продаж
-        const highRefundShops = Object.entries(data.salesDataByShopName).filter(
+        const highRefundShops = Object.entries(
+          salesData.salesDataByShopName
+        ).filter(
           ([, shopData]) =>
             shopData.refund > 0 &&
             shopData.sell > 0 &&
             shopData.refund / shopData.sell > 0.1
         );
+        console.log("[TodayAlerts] highRefundShops:", highRefundShops);
 
         if (highRefundShops.length > 0) {
           newAlerts.push({
@@ -76,9 +140,9 @@ export default function TodayAlerts() {
         // --- Оповещение о магазинах без продаж после 12:00 ---
         const currentHour = new Date().getHours();
         // Магазины, где нет продаж
-        const noSalesShops = Object.entries(data.salesDataByShopName).filter(
-          ([, shopData]) => shopData.sell === 0
-        );
+        const noSalesShops = Object.entries(
+          salesData.salesDataByShopName
+        ).filter(([, shopData]) => shopData.sell === 0);
 
         if (currentHour >= 12 && noSalesShops.length > 0) {
           newAlerts.push({
@@ -93,7 +157,7 @@ export default function TodayAlerts() {
         setAlerts(newAlerts);
       } catch (error) {
         // Обработка ошибки загрузки
-        console.error("Ошибка загрузки оповещений:", error);
+        console.error("[TodayAlerts] Ошибка загрузки оповещений:", error);
       } finally {
         setLoading(false);
       }

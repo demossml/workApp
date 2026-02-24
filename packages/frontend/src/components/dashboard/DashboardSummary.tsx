@@ -412,6 +412,7 @@ export default function DashboardSummary2() {
                   disabled={!(tempPeriod?.from && tempPeriod?.to)}
                   onClick={() => {
                     setPeriod(tempPeriod);
+                    console.log("Период применён:", tempPeriod);
                     setShowPeriodPicker(false);
                   }}
                 >

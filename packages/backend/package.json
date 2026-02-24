@@ -1,5 +1,5 @@
 {
-	"name": "@work-app/backend",
+	"name": "@work-appt/backend",
 	"version": "1.0.0",
 	"private": true,
 	"main": "src/index.ts",

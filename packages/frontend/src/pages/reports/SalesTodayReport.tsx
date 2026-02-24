@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { client } from "../../helpers/api";
 
 export default function SalesTodayReport() {
   const [salesData, setSalesData] = useState<Record<
@@ -13,10 +14,8 @@ export default function SalesTodayReport() {
   useEffect(() => {
     const fetchSalesData = async () => {
       try {
-        const response = await fetch("/api/evotor/sales-today");
-        if (!response.ok) {
-          throw new Error(`Error: ${response.status}`);
-        }
+        const response = await client.api.evotor["sales-today"].$get();
+
         const data = await response.json();
         setSalesData(data.salesData);
       } catch (err) {

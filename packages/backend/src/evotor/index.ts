@@ -4,8 +4,8 @@ import {
 	formatDateWithTime,
 	generateDateRanges,
 	getDateRangesForWeeks,
-	getDocumentsBySales,
 } from "../utils";
+import { getDocumentsBySales } from "../db/repositories/documents";
 import { logger } from "../logger";
 import type {
 	Document,
@@ -2147,8 +2147,12 @@ export class Evotor {
 		const optimalOrder: Record<string, Record<string, number>> = {};
 
 		for (const [commodityUuid, smaValue] of Object.entries(smaData)) {
+			const stockItem = stockProduct[commodityUuid];
+			if (!stockItem) {
+				continue;
+			}
 			// Получаем остаток на складе для товара
-			const stockQuantity = stockProduct[commodityUuid].quantity || 0;
+			const stockQuantity = stockItem.quantity || 0;
 
 			// console.log(
 			// 	`${stockProduct[commodityUuid].name}sma:${Math.ceil(smaValue)}/ stock:${stockProduct[commodityUuid].quantity}/ sum:${sum}`,
@@ -2160,12 +2164,10 @@ export class Evotor {
 				orderQuantity === 0
 					? 0
 					: Number(
-							(orderQuantity * stockProduct[commodityUuid].costPrice).toFixed(
-								2,
-							),
+							(orderQuantity * stockItem.costPrice).toFixed(2),
 						);
 
-			optimalOrder[stockProduct[commodityUuid].name] = {
+			optimalOrder[stockItem.name] = {
 				orderQuantity: orderQuantity,
 				smaQuantity: Number(smaValue.toFixed(1)),
 				quantity: stockQuantity,

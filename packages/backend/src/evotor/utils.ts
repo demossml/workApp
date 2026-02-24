@@ -2,7 +2,7 @@ import {
 	getDocumentsByCashOutcomeByPeriod,
 	getDocumentsBySales,
 	getDocumentsBySalesPeriod,
-} from "../utils";
+} from "../db/repositories/documents";
 import { logger } from "../logger";
 
 import type { D1Database } from "@cloudflare/workers-types";

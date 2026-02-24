@@ -5,6 +5,7 @@ import type {
   StoreOpeningStep,
   CashDiscrepancyData,
 } from "../../pages/opening/types";
+import { client } from "../../helpers/api";
 
 interface CashCheckStepProps {
   setCurrentStep: React.Dispatch<React.SetStateAction<StoreOpeningStep>>;
@@ -27,15 +28,16 @@ export default function CashCheckStep({
   }, []);
 
   const finish = async () => {
-    await fetch("/api/finish-opening", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const response = await client.api.stores["finish-opening"].$post({
+      json: {
         ok: isCorrect,
         discrepancy: isCorrect ? null : discrepancy,
         userId,
-      }),
+      },
     });
+    if (!response.ok) {
+      throw new Error(`Ошибка завершения открытия: ${response.status}`);
+    }
 
     setCurrentStep("initial");
   };

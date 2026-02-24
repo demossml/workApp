@@ -5,7 +5,7 @@ export const useOpenTimes = () =>
   useQuery<Record<string, string>, Error>({
     queryKey: ["getOpenTimes"],
     queryFn: async () => {
-      const res = await client.api.schedules.$get();
+      const res = await client.api.schedules.schedule.$get();
       if (!res.ok) {
         throw new Error("Ошибка загрузки времени открытия магазинов");
       }

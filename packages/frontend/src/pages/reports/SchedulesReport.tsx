@@ -86,7 +86,7 @@ export default function SchedulesReport() {
               {key}:
             </p>
             <p className="text-base text-gray-800 dark:text-gray-200">
-              {value}
+              {String(value)}
             </p>
           </motion.div>
         ))}

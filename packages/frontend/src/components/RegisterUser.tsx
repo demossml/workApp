@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
+import { client } from "../helpers/api";
 
 interface RegisterUserProps {
   onRegister: (id: string) => void;
@@ -24,14 +25,9 @@ export function RegisterUser({ onRegister }: RegisterUserProps) {
     try {
       setLoading(true);
 
-      const response = await fetch("/api/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ userId: telegramId }),
+      const response = await client.api.employees.register.$post({
+        json: { userId: telegramId },
       });
-
       const data = await response.json();
 
       if (data.success) {
@@ -39,7 +35,7 @@ export function RegisterUser({ onRegister }: RegisterUserProps) {
         onRegister(telegramId);
         window.location.href = "/";
       } else {
-        setError(data.message || "Ошибка при регистрации");
+        setError("Ошибка при регистрации");
       }
     } catch (err) {
       console.error("Ошибка при регистрации:", err);

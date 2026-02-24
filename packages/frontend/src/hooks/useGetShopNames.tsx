@@ -5,7 +5,7 @@ export const useGetShopNames = () =>
   useQuery<string[], Error>({
     queryKey: ["getShopNames"],
     queryFn: async () => {
-      const res = await client.api.evotor["shops-names"].$get();
+      const res = await client.api.stores["shops-names"].$get();
       if (!res.ok) {
         throw new Error("Ошибка загрузки названий магазинов");
       }

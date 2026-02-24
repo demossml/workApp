@@ -9,6 +9,7 @@ import { motion } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { telegram, isTelegramMiniApp } from "../../helpers/telegram";
 import { DynamicTableDeadStocks } from "../../components/deadStocs/DynamicTableDeadStocks";
+import { client } from "../../helpers/api";
 
 interface GroupOption {
   name: string;
@@ -77,19 +78,32 @@ export default function DeadSt() {
       telegram.WebApp.MainButton.showProgress(true);
     }
     try {
-      const response = await fetch("/api/evotor/dead-stock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await client.api.deadStocks.data.$post({
+        json: {
           startDate,
           endDate,
           shopUuid: selectedShop,
           groups: selectedGroups,
-        }),
+        },
       });
+
       if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
-      const report: ReportData = await response.json();
-      setReportData(report);
+
+      const result = await response.json();
+
+      // 🔹 Проверяем, что пришли данные отчёта
+      if (
+        "salesData" in result &&
+        "shopName" in result &&
+        "startDate" in result &&
+        "endDate" in result
+      ) {
+        setReportData(result as ReportData);
+        setError(null);
+      } else {
+        setReportData(null);
+        setError("Не удалось получить корректные данные отчёта");
+      }
     } catch (err) {
       console.error(err);
       setError("Не удалось получить отчёт");
@@ -173,11 +187,10 @@ export default function DeadSt() {
     const fetchSalesData = async () => {
       setIsLoadingShops(true);
       try {
-        const response = await fetch("/api/evotor/shops", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId }),
+        const response = await client.api.evotor.shops.$post({
+          json: { userId },
         });
+
         if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
         const data = await response.json();
         setShopOptions(data.shopOptions);
@@ -200,14 +213,18 @@ export default function DeadSt() {
   const fetchGroups = async (shopUuid: string) => {
     setIsLoadingGroups(true);
     try {
-      const response = await fetch("/api/evotor/groups-by-shop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shopUuid }),
+      const response = await client.api.evotor["groups-by-shop"].$post({
+        json: { shopUuid },
       });
+
       if (!response.ok)
         throw new Error(`Ошибка загрузки групп: ${response.status}`);
-      const data: { groups: GroupOption[] } = await response.json();
+      const data = (await response.json()) as
+        | { groups: GroupOption[] }
+        | { code: string; message: string; details?: unknown };
+      if (!("groups" in data)) {
+        throw new Error(data.message || "Не удалось загрузить группы");
+      }
       setGroupOptions(data.groups || []);
       setSelectedGroups([]);
     } catch (err) {

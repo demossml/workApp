@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ApiError } from "./errors";
 
 /**
  * Схемы валидации для входных данных API
@@ -88,7 +89,7 @@ export const GroupsByShopSchema = z.object({
  * POST /api/evotor/salary
  */
 export const SalarySchema = z.object({
-	employee: UuidSchema,
+	employee: z.string().min(1, "employee обязателен"),
 	startDate: DateStringSchema,
 	endDate: DateStringSchema,
 });
@@ -211,10 +212,13 @@ export const SaveDeadStocksSchema = z.object({
 export function validate<T>(schema: z.ZodSchema<T>, data: unknown): T {
 	const result = schema.safeParse(data);
 	if (!result.success) {
-		const errors = result.error.errors
-			.map((e) => `${e.path.join(".")}: ${e.message}`)
-			.join(", ");
-		throw new Error(`Ошибка валидации: ${errors}`);
+		const errors = result.error.errors.map((e) => ({
+			field: e.path.join("."),
+			message: e.message,
+		}));
+		throw new ApiError(400, "VALIDATION_ERROR", "Validation failed", {
+			errors,
+		});
 	}
 	return result.data;
 }

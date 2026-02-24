@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { client } from "../../helpers/api";
 
 export default function PlanSalesReport() {
   const [salesData, setSalesData] = useState<Record<
@@ -11,7 +12,8 @@ export default function PlanSalesReport() {
     // Функция для получения данных о продажах за сегодня
     const fetchSalesData = async () => {
       try {
-        const response = await fetch("/api/evotor/plan-for-today");
+        const response = await client.api.evotor["plan-for-today"].$get();
+
         if (!response.ok) {
           throw new Error(`Error: ${response.status}`);
         }

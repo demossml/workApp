@@ -4,6 +4,7 @@ import { useGetShops } from "../../hooks/useApi";
 import { DateRangePicker } from "../../components/DateRangePicker";
 import { DynamicTableProfit } from "../../components/DynamicTableProfit"; // поправь путь, если нужно
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { client } from "../../helpers/api";
 
 interface ReportData {
   byCategory: Record<string, number>;
@@ -52,15 +53,13 @@ export default function ProfitReportPage() {
 
     setLoadingReport(true);
     try {
-      const response = await fetch("/api/profit-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await client.api.evotor["profit-report"].$post({
+        json: {
           shopUuids: data?.shopsNameAndUuid.map((shop) => shop.uuid) || [],
           since: startDate,
           until: endDate,
           dataFrom1C: formData,
-        }),
+        },
       });
 
       if (!response.ok) {

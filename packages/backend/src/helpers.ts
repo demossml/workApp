@@ -3,6 +3,7 @@ import { Evotor } from "./evotor";
 import type { IContext } from "./types";
 import { isValidSign } from "./utils";
 import { drizzle } from "drizzle-orm/d1";
+import { jsonError } from "./errors";
 
 export const initializeDrizzle = (c: IContext) => {
 	const db = drizzle(c.env.DB); // c.env.DB — это D1Database
@@ -57,7 +58,7 @@ export const authenticate = async (c: IContext, next: Next) => {
 			const isValid = await isValidSign(c.env.BOT_TOKEN, payload);
 
 			if (!isValid) {
-				return c.json({ error: "Invalid signature" }, 401);
+				return jsonError(c, 401, "AUTH_INVALID_SIGNATURE", "Invalid signature");
 			}
 
 			const user = JSON.parse(payload.user);
@@ -67,12 +68,11 @@ export const authenticate = async (c: IContext, next: Next) => {
 
 		return next();
 	} catch (error) {
-		return c.json(
-			{
-				error: "Authentication failed",
-				message: error instanceof Error ? error.message : "Unknown error",
-			},
+		return jsonError(
+			c,
 			401,
+			"AUTH_FAILED",
+			error instanceof Error ? error.message : "Unknown error",
 		);
 	}
 };

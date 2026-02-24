@@ -19,6 +19,7 @@ import {
 import { Button } from "../../components/ui/button";
 import { SaveAsJpegButton } from "../../components/SaveAsJpegButton";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { client } from "../../helpers/api";
 
 interface EmployeeOptions {
   uuid: string;
@@ -35,8 +36,8 @@ interface TotalReport {
 }
 
 interface ResponseData {
-  status: string;
-  message: string;
+  status?: string;
+  message?: string;
   result?: Array<{
     date: string;
     shopName: string;
@@ -73,7 +74,8 @@ export default function SalaryReports() {
   useEffect(() => {
     const fetchEmployeesData = async () => {
       try {
-        const response = await fetch("/api/employee/name-uuid");
+        const response = await client.api.employees.nameUuid.$get();
+
         if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
         const data = await response.json();
 
@@ -104,20 +106,26 @@ export default function SalaryReports() {
     setResponseData(null);
 
     try {
-      const response = await fetch("/api/evotor/salary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await client.api.evotor.salary.$post({
+        json: {
           employee: selectedEmployee,
           startDate,
           endDate,
-        }),
+        },
       });
+
       if (response.ok) {
         const result: ResponseData = await response.json();
         setResponseData(result);
       } else {
-        setError("Не удалось отправить данные");
+        const err = (await response.json().catch(() => null)) as
+          | Record<string, unknown>
+          | null;
+        setError(
+          (typeof err?.error === "string" ? err.error : undefined) ||
+            (typeof err?.message === "string" ? err.message : undefined) ||
+            "Не удалось отправить данные"
+        );
       }
     } catch {
       setError("Не удалось отправить данные");
@@ -179,9 +187,9 @@ export default function SalaryReports() {
                 </CardContent>
               </Card>
 
-              {responseData.result?.map((item, idx) => (
+              {responseData.result?.map((item) => (
                 <Card
-                  key={idx}
+                  key={`${item.date}-${item.shopName}`}
                   className="bg-custom-gray dark:bg-gray-800 shadow-md mt-2"
                 >
                   <CardContent className="space-y-1 dark:text-gray-300">

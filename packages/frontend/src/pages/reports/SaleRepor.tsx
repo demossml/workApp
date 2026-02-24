@@ -10,6 +10,7 @@ import { useMe } from "../../hooks/useApi";
 import { motion } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { telegram, isTelegramMiniApp } from "../../helpers/telegram";
+import { client } from "../../helpers/api";
 
 interface GroupOption {
   name: string;
@@ -76,15 +77,13 @@ export default function SalesReport() {
       telegram.WebApp.MainButton.showProgress(true);
     }
     try {
-      const response = await fetch("/api/evotor/sales-result", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await client.api.evotor.salesResult.$post({
+        json: {
           startDate,
           endDate,
           shopUuid: selectedShop,
           groups: selectedGroups,
-        }),
+        },
       });
       if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
       const report: ReportData = await response.json();
@@ -172,10 +171,8 @@ export default function SalesReport() {
     const fetchSalesData = async () => {
       setIsLoadingShops(true);
       try {
-        const response = await fetch("/api/evotor/shops", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId }),
+        const response = await client.api.evotor.shops.$post({
+          json: { userId },
         });
         if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
         const data = await response.json();
@@ -199,15 +196,22 @@ export default function SalesReport() {
   const fetchGroups = async (shopUuid: string) => {
     setIsLoadingGroups(true);
     try {
-      const response = await fetch("/api/evotor/groups-by-shop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shopUuid }),
+      const response = await client.api.evotor["groups-by-shop"].$post({
+        json: { shopUuid },
       });
       if (!response.ok)
         throw new Error(`Ошибка загрузки групп: ${response.status}`);
-      const data: { groups: GroupOption[] } = await response.json();
-      setGroupOptions(data.groups || []);
+      const data = await response.json();
+      if (
+        data &&
+        typeof data === "object" &&
+        "groups" in data &&
+        Array.isArray(data.groups)
+      ) {
+        setGroupOptions((data as { groups: GroupOption[] }).groups);
+      } else {
+        setGroupOptions([]);
+      }
       setSelectedGroups([]);
     } catch (err) {
       console.error(err);
@@ -243,14 +247,12 @@ export default function SalesReport() {
     setIsLoadingAi(true);
     setShowAiInsights(true);
     try {
-      const response = await fetch("/api/ai/insights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await client.api.ai.insights.$post({
+        json: {
           startDate,
           endDate,
           shopUuid: selectedShop,
-        }),
+        },
       });
       if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
       const data: AiInsightsData = await response.json();

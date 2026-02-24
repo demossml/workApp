@@ -69,7 +69,13 @@ export default function PlanMetrics() {
 
     const calculatedMetrics: ShopMetrics[] = Object.entries(salesData).map(
       ([shopName, shopData]) => {
-        const plan = planData[shopName] || 0;
+        const planRaw = planData[shopName];
+        const plan =
+          typeof planRaw === "number"
+            ? planRaw
+            : planRaw && typeof planRaw === "object"
+              ? planRaw.datePlan || 0
+              : 0;
         const actual = shopData.totalSell || 0;
         const progress = calculatePlanProgress(actual, plan);
         const difference = actual - plan;

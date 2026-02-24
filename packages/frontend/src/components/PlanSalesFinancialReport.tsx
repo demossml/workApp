@@ -386,7 +386,7 @@ export default function PlanSalesFinancialReport() {
                                   {item.productName}
                                 </span>
                                 <span className="font-bold text-blue-600 dark:text-blue-400">
-                                  {item.quantity as string} шт.
+                                  {String(item.quantity)} шт.
                                 </span>
                               </li>
                             ))}

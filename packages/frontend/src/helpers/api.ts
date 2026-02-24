@@ -1,5 +1,5 @@
 import { hc } from "hono/client";
-import type { IAPI } from "@work-app/backend";
+import type { IAPI } from "@work-appt/backend";
 import { telegram } from "./telegram";
 
 console.log("telegram.WebApp.initData:", telegram.WebApp.initData);

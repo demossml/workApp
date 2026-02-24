@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import ScheduleTableView from "../../components/ScheduleTableView";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { client } from "../../helpers/api";
 
 interface Shop {
   uuid: string;
@@ -53,7 +54,8 @@ const ScheduleTable: React.FC = () => {
   useEffect(() => {
     const fetchStores = async () => {
       try {
-        const response = await fetch("/api/shops");
+        const response = await client.api.stores.shops.$get();
+
         const data = await response.json();
         setStores(data.shopsNameAndUuid || []);
       } catch (error) {
@@ -69,13 +71,22 @@ const ScheduleTable: React.FC = () => {
       if (!store) return;
 
       try {
-        const response = await fetch("/api/employee/and-store/name-uuid", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ shop: store }),
+        const response = await client.api.employees.employee["and-store"][
+          "name-uuid"
+        ].$post({
+          json: { shop: store },
         });
         const data = await response.json();
-        setEmployees(data.employeeNameAndUuid || []);
+        if (
+          data &&
+          typeof data === "object" &&
+          "employeeNameAndUuid" in data &&
+          Array.isArray(data.employeeNameAndUuid)
+        ) {
+          setEmployees(data.employeeNameAndUuid);
+        } else {
+          setEmployees([]);
+        }
       } catch (error) {
         console.error("Ошибка при загрузке сотрудников:", error);
       }
@@ -143,14 +154,12 @@ const ScheduleTable: React.FC = () => {
     setIsSaving(true); // Устанавливаем состояние "сохранение началось"
 
     try {
-      const response = await fetch("/api/schedules/table", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await client.api.schedules.table.$post({
+        json: {
           month,
           year,
           schedules,
-        }),
+        },
       });
 
       if (!response.ok) throw new Error("Ошибка сохранения");

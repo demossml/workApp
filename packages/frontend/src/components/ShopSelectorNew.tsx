@@ -1,6 +1,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { client } from "../helpers/api";
 
 type ShopSelectorProps = {
   userId: string;
@@ -21,12 +22,8 @@ export const ShopSelectorNew: React.FC<ShopSelectorProps> = ({
       setIsLoadingShops(true);
 
       try {
-        const response = await fetch("/api/evotor/shops", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ userId }),
+        const response = await client.api.evotor.shops.$post({
+          json: { userId },
         });
 
         if (!response.ok) {

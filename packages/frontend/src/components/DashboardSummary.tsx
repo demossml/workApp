@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useEmployeeRole } from "../hooks/useApi";
 import { useCurrentWorkShop } from "../hooks/useCurrentWorkShop";
+import { client } from "../helpers/api";
 
 interface ProductData {
   productName: string;
@@ -105,15 +106,25 @@ export default function DashboardSummary() {
     const fetchData = async () => {
       setIsUpdating(true);
       try {
-        const response = await fetch("/api/evotor/report/financial/today", {
-          headers: {
-            "Content-Type": "application/json",
-            "x-telegram-id": localStorage.getItem("telegramId") || "",
-            "x-user-id": localStorage.getItem("userId") || "",
+        const response = await client.api.evotor.financial.today.$get({
+          query: {
+            telegramId: localStorage.getItem("telegramId") || "",
+            userId: localStorage.getItem("userId") || "",
           },
         });
+
         const result = await response.json();
-        setData(result);
+        if (
+          result &&
+          !("error" in result) &&
+          typeof result === "object" &&
+          "salesDataByShopName" in result &&
+          "grandTotalSell" in result
+        ) {
+          setData(result as SalesData);
+        } else if (result && "error" in result) {
+          console.error("Ошибка в ответе API:", result.error);
+        }
         setLastUpdate(new Date());
       } catch (error) {
         console.error("Ошибка загрузки данных:", error);

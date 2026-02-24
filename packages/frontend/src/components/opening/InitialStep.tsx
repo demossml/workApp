@@ -3,6 +3,7 @@ import type { StoreOpeningStep } from "../../pages/opening/types";
 import { useIsOpenStore } from "../../hooks/useIsOpenStore";
 import { useMemo } from "react";
 import { Check, Camera, DollarSign, AlertCircle } from "lucide-react";
+import { client } from "../../helpers/api";
 
 interface InitialStepProps {
   setCurrentStep: React.Dispatch<React.SetStateAction<StoreOpeningStep>>;
@@ -35,11 +36,12 @@ export default function InitialStep({
   const details = data as OpenStoreDetails | undefined;
 
   const handleStart = async () => {
-    await fetch("/api/open-store", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ timestamp: new Date().toISOString(), userId }),
+    const response = await client.api.stores["open-store"].$post({
+      json: { timestamp: new Date().toISOString(), userId },
     });
+    if (!response.ok) {
+      throw new Error(`Ошибка открытия магазина: ${response.status}`);
+    }
 
     setCurrentStep("photos");
   };

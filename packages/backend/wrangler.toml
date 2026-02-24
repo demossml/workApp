@@ -7,9 +7,6 @@ assets = { directory = "dist"}
 upload_source_maps = true
 
 
-routes = [
-  { pattern = "demossml.cc", custom_domain = true }
-]
 
 
 [[d1_databases]]

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { client } from "../../helpers/api";
 
 // Определяем тип GroupOption для TypeScript
 interface GroupOption {
@@ -27,12 +28,12 @@ const Settings = () => {
   useEffect(() => {
     const fetchGroupOptions = async () => {
       try {
-        const response = await fetch("/api/evotor/groups");
-        if (!response.ok) {
-          throw new Error(`Ошибка: ${response.status}`);
+        const response = await client.api.evotor.groups.$get();
+        const data = await response.json();
+        if (!data || !data.groups) {
+          throw new Error("Ошибка загрузки групп: пустой ответ");
         }
-        const data: { groups: GroupOption[] } = await response.json();
-        setGroupOptions(data.groups || []);
+        setGroupOptions(data.groups);
       } catch (err) {
         console.error(err);
         setError("Не удалось загрузить данные по группам");
@@ -68,15 +69,19 @@ const Settings = () => {
     };
 
     try {
-      const response = await fetch("/api/evotor/submit-groups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+      const response = await client.api.evotor.submitGroups.$post({
+        json: data,
       });
+      // Альтернативный вариант с fetch, если по какой-то причине не работает клиентский API
+      // const response = await
 
       if (response.ok) {
         const result = await response.json();
-        setResponseData(result);
+        setResponseData({
+          groupsName: result.groupsName,
+          salary: String(result.salary),
+          bonus: String(result.bonus),
+        });
 
         // Сброс данных формы после успешной отправки
         setSelectedGroups([]);

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { DateRangePicker } from "../../components/DateRangePicker";
 import { motion } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { client } from "../../helpers/api";
 
 type PaymentData = {
   sell: Record<string, number>;
@@ -47,11 +48,10 @@ export default function SalesTodayReport() {
     setError(null);
 
     try {
-      const response = await fetch("/api/evotor/sales-garden-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+      const response = await client.api.evotor.salesGardenReport.$post({
+        json: data,
       });
+
       if (!response.ok) {
         throw new Error(`Ошибка: ${response.status}`);
       }

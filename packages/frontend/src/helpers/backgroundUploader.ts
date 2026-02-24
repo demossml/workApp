@@ -70,7 +70,7 @@ const uploadFile = async (
         reject(new Error("Network error during upload"));
       };
 
-      xhr.open("POST", "/api/upload-photos");
+      xhr.open("POST", "/api/uploads/upload-photos");
       xhr.send(formData);
     });
   } catch (error) {

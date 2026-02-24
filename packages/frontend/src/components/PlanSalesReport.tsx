@@ -2,6 +2,7 @@ import type React from "react";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { LoadingSpinner } from "./LoadingSpinner";
+import { client } from "../helpers/api";
 
 interface SalesData {
   [shopName: string]: {
@@ -21,7 +22,7 @@ export const PlanSalesReport: React.FC = () => {
     const fetchSalesData = async () => {
       setIsLoading(false);
       try {
-        const response = await fetch("/api/evotor/plan-for-today");
+        const response = await client.api.evotor["plan-for-today"].$get();
         if (!response.ok) {
           throw new Error(`Error: ${response.status}`);
         }

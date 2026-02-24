@@ -2,6 +2,8 @@ import type { Context, Next } from "hono";
 import type { z } from "zod";
 import type { IEnv } from "./types";
 import { logger } from "./logger";
+import { ApiError, toApiErrorPayload } from "./errors";
+import { recordRequest } from "./monitoring";
 
 /**
  * Middleware для валидации JSON тела запроса с использованием Zod схемы
@@ -24,30 +26,30 @@ export function validateRequest<T extends z.ZodTypeAny>(schema: T) {
 			const result = schema.safeParse(body);
 
 			if (!result.success) {
-				const errors = result.error.errors.map((e) => ({
+				const details = result.error.errors.map((e) => ({
 					field: e.path.join("."),
 					message: e.message,
 				}));
-
-				return c.json(
-					{
-						error: "Validation failed",
-						details: errors,
-					},
-					400,
-				);
+				throw new ApiError(400, "VALIDATION_ERROR", "Validation failed", {
+					errors: details,
+				});
 			}
 
 			// Данные валидны, продолжаем выполнение
 			return next();
 		} catch (error) {
-			return c.json(
-				{
-					error: "Invalid JSON",
-					message: error instanceof Error ? error.message : "Unknown error",
-				},
-				400,
+			const { status, body } = toApiErrorPayload(
+				error,
+				error instanceof Error
+					? {
+							code: "INVALID_JSON",
+							message: error.message || "Invalid JSON",
+						}
+					: { code: "INVALID_JSON", message: "Invalid JSON" },
 			);
+			return c.json(body, status as 200, {
+				"x-error-code": body.code,
+			});
 		}
 	};
 }
@@ -67,14 +69,15 @@ export function errorHandler(err: Error, c: Context<IEnv>) {
 	// Не раскрываем внутренние детали в production
 	const isDev = c.env.BOT_TOKEN?.includes("test") || false;
 
-	return c.json(
-		{
-			error: "Internal Server Error",
-			message: isDev ? err.message : "An unexpected error occurred",
-			...(isDev && { stack: err.stack }),
-		},
-		500,
-	);
+	const { status, body } = toApiErrorPayload(err, {
+		code: "INTERNAL_ERROR",
+		message: isDev ? err.message : "An unexpected error occurred",
+		details: isDev ? { stack: err.stack } : undefined,
+	});
+
+	return c.json(body, status as 200, {
+		"x-error-code": body.code,
+	});
 }
 
 /**
@@ -85,13 +88,33 @@ export function requestLogger() {
 		const start = Date.now();
 		const path = c.req.path;
 		const method = c.req.method;
+		let caughtError: unknown;
 
-		await next();
+		try {
+			await next();
+		} catch (error) {
+			caughtError = error;
+			throw error;
+		} finally {
+			const ms = Date.now() - start;
+			const status = c.res?.status || (caughtError ? 500 : 200);
+			const code = c.res?.headers?.get("x-error-code") || undefined;
 
-		const ms = Date.now() - start;
-		const status = c.res.status;
+			recordRequest({
+				method,
+				path,
+				status,
+				latencyMs: ms,
+				...(code ? { code } : {}),
+			});
 
-		// Простое логирование (можно расширить)
-		logger.debug(`${method} ${path} - ${status} (${ms}ms)`);
+			if (status >= 500) {
+				logger.error(`${method} ${path} - ${status} (${ms}ms)`, caughtError);
+			} else if (status >= 400) {
+				logger.warn(`${method} ${path} - ${status} (${ms}ms)`);
+			} else {
+				logger.debug(`${method} ${path} - ${status} (${ms}ms)`);
+			}
+		}
 	};
 }

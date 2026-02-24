@@ -9,6 +9,7 @@ import { ErrorDisplay } from "../../components/ErrorDisplay";
 import { GroupSelector } from "../../components/GroupSelector";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { client } from "../../helpers/api";
 
 // Интерфейсы для типов данных
 interface GroupOption {
@@ -16,15 +17,15 @@ interface GroupOption {
   uuid: string;
 }
 
-interface ProductData {
-  orderQuantity: number;
-  smaQuantity: number;
-  quantity: number;
-  sum: number;
-}
+// interface ProductData {
+//   orderQuantity: number;
+//   smaQuantity: number;
+//   quantity: number;
+//   sum: number;
+// }
 
 interface ReportData {
-  order: Record<string, ProductData>;
+  order: Record<string, { [key: string]: number }>;
   startDate: string;
   endDate: string;
   shopName: string;
@@ -67,12 +68,8 @@ export default function Order() {
       setIsLoadingShops(true); // Начало загрузки групп
 
       try {
-        const response = await fetch("/api/evotor/shops", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ userId }),
+        const response = await client.api.evotor.shops.$post({
+          json: { userId },
         });
 
         if (!response.ok) {
@@ -103,22 +100,22 @@ export default function Order() {
   const fetchGroups = async (shopUuid: string) => {
     setIsLoadingGroups(true); // Начало загрузки групп
     try {
-      const dataGroups = {
-        shopUuid: shopUuid,
-      };
-      const response = await fetch("/api/evotor/groups-by-shop", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await client.api.evotor["groups-by-shop"].$post({
+        json: {
+          shopUuid,
         },
-        body: JSON.stringify(dataGroups),
       });
 
       if (!response.ok) {
         throw new Error(`Ошибка загрузки групп: ${response.status}`);
       }
 
-      const data: { groups: GroupOption[] } = await response.json();
+      const data = (await response.json()) as
+        | { groups: GroupOption[] }
+        | { code: string; message: string; details?: unknown };
+      if (!("groups" in data)) {
+        throw new Error(data.message || "Не удалось загрузить группы");
+      }
       setGroupOptions(data.groups || []);
       setSelectedGroups([]);
     } catch (err) {
@@ -230,19 +227,27 @@ export default function Order() {
     setIsLoadingReport(true);
 
     try {
-      const response = await fetch("/api/evotor/order", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
+      const response = await client.api.evotor.order.$post({
+        json: data,
       });
 
       if (!response.ok) {
-        throw new Error(`Ошибка: ${response.status}`);
+        const err = (await response.json().catch(() => null)) as
+          | Record<string, unknown>
+          | null;
+        const msg =
+          (typeof err?.error === "string" ? err.error : undefined) ||
+          (typeof err?.message === "string" ? err.message : undefined) ||
+          `Ошибка: ${response.status}`;
+        throw new Error(msg);
       }
 
-      const report: ReportData = await response.json();
+      const report = (await response.json()) as
+        | ReportData
+        | { code: string; message: string; details?: unknown };
+      if (!("order" in report)) {
+        throw new Error(report.message || "Некорректный ответ сервера");
+      }
       setReportData(report);
     } catch (err) {
       console.error(err);
@@ -273,15 +278,53 @@ export default function Order() {
   }
 
   if (reportData) {
+    const normalizedProducts = Object.values(reportData.order).filter(
+      (product): product is {
+        orderQuantity: number;
+        smaQuantity: number;
+        quantity: number;
+        sum: number;
+      } =>
+        !!product &&
+        typeof product === "object" &&
+        typeof product.orderQuantity === "number" &&
+        typeof product.smaQuantity === "number" &&
+        typeof product.quantity === "number" &&
+        typeof product.sum === "number"
+    );
+
     // Вычисляем общую сумму заказа
-    const totalSum = Object.values(reportData.order).reduce(
+    const totalSum = normalizedProducts.reduce(
       (sum, product) => sum + product.sum,
       0
     );
 
     // Преобразуем данные в нужный формат для DynamicTable
-    const tableData = Object.keys(reportData.order).map((productKey) => {
-      const product = reportData.order[productKey];
+    const tableData = Object.entries(reportData.order)
+      .filter(
+        (
+          entry
+        ): entry is [
+          string,
+          {
+            orderQuantity: number;
+            smaQuantity: number;
+            quantity: number;
+            sum: number;
+          },
+        ] => {
+          const product = entry[1];
+          return (
+            !!product &&
+            typeof product === "object" &&
+            typeof product.orderQuantity === "number" &&
+            typeof product.smaQuantity === "number" &&
+            typeof product.quantity === "number" &&
+            typeof product.sum === "number"
+          );
+        }
+      )
+      .map(([productKey, product]) => {
       return {
         productName: productKey,
         smaQuantity: product.smaQuantity,
@@ -289,7 +332,7 @@ export default function Order() {
         orderQuantity: product.orderQuantity,
         sum: product.sum,
       };
-    });
+      });
 
     return (
       <div className="p-4 flex flex-col items-start bg-custom-gray dark:bg-gray-900 gap-4 max-w-md mx-auto">
