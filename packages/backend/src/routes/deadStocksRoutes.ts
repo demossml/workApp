@@ -6,6 +6,7 @@ import { formatDateWithTime } from "../utils";
 import { saveDeadStocks } from "../db/repositories/saveDeadStocks";
 import { DeadStockSchema, validate } from "../validation";
 import { jsonError, toApiErrorPayload } from "../errors";
+import { trackAppEvent } from "../analytics/track";
 
 export const deadStocksRoutes = new Hono<IEnv>()
 	.post("/update", async (c) => {
@@ -19,8 +20,16 @@ export const deadStocksRoutes = new Hono<IEnv>()
 				return jsonError(c, 400, "INVALID_JSON", "Invalid JSON body");
 			}
 			const { shopUuid, items } = payload;
+			await trackAppEvent(c, "deadstock_save_started", {
+				shopUuid,
+				props: { itemsCount: Array.isArray(items) ? items.length : 0 },
+			});
 
 			if (!shopUuid || !items || !Array.isArray(items)) {
+				await trackAppEvent(c, "deadstock_save_failed", {
+					shopUuid: shopUuid || undefined,
+					props: { reason: "invalid_request_data" },
+				});
 				return jsonError(c, 400, "VALIDATION_ERROR", "Invalid request data");
 			}
 
@@ -45,9 +54,19 @@ export const deadStocksRoutes = new Hono<IEnv>()
 
 			// 2️⃣ СОХРАНЕНИЕ В БД
 			await saveDeadStocks(db, shopUuid, items);
+			await trackAppEvent(c, "deadstock_save_success", {
+				shopUuid,
+				props: { itemsCount: items.length },
+			});
 
 			return c.json({ success: true });
 		} catch (error) {
+			await trackAppEvent(c, "deadstock_save_failed", {
+				props: {
+					reason:
+						error instanceof Error ? error.message : "dead_stocks_update_failed",
+				},
+			});
 			logger.error("Dead stocks update failed", error);
 			const { status, body } = toApiErrorPayload(error, {
 				code: "DEAD_STOCKS_UPDATE_FAILED",

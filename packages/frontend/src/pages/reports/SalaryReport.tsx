@@ -1,5 +1,4 @@
-// import { useEffect, useState } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { motion } from "framer-motion";
 
@@ -9,8 +8,8 @@ import {
   CardHeader,
   CardTitle,
 } from "../../components/ui/card";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
+import type { DateRange } from "react-day-picker";
+import { Popover, PopoverContent, PopoverTrigger, Calendar } from "../../components/ui";
 // import {
 //   Select,
 //   SelectContent,
@@ -55,12 +54,39 @@ interface ResponseData {
 
 export default function SalaryReports() {
   // const [employeeOptions, setEmployeeOptions] = useState<EmployeeOptions[]>([]);
-  const [startDate, setStartDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
-  const [endDate, setEndDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
+  const formatLocalDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const getLastWeekRange = () => {
+    const today = new Date();
+    const day = today.getDay(); // 0 - Sunday, 1 - Monday, ... 6 - Saturday
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const thisWeekMonday = new Date(today);
+    thisWeekMonday.setDate(today.getDate() + mondayOffset);
+
+    const start = new Date(thisWeekMonday);
+    start.setDate(thisWeekMonday.getDate() - 7); // Monday of previous week
+
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6); // Sunday of previous week
+
+    return {
+      startDate: formatLocalDate(start),
+      endDate: formatLocalDate(end),
+    };
+  };
+
+  const initialRange = getLastWeekRange();
+  const [startDate, setStartDate] = useState<string>(initialRange.startDate);
+  const [endDate, setEndDate] = useState<string>(initialRange.endDate);
+  const [dateMode, setDateMode] = useState<"lastWeek" | "period">("lastWeek");
+  const [period, setPeriod] = useState<DateRange | undefined>(undefined);
+  const [tempPeriod, setTempPeriod] = useState<DateRange | undefined>(undefined);
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   // const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [responseData, setResponseData] = useState<ResponseData | null>(null);
@@ -68,11 +94,30 @@ export default function SalaryReports() {
 
   useTelegramBackButton();
 
-  const calculateDate = (date: string, days: number): string => {
-    const result = new Date(date);
-    result.setDate(result.getDate() + days);
-    return result.toISOString().split("T")[0];
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
   };
+
+  useEffect(() => {
+    if (dateMode === "lastWeek") {
+      const lastWeek = getLastWeekRange();
+      setStartDate(lastWeek.startDate);
+      setEndDate(lastWeek.endDate);
+      setPeriod(undefined);
+      setTempPeriod(undefined);
+      setShowPeriodPicker(false);
+    }
+  }, [dateMode]);
+
+  useEffect(() => {
+    if (dateMode !== "period" || !period?.from || !period?.to) return;
+    setStartDate(formatLocalDate(period.from));
+    setEndDate(formatLocalDate(period.to));
+  }, [dateMode, period]);
 
   const { data } = useEmployeeNameAndUuid();
   const employeeNameAndUuid = data?.employeeNameAndUuid ?? [];
@@ -127,11 +172,18 @@ export default function SalaryReports() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="w-screen mt-8 min-h-screen px-4 py-6 bg-custom-gray dark:bg-gray-900 text-gray-800  dark:text-gray-300"
+      className="app-page w-full px-4 sm:px-6 py-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col items-center"
+      style={{
+        paddingTop: "calc(var(--app-top-clearance) + 0.5rem)",
+        paddingBottom: "calc(var(--app-bottom-clearance) + 0.5rem)",
+      }}
     >
-      <h2 className="text-2xl font-bold text-center mb-6 text-gray-900 dark:text-white">
+      <h2 className="text-xl sm:text-2xl font-semibold text-center mb-2">
         Отчет по зарплате
       </h2>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 text-center">
+        Выберите период и получите детализацию начислений
+      </p>
 
       {error && (
         <motion.div
@@ -155,10 +207,10 @@ export default function SalaryReports() {
         </div>
       ) : responseData ? (
         <SaveAsJpegButton fileName="salary-report.jpeg">
-          <div className="space-y-6">
+          <div className="w-full max-w-3xl space-y-4">
             {/* Результаты по дням */}
             <div>
-              <Card className="bg-custom-gray dark:bg-gray-800">
+              <Card className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/70 dark:border-slate-800 shadow-sm">
                 <CardHeader>
                   <CardTitle className="dark:text-white">Период</CardTitle>
                 </CardHeader>
@@ -177,7 +229,7 @@ export default function SalaryReports() {
               {responseData.result?.map((item, idx) => (
                 <Card
                   key={idx}
-                  className="bg-custom-gray dark:bg-gray-800 shadow-md"
+                  className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/70 dark:border-slate-800 shadow-sm"
                 >
                   <CardContent className="space-y-1 dark:text-gray-300">
                     <div className="flex justify-between">
@@ -217,7 +269,7 @@ export default function SalaryReports() {
               ))}
 
               {responseData.totalReport && (
-                <Card className="bg-custom-gray dark:bg-gray-800 shadow-md mt-2">
+                <Card className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/70 dark:border-slate-800 shadow-sm mt-2">
                   <CardHeader>
                     <CardTitle className="dark:text-white">
                       Общий отчет
@@ -260,43 +312,73 @@ export default function SalaryReports() {
           initial={{ opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.4 }}
-          className="space-y-4 bg-custom-gray dark:bg-gray-800 p-4 rounded-lg shadow-md"
+          className="w-full max-w-3xl space-y-4 bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200/70 dark:border-slate-800 shadow-sm"
         >
-          <div>
-            <Label htmlFor="start-date" className="dark:text-gray-300">
-              Начало периода:
-            </Label>
-            <Input
-              type="date"
-              id="start-date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                if (
-                  new Date(endDate) > new Date(calculateDate(e.target.value, 7))
-                ) {
-                  setEndDate(calculateDate(e.target.value, 7));
-                }
-                if (new Date(endDate) < new Date(e.target.value)) {
-                  setEndDate(e.target.value);
-                }
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className={`rounded-lg border px-3 py-2 text-sm transition ${
+                dateMode === "lastWeek"
+                  ? "border-blue-600 bg-blue-600 text-white"
+                  : "border-slate-300 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              }`}
+              onClick={() => setDateMode("lastWeek")}
+            >
+              Прошлая неделя
+            </button>
+            <Popover
+              open={showPeriodPicker}
+              onOpenChange={(open) => {
+                setShowPeriodPicker(open);
+                if (!open) setTempPeriod(undefined);
               }}
-            />
+            >
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={`rounded-lg border px-3 py-2 text-sm transition ${
+                    dateMode === "period"
+                      ? "border-blue-600 bg-blue-600 text-white"
+                      : "border-slate-300 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                  }`}
+                  onClick={() => {
+                    setDateMode("period");
+                    setTempPeriod(period);
+                    setShowPeriodPicker(true);
+                  }}
+                >
+                  Период
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto p-0">
+                <Calendar
+                  mode="range"
+                  selected={tempPeriod?.from ? tempPeriod : undefined}
+                  onSelect={setTempPeriod}
+                  numberOfMonths={1}
+                  disabled={(date) => date > new Date()}
+                  initialFocus
+                />
+                <div className="flex justify-end p-2">
+                  <button
+                    className="px-3 py-1 rounded bg-blue-600 text-white"
+                    disabled={!(tempPeriod?.from && tempPeriod?.to)}
+                    onClick={() => {
+                      setPeriod(tempPeriod);
+                      setShowPeriodPicker(false);
+                    }}
+                  >
+                    Применить
+                  </button>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
-
-          <div>
-            <Label htmlFor="end-date" className="dark:text-gray-300">
-              Конец периода:
-            </Label>
-            <Input
-              type="date"
-              id="end-date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              min={startDate}
-              max={calculateDate(startDate, 7)}
-            />
-          </div>
+          {dateMode === "period" && period?.from && period?.to && (
+            <div className="text-sm text-slate-600 dark:text-slate-300">
+              {formatDate(period.from)} → {formatDate(period.to)}
+            </div>
+          )}
 
           {/* <div>
             <Label htmlFor="employee">Выберите сотрудника:</Label>
@@ -319,7 +401,7 @@ export default function SalaryReports() {
 
           <Button
             type="submit"
-            className="w-full mt-2 bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white border-0 shadow-md transition-colors duration-200"
+            className="w-full mt-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white border-0 shadow-sm transition-colors duration-200"
           >
             Получить отчет
           </Button>

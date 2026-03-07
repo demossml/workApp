@@ -4,10 +4,6 @@ interface PlanByShops {
 	[shopUuid: string]: number;
 }
 
-interface CheckResult {
-	count: number;
-}
-
 interface PlanItem {
 	shopUuid: string;
 	sum: number;
@@ -35,40 +31,44 @@ export async function updatePlan(
 	db: D1Database,
 ): Promise<void> {
 	try {
-		const checkQuery = `
-            SELECT COUNT(*) as count
-            FROM plan
-            WHERE date = ?;
-        `;
+		const entries = Object.entries(planByShops);
+		if (entries.length === 0) return;
 
-		const checkStatement = db.prepare(checkQuery);
-		const checkResult: CheckResult | null = await checkStatement
+		const existingRows = await db
+			.prepare(
+				`
+				SELECT shopUuid
+				FROM plan
+				WHERE date = ?;
+			`,
+			)
 			.bind(date)
-			.first();
+			.all<{ shopUuid: string }>();
 
-		if (checkResult && checkResult.count > 0) {
-			const updateQuery = `
-                UPDATE plan
-                SET sum = ?
-                WHERE date = ? AND shopUuid = ?;
-            `;
+		const existingShopUuids = new Set(
+			(existingRows.results || []).map((row) => row.shopUuid),
+		);
 
-			const updateStatement = db.prepare(updateQuery);
+		const updateStatement = db.prepare(
+			`
+			UPDATE plan
+			SET sum = ?
+			WHERE date = ? AND shopUuid = ?;
+		`,
+		);
+		const insertStatement = db.prepare(
+			`
+			INSERT INTO plan (date, shopUuid, sum)
+			VALUES (?, ?, ?);
+		`,
+		);
 
-			for (const [shopUuid, sum] of Object.entries(planByShops)) {
+		for (const [shopUuid, sum] of entries) {
+			if (existingShopUuids.has(shopUuid)) {
 				await updateStatement.bind(sum, date, shopUuid).run();
+				continue;
 			}
-		} else {
-			const insertQuery = `
-                INSERT INTO plan (date, shopUuid, sum)
-                VALUES (?, ?, ?);
-            `;
-
-			const insertStatement = db.prepare(insertQuery);
-
-			for (const [shopUuid, sum] of Object.entries(planByShops)) {
-				await insertStatement.bind(date, shopUuid, sum).run();
-			}
+			await insertStatement.bind(date, shopUuid, sum).run();
 		}
 	} catch (err) {
 		console.error("Ошибка при обновлении плана:", err);

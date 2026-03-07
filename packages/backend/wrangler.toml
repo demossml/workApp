@@ -7,6 +7,9 @@ assets = { directory = "dist"}
 upload_source_maps = true
 
 
+routes = [
+{ pattern = "demossml.cc", custom_domain = true }
+]
 
 
 [[d1_databases]]
@@ -33,4 +36,10 @@ preview_bucket_name = "evotor"
 [vars]
 # Только публичные переменные!
 R2_PUBLIC_URL = "c1e9f63e6135bb4fa5600e83bf4a1a4b.r2.cloudflarestorage.com/evotor"
+ALERT_TZ_OFFSET_MINUTES = "180"
+ALERT_REFUND_THRESHOLD_PCT = "15"
+ALERT_REVENUE_DROP_THRESHOLD_PCT = "20"
 
+[triggers]
+# Индексация каждые 3 минуты; ежедневный дайджест запускается в коде в 06:00 UTC.
+crons = ["*/3 * * * *"]

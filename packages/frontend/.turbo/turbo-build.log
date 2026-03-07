@@ -1,26 +1,52 @@
 
 
 > @work-appt/frontend@0.0.0 build /Users/dmitrijsuvalov/Documents/testapp2/packages/frontend
-> tsc -b && vite build && cp -R dist ../backend/
+> tsc -b && vite build && rm -rf ../backend/dist && cp -R dist ../backend/
 
 [36mvite v5.4.20 [32mbuilding for production...[36m[39m
 [baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
-[2K[1Gtransforming (1) [2mindex.html[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (23) [2m../../node_modules/react/cjs/react.production.min.js[22m[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (50) [2msrc/index.css[22m[2K[1G[2K[1Gtransforming (73) [2msrc/pages/reports/SalarysReport.tsx[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (1084) [2m../../node_modules/@tanstack/query-core/build/modern/hydration.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (1958) [2m../../node_modules/@tanstack/query-core/build/modern/query.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2114) [2msrc/components/DateRangePicker.tsx[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2214) [2msrc/components/dashboard/cards/TopProductsDetails.tsx[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2555) [2m../../node_modules/@radix-ui/react-popover/dist/index.mjs[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2787) [2m../../node_modules/date-fns/locale/af/_lib/match.js[22m[2K[1G[32m✓[39m 3213 modules transformed.
-[2K[1Grendering chunks (1)...[2K[1Grendering chunks (2)...[2K[1G[2K[1Gcomputing gzip size (0)...[2K[1Gcomputing gzip size (1)...[2K[1Gcomputing gzip size (2)...[2K[1Gcomputing gzip size (3)...[2K[1Gcomputing gzip size (4)...[2K[1G[2mdist/[22m[32mmanifest.webmanifest                        [39m[1m[2m  0.43 kB[22m[1m[22m
-[2mdist/[22m[32mindex.html                                  [39m[1m[2m  0.96 kB[22m[1m[22m[2m │ gzip:   0.58 kB[22m
-[2mdist/[22m[2massets/[22m[35mindex-bbv8G6JJ.css                   [39m[1m[2m 68.69 kB[22m[1m[22m[2m │ gzip:  11.58 kB[22m
-[2mdist/[22m[2massets/[22m[36mworkbox-window.prod.es5-B9K5rw8f.js  [39m[1m[2m  5.72 kB[22m[1m[22m[2m │ gzip:   2.36 kB[22m
-[2mdist/[22m[2massets/[22m[36mindex-Dnpi6fOx.js                    [39m[1m[33m748.10 kB[39m[22m[2m │ gzip: 224.57 kB[22m
+[2K[1Gtransforming (1) [2mindex.html[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1GBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (26) [2m../../node_modules/react/index.js[22m[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (56) [2msrc/pwa.ts[22m[2K[1G[2K[1Gtransforming (75) [2msrc/pages/reports/PlanSalesReport.tsx[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (1094) [2m../../node_modules/@tanstack/react-query/build/modern/useBaseQuery.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (1970) [2m../../node_modules/hono/dist/client/index.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2139) [2msrc/components/DateRangePicker.tsx[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2489) [2m../../node_modules/framer-motion/dist/es/context/MotionContext/create.mjs[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2807) [2m../../node_modules/date-fns/locale/af/_lib/localize.js[22m[2K[1G[32m✓[39m 3233 modules transformed.
+[2K[1Grendering chunks (1)...[2K[1Grendering chunks (2)...[2K[1Grendering chunks (3)...[2K[1Grendering chunks (4)...[2K[1Grendering chunks (5)...[2K[1Grendering chunks (6)...[2K[1Grendering chunks (7)...[2K[1Grendering chunks (8)...[2K[1Grendering chunks (9)...[2K[1Grendering chunks (10)...[2K[1Grendering chunks (11)...[2K[1Grendering chunks (12)...[2K[1Grendering chunks (13)...[2K[1Grendering chunks (14)...[2K[1Grendering chunks (15)...[2K[1Grendering chunks (16)...[2K[1Grendering chunks (17)...[2K[1Grendering chunks (18)...[2K[1Grendering chunks (19)...[2K[1Grendering chunks (20)...[2K[1Grendering chunks (21)...[2K[1Grendering chunks (22)...[2K[1Grendering chunks (23)...[2K[1Grendering chunks (24)...[2K[1Grendering chunks (25)...[2K[1G[2K[1Gcomputing gzip size (0)...[2K[1Gcomputing gzip size (1)...[2K[1Gcomputing gzip size (2)...[2K[1Gcomputing gzip size (3)...[2K[1Gcomputing gzip size (4)...[2K[1Gcomputing gzip size (5)...[2K[1Gcomputing gzip size (6)...[2K[1Gcomputing gzip size (7)...[2K[1Gcomputing gzip size (8)...[2K[1Gcomputing gzip size (9)...[2K[1Gcomputing gzip size (10)...[2K[1Gcomputing gzip size (11)...[2K[1Gcomputing gzip size (12)...[2K[1Gcomputing gzip size (13)...[2K[1Gcomputing gzip size (14)...[2K[1Gcomputing gzip size (15)...[2K[1Gcomputing gzip size (16)...[2K[1Gcomputing gzip size (17)...[2K[1Gcomputing gzip size (18)...[2K[1Gcomputing gzip size (19)...[2K[1Gcomputing gzip size (20)...[2K[1Gcomputing gzip size (21)...[2K[1Gcomputing gzip size (22)...[2K[1Gcomputing gzip size (23)...[2K[1Gcomputing gzip size (24)...[2K[1Gcomputing gzip size (25)...[2K[1Gcomputing gzip size (26)...[2K[1Gcomputing gzip size (27)...[2K[1G[2mdist/[22m[32mmanifest.webmanifest                            [39m[1m[2m  0.43 kB[22m[1m[22m
+[2mdist/[22m[32mindex.html                                      [39m[1m[2m  0.96 kB[22m[1m[22m[2m │ gzip:   0.58 kB[22m
+[2mdist/[22m[2massets/[22m[35mindex-2Q2Ayb6g.css                       [39m[1m[2m 89.15 kB[22m[1m[22m[2m │ gzip:  14.84 kB[22m
+[2mdist/[22m[2massets/[22m[36mcheck-ewJaTFpC.js                        [39m[1m[2m  0.30 kB[22m[1m[22m[2m │ gzip:   0.25 kB[22m
+[2mdist/[22m[2massets/[22m[36museSimpleTelegramBackButton-Dgu9IouC.js  [39m[1m[2m  0.56 kB[22m[1m[22m[2m │ gzip:   0.38 kB[22m
+[2mdist/[22m[2massets/[22m[36mDateRangePicker-D3s51ORp.js              [39m[1m[2m  2.22 kB[22m[1m[22m[2m │ gzip:   0.91 kB[22m
+[2mdist/[22m[2massets/[22m[36mPlanSalesReport-Duv4vSWq.js              [39m[1m[2m  2.29 kB[22m[1m[22m[2m │ gzip:   1.13 kB[22m
+[2mdist/[22m[2massets/[22m[36mSchedulesReport-B4oYDXHI.js              [39m[1m[2m  2.33 kB[22m[1m[22m[2m │ gzip:   0.88 kB[22m
+[2mdist/[22m[2massets/[22m[36mSalesTodayReport-Waoj_hgU.js             [39m[1m[2m  2.36 kB[22m[1m[22m[2m │ gzip:   1.04 kB[22m
+[2mdist/[22m[2massets/[22m[36mStaffRatingsReport-BMrKysgt.js           [39m[1m[2m  2.87 kB[22m[1m[22m[2m │ gzip:   1.47 kB[22m
+[2mdist/[22m[2massets/[22m[36mQuantityTable-Ds566DXY.js                [39m[1m[2m  3.12 kB[22m[1m[22m[2m │ gzip:   1.50 kB[22m
+[2mdist/[22m[2massets/[22m[36mDynamicTable-DC5Ju4uO.js                 [39m[1m[2m  3.86 kB[22m[1m[22m[2m │ gzip:   1.73 kB[22m
+[2mdist/[22m[2massets/[22m[36mStoreOpeningReport-CGntzniH.js           [39m[1m[2m  4.85 kB[22m[1m[22m[2m │ gzip:   1.75 kB[22m
+[2mdist/[22m[2massets/[22m[36mSettings-CC4ddtY_.js                     [39m[1m[2m  4.99 kB[22m[1m[22m[2m │ gzip:   2.12 kB[22m
+[2mdist/[22m[2massets/[22m[36mworkbox-window.prod.es5-B9K5rw8f.js      [39m[1m[2m  5.72 kB[22m[1m[22m[2m │ gzip:   2.36 kB[22m
+[2mdist/[22m[2massets/[22m[36mSalaryReport-DFE7iGOt.js                 [39m[1m[2m  5.85 kB[22m[1m[22m[2m │ gzip:   1.89 kB[22m
+[2mdist/[22m[2massets/[22m[36mSalestReportForThePeriod-cWLSD0-g.js     [39m[1m[2m  6.58 kB[22m[1m[22m[2m │ gzip:   1.94 kB[22m
+[2mdist/[22m[2massets/[22m[36mStoreOpeningsAdminReport-BDRcgmvA.js     [39m[1m[2m  7.03 kB[22m[1m[22m[2m │ gzip:   2.51 kB[22m
+[2mdist/[22m[2massets/[22m[36muse-spring-Ijqb3Kk2.js                   [39m[1m[2m  7.92 kB[22m[1m[22m[2m │ gzip:   3.33 kB[22m
+[2mdist/[22m[2massets/[22m[36mGroupSelector-BwSHGECu.js                [39m[1m[2m 10.44 kB[22m[1m[22m[2m │ gzip:   2.32 kB[22m
+[2mdist/[22m[2massets/[22m[36mOrders-Bf-FlnqC.js                       [39m[1m[2m 10.48 kB[22m[1m[22m[2m │ gzip:   4.14 kB[22m
+[2mdist/[22m[2massets/[22m[36mDeadStock-DGlTa0nt.js                    [39m[1m[2m 11.02 kB[22m[1m[22m[2m │ gzip:   4.29 kB[22m
+[2mdist/[22m[2massets/[22m[36mProfitReportPage-DaNId_cA.js             [39m[1m[2m 12.65 kB[22m[1m[22m[2m │ gzip:   4.15 kB[22m
+[2mdist/[22m[2massets/[22m[36mSaveAsJpegButton-BEFB85AE.js             [39m[1m[2m 16.88 kB[22m[1m[22m[2m │ gzip:   7.02 kB[22m
+[2mdist/[22m[2massets/[22m[36mSaleRepor-C3leWMm0.js                    [39m[1m[2m 18.71 kB[22m[1m[22m[2m │ gzip:   5.53 kB[22m
+[2mdist/[22m[2massets/[22m[36mSalarysReport-BuIl_qsO.js                [39m[1m[2m 29.29 kB[22m[1m[22m[2m │ gzip:   9.87 kB[22m
+[2mdist/[22m[2massets/[22m[36mStoreOpeningPage-D5gupeWf.js             [39m[1m[2m 32.06 kB[22m[1m[22m[2m │ gzip:  10.04 kB[22m
+[2mdist/[22m[2massets/[22m[36mindex-DpZtCno_.js                        [39m[1m[33m676.08 kB[39m[22m[2m │ gzip: 204.31 kB[22m
 [33m
 (!) Some chunks are larger than 500 kB after minification. Consider:
 - Using dynamic import() to code-split the application
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
-[32m✓ built in 2.29s[39m
+[32m✓ built in 2.19s[39m
 
 [36mPWA v1.0.3[39m
 mode      [35mgenerateSW[39m
-precache  [32m5 entries[39m [2m(813.59 KiB)[22m
+precache  [32m28 entries[39m [2m(960.68 KiB)[22m
 files generated
   [2mdist/sw.js[22m
   [2mdist/workbox-1be04862.js[22m

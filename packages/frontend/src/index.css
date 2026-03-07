@@ -28,7 +28,18 @@
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
-    --radius: 0.5rem
+    --radius: 0.5rem;
+    --tg-safe-top: 0px;
+    --tg-safe-bottom: 0px;
+    --tg-viewport-height: 100dvh;
+    --tg-app-top-offset: 0px;
+    --app-bottom-nav-height: 64px;
+    --app-top-clearance: calc(
+      var(--tg-app-top-offset, var(--tg-safe-top, 0px)) + 8px
+    );
+    --app-bottom-clearance: calc(
+      var(--app-bottom-nav-height, 64px) + var(--tg-safe-bottom, 0px) + 8px
+    );
   }
   .dark {
     --background: 0 0% 3.9%;
@@ -65,4 +76,123 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+html,
+body,
+#root {
+  height: var(--tg-viewport-height);
+  min-height: var(--tg-viewport-height);
+  overflow-x: hidden;
+}
+
+.app-shell-main {
+  min-height: var(--tg-viewport-height);
+  padding-top: var(--app-top-clearance);
+  padding-bottom: var(--app-bottom-clearance);
+}
+
+.app-page {
+  width: 100%;
+  min-height: calc(
+    var(--tg-viewport-height) - var(--app-top-clearance) -
+      var(--app-bottom-clearance)
+  );
+}
+
+.app-page-scroll {
+  width: 100%;
+  min-height: calc(
+    var(--tg-viewport-height) - var(--app-top-clearance) -
+      var(--app-bottom-clearance)
+  );
+  overflow-y: auto;
+}
+
+/* Global Glass Theme (light + dark) */
+:root {
+  --glass-font: "General Sans", "Inter", "Segoe UI", sans-serif;
+  --glass-bg: #f3f6fb;
+  --glass-text: #0f172a;
+  --glass-muted: #475569;
+  --glass-accent-a: rgba(37, 99, 235, 0.1);
+  --glass-accent-b: rgba(139, 92, 246, 0.08);
+  --glass-panel: rgba(255, 255, 255, 0.72);
+  --glass-panel-border: rgba(15, 23, 42, 0.08);
+  --glass-shadow: 0 18px 48px rgba(37, 99, 235, 0.12);
+  --glass-shadow-strong: 0 24px 64px rgba(37, 99, 235, 0.2);
+}
+
+.dark {
+  --glass-bg: #0f1115;
+  --glass-text: #f8fafc;
+  --glass-muted: #cbd5e1;
+  --glass-accent-a: rgba(37, 99, 235, 0.2);
+  --glass-accent-b: rgba(139, 92, 246, 0.16);
+  --glass-panel: rgba(30, 41, 59, 0.4);
+  --glass-panel-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 18px 48px rgba(30, 58, 138, 0.16);
+  --glass-shadow-strong: 0 24px 64px rgba(30, 58, 138, 0.24);
+}
+
+html,
+body {
+  font-family: var(--glass-font);
+  color: var(--glass-text);
+  background:
+    radial-gradient(1200px 600px at 20% -20%, var(--glass-accent-a), transparent
+          60%),
+    radial-gradient(900px 500px at 100% 0%, var(--glass-accent-b), transparent
+          60%),
+    var(--glass-bg);
+}
+
+.app-shell-main,
+.app-page,
+.app-page-scroll {
+  background:
+    radial-gradient(1200px 600px at 20% -20%, var(--glass-accent-a), transparent
+          60%),
+    radial-gradient(900px 500px at 100% 0%, var(--glass-accent-b), transparent
+          60%),
+    var(--glass-bg) !important;
+  color: var(--glass-text);
+}
+
+/* Auto-style only card-like blocks (rounded + shadow) */
+.app-shell-main :is(div, section, article, li):not([class*="animate-spin"])[class*="rounded"][class*="shadow"]:is(
+    [class*="bg-white"],
+    [class*="bg-gray-50"],
+    [class*="dark:bg-gray-800"],
+    [class*="dark:bg-gray-700"]
+  ) {
+  background: var(--glass-panel) !important;
+  border: 1px solid var(--glass-panel-border) !important;
+  backdrop-filter: blur(12px);
+  box-shadow: var(--glass-shadow);
+}
+
+.app-shell-main :is(div, section, article, li)[class*="rounded"][class*="shadow"] {
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-shell-main :is(div, section, article, li)[class*="rounded"][class*="shadow"]:active {
+  transform: scale(0.98);
+}
+
+/* Global semantic accents */
+.app-shell-main .text-blue-600,
+.app-shell-main .dark\:text-blue-400 {
+  color: #2563eb !important;
+}
+
+.app-shell-main .text-green-600,
+.app-shell-main .dark\:text-green-400 {
+  color: #10b981 !important;
+}
+
+.app-shell-main .text-red-600,
+.app-shell-main .dark\:text-red-400 {
+  color: #f43f5e !important;
 }

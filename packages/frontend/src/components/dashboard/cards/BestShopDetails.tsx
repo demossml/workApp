@@ -28,14 +28,12 @@ interface BestShopDetailsProps {
       checksCount: number;
     }
   >;
-  grandTotalSell?: number;
-  grandTotalRefund?: number;
+  netRevenue?: number;
 }
 
 export const BestShopDetails: React.FC<BestShopDetailsProps> = ({
   salesDataByShopName = {},
-  grandTotalSell = 0,
-  grandTotalRefund = 0,
+  netRevenue = 0,
 }) => {
   // Собираем топ-5 магазинов
   const shops: ShopData[] = Object.entries(salesDataByShopName).map(
@@ -47,7 +45,7 @@ export const BestShopDetails: React.FC<BestShopDetailsProps> = ({
     })
   );
   const sortedShops = shops.sort((a, b) => b.netSales - a.netSales).slice(0, 5);
-  const totalNetSales = grandTotalSell - grandTotalRefund;
+  const totalNetSales = netRevenue;
   const maxSales = sortedShops[0]?.netSales || 1;
   const maxChecks = Math.max(...sortedShops.map((s) => s.checksCount));
 

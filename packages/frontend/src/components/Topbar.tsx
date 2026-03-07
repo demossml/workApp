@@ -1,10 +1,9 @@
 import { useUser } from "../hooks/userProvider";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useRef } from "react";
 import {
   X,
   Download,
-  Cigarette,
   Smartphone,
   Bell,
   Shield,
@@ -28,6 +27,7 @@ export const Topbar = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
 
   const isMiniApp = isTelegramMiniApp();
   const { data: roleData } = useEmployeeRole();
@@ -98,20 +98,6 @@ export const Topbar = () => {
       telegram.WebApp.HapticFeedback.impactOccurred("medium");
     }
   };
-
-  // Функция для открытия настроек Telegram
-  // const openSettings = () => {
-  //   if (isTelegramMiniApp && telegram.WebApp) {
-  //     telegram.WebApp.SettingsButton.show();
-  //     telegram.WebApp.SettingsButton.onClick(() => {
-  //       telegram.WebApp.showPopup({
-  //         title: "Настройки",
-  //         message: "Настройки приложения",
-  //         buttons: [{ type: "close" }],
-  //       });
-  //     });
-  //   }
-  // };
 
   // Подсчет критических алертов
   const getAlertsCount = () => {
@@ -211,17 +197,43 @@ export const Topbar = () => {
 
   const roleBadge = getRoleBadge();
 
+  useLayoutEffect(() => {
+    const headerEl = headerRef.current;
+    if (!headerEl) return;
+
+    const setHeaderHeight = () => {
+      const height = Math.round(headerEl.getBoundingClientRect().height);
+      document.documentElement.style.setProperty(
+        "--app-topbar-height",
+        `${height}px`
+      );
+    };
+
+    setHeaderHeight();
+
+    const observer = new ResizeObserver(setHeaderHeight);
+    observer.observe(headerEl);
+    window.addEventListener("resize", setHeaderHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", setHeaderHeight);
+    };
+  }, []);
+
   return (
     <motion.header
+      ref={headerRef}
       initial={{ y: -40, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="fixed top-0 left-0 w-full bg-gradient-to-r from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-lg z-50"
+      className="fixed left-0 w-full z-50 border-b border-white/10 bg-slate-900/85 backdrop-blur-xl shadow-lg"
+      style={{ top: "var(--tg-app-top-offset, var(--tg-safe-top, 0px))" }}
     >
-      <div className="flex items-center justify-between px-1 py-1">
+      <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
         {/* Приветствие и роль */}
-        <div className="flex ml-4 items-center gap-2">
-          <span className="text-lg font-bold text-gray-800 dark:text-gray-100">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-base font-semibold text-white">
             {userData.firstName}
           </span>
           {roleBadge && (
@@ -235,7 +247,7 @@ export const Topbar = () => {
         </div>
 
         {/* Кнопки и аватар */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* Badge уведомлений */}
           {alertsCount > 0 && roleData?.employeeRole !== "CASHIER" && (
             <motion.div
@@ -276,17 +288,17 @@ export const Topbar = () => {
 
           {/* Кнопка установки PWA (только для браузера) */}
           <AnimatePresence>
-            {isVisible && !isTelegramMiniApp && (
+            {isVisible && !isTelegramMiniApp() && (
               <motion.button
                 onClick={handleInstallClick}
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.3 }}
-                className="flex items-center gap-1 bg-blue-600 text-white text-sm font-medium px-3 py-1.5 rounded-xl shadow hover:bg-blue-700 transition-all"
-              >
-                <Download className="w-4 h-4" />
-                Установить
+              className="flex items-center gap-1 bg-blue-600 text-white text-sm font-medium px-3 py-1.5 rounded-xl shadow hover:bg-blue-700 transition-all"
+            >
+              <Download className="w-4 h-4" />
+              Установить
               </motion.button>
             )}
           </AnimatePresence>
@@ -302,17 +314,17 @@ export const Topbar = () => {
                   telegram.WebApp.HapticFeedback.impactOccurred("light");
                 }
               }}
-              className="mr-4"
+              className="mr-1"
             >
               {userData.photoUrl ? (
                 <img
                   src={userData.photoUrl}
                   alt="User"
-                  className="w-9 h-9 rounded-full border-2 border-gray-300 dark:border-gray-600 shadow-md hover:border-blue-500 dark:hover:border-blue-400 transition-colors"
+                  className="h-9 w-9 rounded-full border-2 border-white/25 shadow-md transition-colors hover:border-cyan-300"
                 />
               ) : (
-                <div className="w-9 h-9 p-1.5 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-full border-2 border-gray-300 dark:border-gray-600 shadow-md flex items-center justify-center">
-                  <Cigarette className="w-5 h-5" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white/25 bg-gradient-to-br from-cyan-500 to-blue-600 p-1.5 text-white shadow-md">
+                  <User className="h-5 w-5" />
                 </div>
               )}
             </motion.button>
@@ -412,7 +424,7 @@ export const Topbar = () => {
 
       {/* Всплывающее окно уведомления PWA (только для браузера) */}
       <AnimatePresence>
-        {isVisible && !isTelegramMiniApp && (
+        {isVisible && !isTelegramMiniApp() && (
           <motion.div
             className="absolute top-full left-0 w-full bg-blue-50 dark:bg-blue-900 text-blue-900 dark:text-blue-100 text-center py-2 border-t border-blue-200 dark:border-blue-800"
             initial={{ opacity: 0, y: -10 }}

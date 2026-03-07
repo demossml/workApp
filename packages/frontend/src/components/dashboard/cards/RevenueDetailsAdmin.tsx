@@ -1,5 +1,6 @@
-import type React from "react";
+import React, { useEffect, useState } from "react";
 import { Store, DollarSign, RotateCcw } from "lucide-react";
+import { client } from "../../../helpers/api";
 
 interface RevenueDetailsAdminProps {
   salesDataByShopName: Record<
@@ -13,13 +14,33 @@ interface RevenueDetailsAdminProps {
   >;
   grandTotalSell: number;
   grandTotalRefund: number;
+  netRevenue: number;
+  averageCheck: number;
+  totalChecks: number;
+  since?: string;
+  until?: string;
   formatCurrency?: (amount: number) => string;
 }
+
+type RefundDocument = {
+  shopName: string;
+  documentNumber: number;
+  closeDate: string;
+  employeeName: string;
+  refundTotal: number;
+  paymentBreakdown: Record<string, number>;
+  items: Array<{ productName: string; quantity: number; sum: number }>;
+};
 
 export const RevenueDetailsAdmin: React.FC<RevenueDetailsAdminProps> = ({
   salesDataByShopName,
   grandTotalSell,
   grandTotalRefund,
+  netRevenue,
+  averageCheck,
+  totalChecks,
+  since,
+  until,
   formatCurrency = (amount) =>
     new Intl.NumberFormat("ru-RU", {
       style: "decimal",
@@ -27,9 +48,53 @@ export const RevenueDetailsAdmin: React.FC<RevenueDetailsAdminProps> = ({
       maximumFractionDigits: 0,
     }).format(amount),
 }) => {
+  const [showRefundDocs, setShowRefundDocs] = useState(false);
+  const [refundDocs, setRefundDocs] = useState<RefundDocument[]>([]);
+  const [refundDocsLoading, setRefundDocsLoading] = useState(false);
+  const [refundDocsError, setRefundDocsError] = useState<string | null>(null);
+
   // Вспомогательная функция для возвратов
   const getTotalRefund = (shopData: { refund: Record<string, number> }) =>
     Object.values(shopData.refund).reduce((sum, val) => sum + val, 0);
+
+  useEffect(() => {
+    if (!showRefundDocs || !since || !until) return;
+    let cancelled = false;
+
+    const loadRefundDocs = async () => {
+      setRefundDocsLoading(true);
+      setRefundDocsError(null);
+      try {
+        const res = await client.api.analytics.revenue["refund-documents"].$get({
+          query: { since, until, limit: "120" },
+        });
+        const json = (await res.json()) as {
+          documents?: RefundDocument[];
+          error?: string;
+        };
+        if (!res.ok) {
+          throw new Error(json.error || "Не удалось загрузить возвраты");
+        }
+        if (!cancelled) {
+          setRefundDocs(Array.isArray(json.documents) ? json.documents : []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setRefundDocsError(
+            error instanceof Error ? error.message : "Ошибка загрузки возвратов"
+          );
+        }
+      } finally {
+        if (!cancelled) setRefundDocsLoading(false);
+      }
+    };
+
+    void loadRefundDocs();
+    return () => {
+      cancelled = true;
+    };
+  }, [showRefundDocs, since, until]);
+
 
   return (
     <div className="space-y-2">
@@ -201,7 +266,7 @@ export const RevenueDetailsAdmin: React.FC<RevenueDetailsAdminProps> = ({
               Чистая выручка
             </div>
             <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
-              {formatCurrency(grandTotalSell - grandTotalRefund)} ₽
+              {formatCurrency(netRevenue)} ₽
             </div>
           </div>
           <div className="text-center">
@@ -209,21 +274,48 @@ export const RevenueDetailsAdmin: React.FC<RevenueDetailsAdminProps> = ({
               Средний чек
             </div>
             <div className="text-lg font-bold text-green-600 dark:text-green-400">
-              {(() => {
-                const totalChecks = Object.values(salesDataByShopName).reduce(
-                  (sum, shop) => sum + (shop.checksCount || 0),
-                  0
-                );
-                const netSales = grandTotalSell - grandTotalRefund;
-                return totalChecks > 0
-                  ? formatCurrency(netSales / totalChecks)
-                  : "0";
-              })()}{" "}
-              ₽
+              {totalChecks > 0 ? formatCurrency(averageCheck) : "0"} ₽
             </div>
           </div>
         </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500"
+            onClick={() => setShowRefundDocs((prev) => !prev)}
+          >
+            {showRefundDocs ? "Скрыть чеки возврата" : "Показать чеки возврата"}
+          </button>
+        </div>
       </div>
+
+      {showRefundDocs && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+          <div className="mb-2 text-sm font-semibold text-red-800 dark:text-red-200">
+            Возвраты: чеки с деталями
+          </div>
+          {refundDocsLoading && <div className="text-xs text-gray-600">Загрузка...</div>}
+          {refundDocsError && <div className="text-xs text-red-600">{refundDocsError}</div>}
+          {!refundDocsLoading && !refundDocsError && refundDocs.length === 0 && (
+            <div className="text-xs text-gray-600">Возвратов за период нет.</div>
+          )}
+          {!refundDocsLoading && !refundDocsError && refundDocs.length > 0 && (
+            <div className="space-y-2">
+              {refundDocs.map((doc) => (
+                <div key={`${doc.shopName}-${doc.documentNumber}-${doc.closeDate}`} className="rounded bg-white p-2 text-xs dark:bg-gray-800">
+                  <div className="font-semibold">
+                    {doc.shopName} • чек #{doc.documentNumber} • {new Date(doc.closeDate).toLocaleString("ru-RU")}
+                  </div>
+                  <div className="text-gray-500">Сотрудник: {doc.employeeName}</div>
+                  <div className="text-red-700 dark:text-red-300">
+                    Сумма возврата: {formatCurrency(doc.refundTotal)} ₽
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

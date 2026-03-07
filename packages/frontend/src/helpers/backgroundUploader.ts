@@ -1,14 +1,40 @@
 /**
- * Фоновый загрузчик файлов из очереди
- * Автоматически загружает файлы при открытии приложения
+ * Фоновый загрузчик файлов из очереди.
+ * Включает повторные попытки, lock от параллельного запуска и обработку offline.
  */
 
 import {
-  getPendingFiles,
-  updateFileStatus,
-  removeFromQueue,
   cleanOldEntries,
+  getPendingFiles,
+  markFileRetry,
+  removeFromQueue,
+  updateFileStatus,
 } from "./uploadQueue";
+
+const MAX_ATTEMPTS = 4;
+const UPLOAD_LOCK_KEY = "upload_queue_lock";
+const LOCK_TTL_MS = 2 * 60 * 1000;
+
+const acquireLock = (): boolean => {
+  const now = Date.now();
+  const raw = localStorage.getItem(UPLOAD_LOCK_KEY);
+  if (raw) {
+    const expiresAt = Number(raw);
+    if (Number.isFinite(expiresAt) && expiresAt > now) {
+      return false;
+    }
+  }
+  localStorage.setItem(UPLOAD_LOCK_KEY, String(now + LOCK_TTL_MS));
+  return true;
+};
+
+const refreshLock = () => {
+  localStorage.setItem(UPLOAD_LOCK_KEY, String(Date.now() + LOCK_TTL_MS));
+};
+
+const releaseLock = () => {
+  localStorage.removeItem(UPLOAD_LOCK_KEY);
+};
 
 // Функция для загрузки одного файла
 const uploadFile = async (
@@ -16,18 +42,18 @@ const uploadFile = async (
   fileName: string,
   category: string,
   userId: string,
+  shopUuid: string,
   fileKey: string,
   onProgress?: (progress: number) => void
 ): Promise<boolean> => {
   try {
     const formData = new FormData();
-
-    // Создаем File объект из Blob
     const file = new File([fileData], fileName, { type: fileData.type });
 
     formData.append("file", file);
     formData.append("category", category);
     formData.append("userId", userId);
+    formData.append("shopUuid", shopUuid);
     formData.append("fileKey", fileKey);
 
     await updateFileStatus(fileKey, "uploading");
@@ -51,22 +77,23 @@ const uploadFile = async (
             if (response.success) {
               await removeFromQueue(fileKey);
               resolve(true);
-            } else {
-              await updateFileStatus(fileKey, "error", true);
-              reject(new Error("Upload failed - server error"));
+              return;
             }
+            await markFileRetry(fileKey, "Upload failed - server response");
+            reject(new Error("Upload failed - server response"));
           } catch {
-            await updateFileStatus(fileKey, "error", true);
+            await markFileRetry(fileKey, "Invalid server response");
             reject(new Error("Invalid server response"));
           }
-        } else {
-          await updateFileStatus(fileKey, "error", true);
-          reject(new Error(`Upload failed with status ${xhr.status}`));
+          return;
         }
+
+        await markFileRetry(fileKey, `HTTP ${xhr.status}`);
+        reject(new Error(`Upload failed with status ${xhr.status}`));
       };
 
       xhr.onerror = async () => {
-        await updateFileStatus(fileKey, "error", true);
+        await markFileRetry(fileKey, "Network error during upload");
         reject(new Error("Network error during upload"));
       };
 
@@ -74,96 +101,95 @@ const uploadFile = async (
       xhr.send(formData);
     });
   } catch (error) {
-    console.error("❌ Ошибка загрузки файла:", error);
-    await updateFileStatus(fileKey, "error", true);
+    console.error("Upload file error:", error);
+    await markFileRetry(
+      fileKey,
+      error instanceof Error ? error.message : "Unknown upload error"
+    );
     return false;
   }
 };
 
 /**
- * Запустить фоновую загрузку для пользователя
+ * Запустить фоновую загрузку для пользователя.
  */
 export const startBackgroundUpload = async (
   userId: string,
   onProgress?: (uploaded: number, total: number) => void
 ): Promise<{ uploaded: number; failed: number }> => {
-  console.log("🚀 Запуск фоновой загрузки файлов...");
-
-  // Очистка старых записей (старше 7 дней)
-  await cleanOldEntries();
-
-  // Получаем файлы в ожидании
-  const pendingFiles = await getPendingFiles(userId);
-
-  if (pendingFiles.length === 0) {
-    console.log("✅ Нет файлов в очереди");
+  if (!navigator.onLine) {
     return { uploaded: 0, failed: 0 };
   }
 
-  console.log(`📦 Найдено файлов в очереди: ${pendingFiles.length}`);
+  if (!acquireLock()) {
+    return { uploaded: 0, failed: 0 };
+  }
 
-  let uploaded = 0;
-  let failed = 0;
+  try {
+    await cleanOldEntries();
 
-  // Ограничение попыток загрузки
-  const MAX_ATTEMPTS = 3;
-
-  for (const queuedFile of pendingFiles) {
-    // Пропускаем файлы с превышенным лимитом попыток
-    if (queuedFile.attempts >= MAX_ATTEMPTS) {
-      console.warn(
-        `⚠️ Пропуск файла ${queuedFile.fileName} - слишком много попыток`
-      );
-      await updateFileStatus(queuedFile.fileKey, "error");
-      failed++;
-      continue;
+    const pendingFiles = await getPendingFiles(userId);
+    if (pendingFiles.length === 0) {
+      return { uploaded: 0, failed: 0 };
     }
 
-    try {
-      const success = await uploadFile(
-        queuedFile.fileData,
-        queuedFile.fileName,
-        queuedFile.category,
-        queuedFile.userId,
-        queuedFile.fileKey,
-        (progress) => {
-          console.log(`📤 ${queuedFile.fileName}: ${progress}%`);
-        }
-      );
+    let uploaded = 0;
+    let failed = 0;
 
-      if (success) {
-        uploaded++;
-        console.log(`✅ Загружен: ${queuedFile.fileName}`);
-      } else {
-        failed++;
-        console.error(`❌ Не удалось загрузить: ${queuedFile.fileName}`);
+    for (const queuedFile of pendingFiles) {
+      refreshLock();
+
+      if (queuedFile.attempts >= MAX_ATTEMPTS) {
+        failed += 1;
+        continue;
       }
 
-      // Обновляем прогресс
+      try {
+        const resolvedShopUuid =
+          queuedFile.shopUuid ??
+          (queuedFile.fileKey.includes(":")
+            ? queuedFile.fileKey.split(":")[0]
+            : undefined);
+
+        if (!resolvedShopUuid) {
+          await markFileRetry(queuedFile.fileKey, "Missing shopUuid");
+          failed += 1;
+          continue;
+        }
+
+        const success = await uploadFile(
+          queuedFile.fileData,
+          queuedFile.fileName,
+          queuedFile.category,
+          queuedFile.userId,
+          resolvedShopUuid,
+          queuedFile.fileKey
+        );
+
+        if (success) {
+          uploaded += 1;
+        } else {
+          failed += 1;
+        }
+      } catch {
+        failed += 1;
+      }
+
       if (onProgress) {
         onProgress(uploaded, pendingFiles.length);
       }
 
-      // Небольшая задержка между загрузками
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    } catch (error) {
-      failed++;
-      console.error(`❌ Ошибка загрузки ${queuedFile.fileName}:`, error);
+      await new Promise((resolve) => setTimeout(resolve, 300));
     }
+
+    return { uploaded, failed };
+  } finally {
+    releaseLock();
   }
-
-  console.log(`
-📊 Результаты фоновой загрузки:
-   ✅ Загружено: ${uploaded}
-   ❌ Ошибок: ${failed}
-   📁 Всего: ${pendingFiles.length}
-  `);
-
-  return { uploaded, failed };
 };
 
 /**
- * Проверить наличие файлов в очереди
+ * Проверить наличие файлов в очереди.
  */
 export const hasFilesInQueue = async (userId: string): Promise<boolean> => {
   const pendingFiles = await getPendingFiles(userId);
@@ -171,7 +197,7 @@ export const hasFilesInQueue = async (userId: string): Promise<boolean> => {
 };
 
 /**
- * Получить количество файлов в очереди
+ * Получить количество файлов в очереди.
  */
 export const getQueueCount = async (userId: string): Promise<number> => {
   const pendingFiles = await getPendingFiles(userId);

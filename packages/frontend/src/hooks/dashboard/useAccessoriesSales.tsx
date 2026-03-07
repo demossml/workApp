@@ -23,6 +23,20 @@ export interface AccessoriesSalesData {
     quantity: number;
     sum: number;
   }>;
+  nonAccessoriesByShop?: Array<{
+    shopId: string;
+    shopName: string;
+    sales: Array<{
+      name: string;
+      quantity: number;
+      sum: number;
+    }>;
+  }>;
+  nonAccessoriesTotal?: Array<{
+    name: string;
+    quantity: number;
+    sum: number;
+  }>;
   error?: string;
 }
 

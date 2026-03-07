@@ -21,6 +21,8 @@ export interface SalesData {
   salesDataByShopName: Record<string, ShopSalesData>;
   grandTotalSell: number;
   grandTotalRefund: number;
+  netRevenue: number;
+  averageCheck: number;
   grandTotalCashOutcome: number;
   cashOutcomeData: Record<string, Record<string, number>>;
   totalChecks: number;

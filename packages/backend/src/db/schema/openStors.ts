@@ -8,6 +8,8 @@ export const openStors = sqliteTable(
 		id: integer("id").primaryKey({ autoIncrement: true }),
 		date: text("date").notNull(),
 		userId: text("userId").notNull(),
+		shopUuid: text("shopUuid"),
+		openedByName: text("openedByName"),
 		cash: real("cash"),
 		sign: text("sign", {
 			enum: ["+", "-"],
@@ -16,6 +18,7 @@ export const openStors = sqliteTable(
 	},
 	(table) => ({
 		userIdIdx: index("openStors_userId_idx").on(table.userId),
+		shopUuidIdx: index("openStors_shopUuid_idx").on(table.shopUuid),
 		dateIdx: index("openStors_date_idx").on(table.date),
 	}),
 );

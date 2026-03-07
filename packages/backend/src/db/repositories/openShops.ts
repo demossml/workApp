@@ -19,6 +19,15 @@ export interface OpenShopRecord {
 	dateTime: string;
 }
 
+export interface OpenShopReportRow {
+	[key: string]: unknown;
+	shopUuid: string;
+	userId: string;
+	dateTime: string;
+	countingMoney: unknown;
+	CountingMoneyMessage: string | null;
+}
+
 export async function getData(
 	date: string,
 	shopUuid: string,
@@ -42,5 +51,32 @@ export async function getData(
 			`Ошибка при извлечении данных для даты ${date} и магазина ${shopUuid}: ${err}`,
 		);
 		return null;
+	}
+}
+
+export async function getOpeningsByPeriod(
+	db: D1Database,
+	sinceIso: string,
+	untilIso: string,
+): Promise<OpenShopReportRow[]> {
+	try {
+		const query = `
+		SELECT * 
+		FROM openShops
+		WHERE dateTime >= ? AND dateTime <= ?
+		ORDER BY dateTime DESC;
+	  `;
+		const statement = db.prepare(query);
+		const result = await statement.bind(sinceIso, untilIso).all();
+
+		if (!result.results || result.results.length === 0) {
+			return [];
+		}
+		return result.results as unknown as OpenShopReportRow[];
+	} catch (err) {
+		console.error(
+			`Ошибка при извлечении данных открытий за период ${sinceIso} - ${untilIso}: ${err}`,
+		);
+		return [];
 	}
 }

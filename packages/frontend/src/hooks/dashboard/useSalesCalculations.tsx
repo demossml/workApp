@@ -1,6 +1,7 @@
 // hooks/dashboard/useSalesCalculations.ts
 
 import type { SalesData } from "../../components/dashboard/type";
+import { computeRevenueSummary } from "@work-appt/backend/src/contracts/revenueMath";
 
 export function useSalesCalculations(data: SalesData | null) {
   if (!data) {
@@ -11,9 +12,11 @@ export function useSalesCalculations(data: SalesData | null) {
     };
   }
 
-  const netSales = data.grandTotalSell - data.grandTotalRefund;
-
-  const averageCheck = data.totalChecks > 0 ? netSales / data.totalChecks : 0;
+  const { netRevenue: netSales, averageCheck } = computeRevenueSummary(
+    data.grandTotalSell,
+    data.grandTotalRefund,
+    data.totalChecks
+  );
 
   const bestShop = Object.entries(data.salesDataByShopName).reduce(
     (best, [name, shop]) =>

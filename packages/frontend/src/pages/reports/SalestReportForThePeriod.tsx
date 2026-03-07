@@ -71,7 +71,7 @@ export default function SalesTodayReport() {
         initial={{ opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4"
+        className="app-page flex flex-col items-center justify-center bg-gray-100 p-4"
       >
         <div className="flex items-center mb-4">
           <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
@@ -121,7 +121,7 @@ export default function SalesTodayReport() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="fixed w-screen h-screen px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900 overflow-y-auto"
+        className="app-page-scroll px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900"
       >
         <h2 className="text-xl font-bold">Сводный финансовый отчет</h2>
         <div className="mt-4">
@@ -284,7 +284,7 @@ export default function SalesTodayReport() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="fixed w-screen h-screen px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900"
+      className="app-page px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900"
     >
       <h1 className="text-xl font-bold"> Сводный финансовый отчет</h1>
 

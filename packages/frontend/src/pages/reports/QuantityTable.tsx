@@ -144,7 +144,7 @@ export default function QuantityTableProps() {
 
   if (!Object.keys(shopOptions).length) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-custom-gray p-4">
+      <div className="app-page flex flex-col items-center justify-center bg-custom-gray p-4">
         <div className="flex items-center mb-4">
           <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
         </div>
@@ -175,7 +175,7 @@ export default function QuantityTableProps() {
   }
 
   return (
-    <div className="fixed  w-screen h-screen px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900">
+    <div className="app-page-scroll px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900">
       <h1 className="text-xl font-bold"> Товарные остатки</h1>
 
       <div className="w-full">

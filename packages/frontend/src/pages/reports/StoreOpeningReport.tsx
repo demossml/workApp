@@ -64,7 +64,7 @@ export default function StoreOpeningReport() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
+      <div className="app-page flex flex-col items-center justify-center bg-gray-100 p-4">
         <motion.div
           initial={{ scale: 0.7, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -84,7 +84,7 @@ export default function StoreOpeningReport() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4"
+        className="app-page flex flex-col items-center justify-center bg-gray-100 p-4"
       >
         <h1 className="mb-4 text-xl sm:text-2xl text-gray-800 font-bold">
           Ошибка: {error.message}
@@ -99,7 +99,7 @@ export default function StoreOpeningReport() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4"
+        className="app-page flex flex-col items-center justify-center bg-gray-100 p-4"
       >
         <h1 className="mb-4 text-xl sm:text-2xl text-gray-800 font-bold">
           Нет данных для отображения.

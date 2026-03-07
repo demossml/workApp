@@ -3,7 +3,7 @@ import { isTelegramMiniApp, telegram } from "../helpers/telegram";
 
 export const useExpandApp = (isExpanded?: boolean) => {
   const expandApp = useCallback(() => {
-    if (!isTelegramMiniApp) return;
+    if (!isTelegramMiniApp()) return;
     if (isExpanded) return;
 
     telegram.WebApp.expand();

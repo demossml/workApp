@@ -51,7 +51,7 @@ export const uploadsRoutes = new Hono<IEnv>()
 			const mm = String(now.getMonth() + 1).padStart(2, "0");
 			const yyyy = now.getFullYear();
 
-			const dateFolder = `opening/${dd}-${mm}-${yyyy}/${userId}`;
+			const dateFolder = `evotor/opening/${dd}-${mm}-${yyyy}/${userId}`;
 
 			const saved: { key: string; category: string; fileKey: string }[] = [];
 
@@ -102,6 +102,7 @@ export const uploadsRoutes = new Hono<IEnv>()
 			const file = formData.get("file") as File | null;
 			const category = formData.get("category")?.toString();
 			const userId = formData.get("userId")?.toString();
+			const shopUuid = formData.get("shopUuid")?.toString();
 			const fileKey = formData.get("fileKey")?.toString();
 
 			if (!userId) {
@@ -115,7 +116,6 @@ export const uploadsRoutes = new Hono<IEnv>()
 			if (!category) {
 				return jsonError(c, 400, "VALIDATION_ERROR", "Missing category");
 			}
-
 			if (!fileKey) {
 				return jsonError(c, 400, "VALIDATION_ERROR", "Missing fileKey");
 			}
@@ -131,7 +131,8 @@ export const uploadsRoutes = new Hono<IEnv>()
 			const mm = String(now.getMonth() + 1).padStart(2, "0");
 			const yyyy = now.getFullYear();
 
-			const folder = `opening/${dd}-${mm}-${yyyy}/${userId}/${category}`;
+			const resolvedShopUuid = shopUuid || "unknown-shop";
+			const folder = `evotor/opening/${dd}-${mm}-${yyyy}/${resolvedShopUuid}/${userId}/${category}`;
 			const uniqueName = `${Date.now()}_${file.name}`;
 			const key = `${folder}/${uniqueName}`;
 

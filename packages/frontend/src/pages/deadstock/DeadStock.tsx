@@ -261,7 +261,7 @@ export default function DeadSt() {
   // 🔹 Нет магазинов
   if (!Object.keys(shopOptions).length) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="app-page flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <LoadingSpinner />
       </div>
     );
@@ -282,12 +282,7 @@ export default function DeadSt() {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="w-full bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 flex flex-col items-center"
-        style={{
-          minHeight: "calc(100vh - 130px)", // Оставляем место под BottomNavigation
-          paddingTop: "calc(env(safe-area-inset-top) + 70px)", // 🟦 увеличенный отступ сверху
-          paddingBottom: "calc(env(safe-area-inset-bottom) + 10px)",
-        }}
+        className="app-page w-full bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 flex flex-col items-center"
       >
         <motion.div
           className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-none shadow-lg p-4 w-full"
@@ -333,7 +328,7 @@ export default function DeadSt() {
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="min-h-screen w-full px-4 sm:px-6 py-10 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 flex flex-col items-center"
+      className="app-page w-full px-4 sm:px-6 py-6 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 flex flex-col items-center"
     >
       <motion.h1
         className="text-xl sm:text-2xl font-semibold mb-6"

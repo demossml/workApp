@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { client } from "../helpers/api";
+import { WorkingByShopsResponseSchema } from "@work-appt/backend/src/contracts/workingByShops";
 
 export const useMe = () =>
   useQuery({
@@ -31,6 +32,24 @@ export const useSchedules = () =>
     queryKey: ["schedules"],
     queryFn: () =>
       client.api.schedules.schedule.$get().then((res: Response) => res.json()),
+  });
+
+export const useWorkingByShops = () =>
+  useQuery({
+    queryKey: ["workingByShops"],
+    queryFn: async () => {
+      const res = await (client.api.evotor as any)["working-by-shops"].$get();
+      if (!res.ok) {
+        throw new Error("Ошибка загрузки данных по сменам");
+      }
+      const raw = await res.json();
+      const parsed = WorkingByShopsResponseSchema.safeParse(raw);
+      if (!parsed.success) {
+        throw new Error("Некорректный формат данных по сменам");
+      }
+      return parsed.data;
+    },
+    refetchInterval: 60_000,
   });
 
 type ShopBrief = { uuid: string; name: string };

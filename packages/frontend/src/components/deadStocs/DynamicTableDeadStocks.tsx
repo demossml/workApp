@@ -9,6 +9,7 @@ import {
 import { motion, AnimatePresence, useScroll, useSpring } from "framer-motion";
 import { useGetShops } from "../../hooks/useApi";
 import { client } from "../../helpers/api";
+import { trackEvent } from "../../helpers/analytics";
 
 /* ===================== TYPES ===================== */
 
@@ -205,19 +206,39 @@ export const DynamicTableDeadStocks = ({
       const changedItems = items.filter(
         (item) => item.mark !== null && item.mark !== undefined
       );
+      void trackEvent("deadstock_save_started", {
+        shopUuid,
+        props: { itemsCount: changedItems.length },
+      });
 
       const response = await client.api.deadStocks.update.$post({
         json: { items: changedItems, shopUuid },
       });
 
-      if (!response.ok) throw new Error("Сеть ответила с ошибкой");
+      if (!response.ok) {
+        void trackEvent("deadstock_save_failed", {
+          shopUuid,
+          props: { status: response.status, reason: "request_failed" },
+        });
+        throw new Error("Сеть ответила с ошибкой");
+      }
 
       console.log("SAVE успешно:", await response.json());
+      void trackEvent("deadstock_save_success", {
+        shopUuid,
+        props: { itemsCount: changedItems.length },
+      });
       setShowSave(false);
 
       // ✅ Переход на главную страницу после сохранения
       window.location.href = "/";
     } catch (e) {
+      void trackEvent("deadstock_save_failed", {
+        shopUuid,
+        props: {
+          reason: e instanceof Error ? e.message : "unknown_error",
+        },
+      });
       alert(`Ошибка при сохранении данных ${e}`);
     }
   };

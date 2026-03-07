@@ -10,6 +10,9 @@
 		"db:generate": "drizzle-kit generate",
 		"db:apply-local": "wrangler d1 migrations apply DB --local",
 		"db:apply-remote": "wrangler d1 migrations apply DB --remote"
+		,
+		"db:seed-local": "wrangler d1 execute DB --local --file ./scripts/seed-local.sql",
+		"db:prepare-local": "pnpm db:apply-local && pnpm db:seed-local"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20250628.0",

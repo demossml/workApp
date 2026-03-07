@@ -4,6 +4,7 @@ import type { IContext } from "./types";
 import { isValidSign } from "./utils";
 import { drizzle } from "drizzle-orm/d1";
 import { jsonError } from "./errors";
+import { trackAppEvent } from "./analytics/track";
 
 export const initializeDrizzle = (c: IContext) => {
 	const db = drizzle(c.env.DB); // c.env.DB — это D1Database
@@ -25,11 +26,13 @@ export const initialize = (c: IContext, next: Next) => {
 
 export const authenticate = async (c: IContext, next: Next) => {
 	try {
-		const initData = c.req.header("initData") || "guest";
+		const initData =
+			c.req.header("initData") || c.req.query("initData") || "guest";
 
 		// режим "гость"
 		if (initData === "guest") {
-			const manualId = c.req.header("telegram-id");
+			const manualId =
+				c.req.header("telegram-id") || c.req.query("telegram-id");
 
 			if (manualId) {
 				// пользователь ввёл Telegram ID вручную
@@ -52,6 +55,10 @@ export const authenticate = async (c: IContext, next: Next) => {
 				});
 				c.set("userId", "");
 			}
+			await trackAppEvent(c, "auth_guest_login", {
+				userId: manualId || null,
+				props: { hasManualId: Boolean(manualId) },
+			});
 		} else {
 			// проверка WebApp initData
 			const payload = Object.fromEntries(new URLSearchParams(initData));
@@ -64,6 +71,9 @@ export const authenticate = async (c: IContext, next: Next) => {
 			const user = JSON.parse(payload.user);
 			c.set("user", user);
 			c.set("userId", user.id.toString());
+			await trackAppEvent(c, "auth_webapp_verified", {
+				userId: user.id.toString(),
+			});
 		}
 
 		return next();

@@ -1,34 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { client } from "../helpers/api";
+import {
+  FinancialMetricsResponseSchema,
+  type FinancialMetricsResponse,
+} from "@work-appt/backend/src/contracts/financialMetrics";
+import { PlanForTodayResponseSchema } from "@work-appt/backend/src/contracts/planMetrics";
 
 // ---------- Типы ----------
-type PaymentData = {
-  sell: Record<string, number>;
-  refund: Record<string, number>;
-  totalSell: number;
-};
-
-type TopProduct = {
-  productName: string;
-  revenue: number;
-  quantity: number;
-  refundRevenue: number;
-  refundQuantity: number;
-  netRevenue: number;
-  netQuantity: number;
-  averagePrice: number;
-  refundRate: number;
-};
-
-type ReportData = {
-  salesDataByShopName: Record<string, PaymentData>;
-  grandTotalSell: number;
-  grandTotalRefund: number;
-  grandTotalCashOutcome: number;
-  cashOutcomeData: Record<string, Record<string, number>>;
-  totalChecks: number;
-  topProducts: TopProduct[];
-};
+type ReportData = FinancialMetricsResponse;
 
 export const useGetReportAndPlan = (enabled: boolean) =>
   useQuery({
@@ -61,12 +40,21 @@ export const useGetReportAndPlan = (enabled: boolean) =>
         throw new Error("Ошибка загрузки плана");
       }
 
-      const reportData: ReportData = await reportRes.json();
-      const planJson = await planRes.json();
+      const rawReportData = await reportRes.json();
+      const parsedReport = FinancialMetricsResponseSchema.safeParse(rawReportData);
+      if (!parsedReport.success) {
+        throw new Error("Некорректный формат финансового отчёта");
+      }
+      const reportData: ReportData = parsedReport.data;
+      const rawPlanData = await planRes.json();
+      const parsedPlan = PlanForTodayResponseSchema.safeParse(rawPlanData);
+      if (!parsedPlan.success) {
+        throw new Error("Некорректный формат плана на сегодня");
+      }
 
       return {
         reportData,
-        planData: planJson?.salesData ?? {},
+        planData: parsedPlan.data.salesData ?? {},
       };
     },
     enabled,

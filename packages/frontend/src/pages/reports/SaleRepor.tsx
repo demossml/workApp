@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import { DateRangePicker } from "../../components/DateRangePicker";
 import { ShopSelector } from "../../components/ShopSelector";
 import { GroupSelector } from "../../components/GroupSelector";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
@@ -11,6 +10,8 @@ import { motion } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { telegram, isTelegramMiniApp } from "../../helpers/telegram";
 import { client } from "../../helpers/api";
+import type { DateRange } from "react-day-picker";
+import { Popover, PopoverContent, PopoverTrigger, Calendar } from "../../components/ui";
 
 interface GroupOption {
   name: string;
@@ -24,7 +25,15 @@ interface ReportData {
   endDate: string;
 }
 
+interface SalesReportSavedFilters {
+  selectedShop: string | null;
+  groupsByShop: Record<string, string[]>;
+}
+
 export default function SalesReport() {
+  const [dateMode, setDateMode] = useState<"today" | "yesterday" | "period">(
+    "today"
+  );
   const [shopOptions, setShopOptions] = useState<Record<string, string>>({});
   const [selectedShop, setSelectedShop] = useState<string | null>(null);
   const [groupOptions, setGroupOptions] = useState<GroupOption[]>([]);
@@ -46,13 +55,73 @@ export default function SalesReport() {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [isShopSelectorOpen, setIsShopSelectorOpen] = useState(false);
   const [isGroupSelectorOpen, setIsGroupSelectorOpen] = useState(false);
+  const [period, setPeriod] = useState<DateRange | undefined>(undefined);
+  const [tempPeriod, setTempPeriod] = useState<DateRange | undefined>(undefined);
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
 
   const isMiniApp = isTelegramMiniApp();
 
   useTelegramBackButton();
 
+  const formatLocalDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  useEffect(() => {
+    const now = new Date();
+    if (dateMode === "today") {
+      const today = formatLocalDate(now);
+      setStartDate(today);
+      setEndDate(today);
+      return;
+    }
+    if (dateMode === "yesterday") {
+      const yesterdayDate = new Date(now);
+      yesterdayDate.setDate(now.getDate() - 1);
+      const yesterday = formatLocalDate(yesterdayDate);
+      setStartDate(yesterday);
+      setEndDate(yesterday);
+      return;
+    }
+    if (dateMode !== "period") {
+      setIsDatePickerOpen(false);
+      setShowPeriodPicker(false);
+      setTempPeriod(undefined);
+    }
+  }, [dateMode]);
+
+  useEffect(() => {
+    if (dateMode !== "period" || !period?.from || !period?.to) return;
+    setStartDate(formatLocalDate(period.from));
+    setEndDate(formatLocalDate(period.to));
+  }, [dateMode, period]);
+
   const { data } = useMe();
   const userId = data?.id?.toString() || "";
+  const storageKey = userId ? `salesReportFilters:${userId}` : "";
+
+  const readSavedFilters = (): SalesReportSavedFilters | null => {
+    if (!storageKey) return null;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<SalesReportSavedFilters>;
+      if (!parsed || typeof parsed !== "object") return null;
+      return {
+        selectedShop:
+          typeof parsed.selectedShop === "string" ? parsed.selectedShop : null,
+        groupsByShop:
+          parsed.groupsByShop && typeof parsed.groupsByShop === "object"
+            ? parsed.groupsByShop
+            : {},
+      };
+    } catch {
+      return null;
+    }
+  };
 
   const isFormValid =
     !!startDate && !!endDate && !!selectedShop && selectedGroups.length > 0;
@@ -178,9 +247,15 @@ export default function SalesReport() {
         const data = await response.json();
         setShopOptions(data.shopOptions);
         if (Object.keys(data.shopOptions).length > 0) {
-          const defaultShopUuid = Object.keys(data.shopOptions)[0];
-          setSelectedShop(defaultShopUuid);
-          await fetchGroups(defaultShopUuid);
+          const availableShopUuids = Object.keys(data.shopOptions);
+          const saved = readSavedFilters();
+          const savedShopUuid = saved?.selectedShop;
+          const nextShopUuid =
+            savedShopUuid && availableShopUuids.includes(savedShopUuid)
+              ? savedShopUuid
+              : availableShopUuids[0];
+          setSelectedShop(nextShopUuid);
+          await fetchGroups(nextShopUuid);
         }
       } catch (err) {
         console.error(err);
@@ -208,11 +283,13 @@ export default function SalesReport() {
         "groups" in data &&
         Array.isArray(data.groups)
       ) {
-        setGroupOptions((data as { groups: GroupOption[] }).groups);
+        const nextGroupOptions = (data as { groups: GroupOption[] }).groups;
+        setGroupOptions(nextGroupOptions);
+        setSelectedGroups([]);
       } else {
         setGroupOptions([]);
+        setSelectedGroups([]);
       }
-      setSelectedGroups([]);
     } catch (err) {
       console.error(err);
       setError("Не удалось загрузить группы для выбранного магазина");
@@ -220,6 +297,20 @@ export default function SalesReport() {
       setIsLoadingGroups(false);
     }
   };
+
+  useEffect(() => {
+    if (!storageKey || !selectedShop) return;
+    const saved = readSavedFilters() ?? {
+      selectedShop: null,
+      groupsByShop: {},
+    };
+    saved.selectedShop = selectedShop;
+    saved.groupsByShop = {
+      ...saved.groupsByShop,
+      [selectedShop]: selectedGroups,
+    };
+    localStorage.setItem(storageKey, JSON.stringify(saved));
+  }, [storageKey, selectedShop, selectedGroups]);
 
   // 🔹 Форматирование дат
   const formatDate = (date: Date) =>
@@ -239,6 +330,9 @@ export default function SalesReport() {
     const formattedEndDate = formatDate(new Date(endDate));
     return `${shopName}, ${formattedStartDate} → ${formattedEndDate}`;
   };
+
+  const formatMoney = (value: number) =>
+    value.toLocaleString("ru-RU", { maximumFractionDigits: 0 });
 
   // 🔹 AI Анализ
   const runAiAnalysis = async () => {
@@ -272,7 +366,13 @@ export default function SalesReport() {
   // 🔹 Нет магазинов
   if (!Object.keys(shopOptions).length) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div
+        className="app-page flex items-center justify-center bg-gray-50 dark:bg-gray-900"
+        style={{
+          paddingTop: "calc(var(--app-top-clearance) + 0.5rem)",
+          paddingBottom: "calc(var(--app-bottom-clearance) + 0.5rem)",
+        }}
+      >
         <LoadingSpinner />
       </div>
     );
@@ -288,46 +388,74 @@ export default function SalesReport() {
         sum,
       })
     );
+    const totalRevenue = Object.values(salesData).reduce(
+      (acc, item) => acc + item.sum,
+      0
+    );
+    const totalQuantity = Object.values(salesData).reduce(
+      (acc, item) => acc + item.quantitySale,
+      0
+    );
+    const skuCount = tableData.length;
+    const avgPerSku = skuCount > 0 ? totalRevenue / skuCount : 0;
 
     return (
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="w-full bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 flex flex-col items-center"
+        className="app-page w-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col items-center"
         style={{
-          minHeight: "calc(100vh - 130px)", // Оставляем место под BottomNavigation
-          paddingTop: "calc(env(safe-area-inset-top) + 70px)", // 🟦 увеличенный отступ сверху
-          paddingBottom: "calc(env(safe-area-inset-bottom) + 10px)",
+          paddingTop: "calc(var(--app-top-clearance) + 0.5rem)",
+          paddingBottom: "calc(var(--app-bottom-clearance) + 0.5rem)",
         }}
       >
         <motion.div
-          className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-none shadow-lg p-4 w-full"
+          className="w-full max-w-6xl p-4 sm:p-6 space-y-4"
           initial={{ opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3 }}
-          style={{
-            height: "100%",
-            maxWidth: "100%", // 🟦 РАСТЯГИВАЕМ НА ВСЮ ШИРИНУ
-            display: "flex",
-            flexDirection: "column",
-          }}
         >
-          <h1 className="text-lg sm:text-xl font-semibold mb-2 px-2">
-            {formatPeriod(shopName, startDate, endDate)}
-          </h1>
+          <div className="rounded-2xl bg-white dark:bg-slate-900 p-4 sm:p-6 shadow-sm border border-slate-200/70 dark:border-slate-800">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h1 className="text-xl sm:text-2xl font-semibold">Отчёт по продажам</h1>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {formatPeriod(shopName, startDate, endDate)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setReportData(null);
+                  setShowAiInsights(false);
+                }}
+                className="rounded-lg px-3 py-2 text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition"
+              >
+                Изменить фильтры
+              </button>
+            </div>
 
-          <p className="text-gray-600 dark:text-gray-400 mb-4 px-2">
-            Общая сумма продаж:{" "}
-            <span className="font-semibold text-blue-600 dark:text-blue-400">
-              {Object.values(salesData)
-                .reduce((acc, item) => acc + item.sum, 0)
-                .toLocaleString("ru-RU")}{" "}
-              ₽
-            </span>
-          </p>
+            <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="rounded-xl p-4 bg-gradient-to-br from-blue-600 to-blue-700 text-white">
+                <div className="text-xs opacity-85 mb-1">Выручка</div>
+                <div className="text-xl font-bold">{formatMoney(totalRevenue)} ₽</div>
+              </div>
+              <div className="rounded-xl p-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+                <div className="text-xs opacity-85 mb-1">Продано, шт</div>
+                <div className="text-xl font-bold">{formatMoney(totalQuantity)}</div>
+              </div>
+              <div className="rounded-xl p-4 bg-gradient-to-br from-violet-500 to-indigo-600 text-white">
+                <div className="text-xs opacity-85 mb-1">SKU в отчете</div>
+                <div className="text-xl font-bold">{formatMoney(skuCount)}</div>
+              </div>
+              <div className="rounded-xl p-4 bg-gradient-to-br from-amber-500 to-orange-600 text-white">
+                <div className="text-xs opacity-85 mb-1">Среднее на SKU</div>
+                <div className="text-xl font-bold">{formatMoney(avgPerSku)} ₽</div>
+              </div>
+            </div>
+          </div>
 
-          {/* 🟦 Таблица во всю ширину */}
           <div className="flex-1 min-h-0 w-full">
             <DynamicTable data={tableData} />
           </div>
@@ -337,7 +465,7 @@ export default function SalesReport() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-6"
+              className="mt-4"
             >
               <AiInsights
                 data={aiInsights}
@@ -351,11 +479,11 @@ export default function SalesReport() {
           {!showAiInsights && (
             <motion.button
               onClick={runAiAnalysis}
-              className="mt-4 w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-3 rounded-xl font-medium hover:shadow-lg transition-all"
+              className="mt-4 w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-xl font-medium hover:shadow-lg transition-all"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              ✨ Запустить AI анализ
+              Запустить AI-анализ
             </motion.button>
           )}
         </motion.div>
@@ -369,27 +497,105 @@ export default function SalesReport() {
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="min-h-screen w-full px-4 sm:px-6 py-10 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 flex flex-col items-center"
+      className="app-page w-full px-4 sm:px-6 py-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col items-center"
+      style={{
+        paddingTop: "calc(var(--app-top-clearance) + 0.5rem)",
+        paddingBottom: "calc(var(--app-bottom-clearance) + 0.5rem)",
+      }}
     >
       <motion.h1
-        className="text-xl sm:text-2xl font-semibold mb-6"
+        className="text-xl sm:text-2xl font-semibold mb-2"
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        📊 Отчёт по продажам
+        Отчёт по продажам
       </motion.h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+        Выберите период, магазин и группы товаров
+      </p>
       <motion.div
-        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg p-4 sm:p-6 w-full max-w-3xl space-y-5"
+        className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm p-4 sm:p-6 w-full max-w-3xl space-y-4 border border-slate-200/70 dark:border-slate-800"
         initial={{ opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
       >
-        <DateRangePicker
-          onDateChange={(start, end) => {
-            setStartDate(start);
-            setEndDate(end);
-          }}
-          onOpenChange={setIsDatePickerOpen}
-        />
+        <div className="grid grid-cols-3 gap-2">
+          <button
+              className={`rounded-lg border px-3 py-2 text-sm transition ${
+                dateMode === "today"
+                ? "border-blue-600 bg-blue-600 text-white"
+                : "border-slate-300 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+            }`}
+            onClick={() => setDateMode("today")}
+          >
+            Сегодня
+          </button>
+          <button
+              className={`rounded-lg border px-3 py-2 text-sm transition ${
+                dateMode === "yesterday"
+                ? "border-blue-600 bg-blue-600 text-white"
+                : "border-slate-300 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+            }`}
+            onClick={() => setDateMode("yesterday")}
+          >
+            Вчера
+          </button>
+          <Popover
+            open={showPeriodPicker}
+            onOpenChange={(open) => {
+              setShowPeriodPicker(open);
+              setIsDatePickerOpen(open);
+              if (!open) {
+                setTempPeriod(undefined);
+              }
+            }}
+          >
+            <PopoverTrigger asChild>
+              <button
+                className={`rounded-lg border px-3 py-2 text-sm transition ${
+                  dateMode === "period"
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-slate-300 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                }`}
+                onClick={() => {
+                  setDateMode("period");
+                  setTempPeriod(period);
+                  setShowPeriodPicker(true);
+                  setIsDatePickerOpen(true);
+                }}
+              >
+                Период
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-auto p-0">
+              <Calendar
+                mode="range"
+                selected={tempPeriod?.from ? tempPeriod : undefined}
+                onSelect={setTempPeriod}
+                numberOfMonths={1}
+                disabled={(date) => date > new Date()}
+                initialFocus
+              />
+              <div className="flex justify-end p-2">
+                <button
+                  className="px-3 py-1 rounded bg-blue-600 text-white"
+                  disabled={!(tempPeriod?.from && tempPeriod?.to)}
+                  onClick={() => {
+                    setPeriod(tempPeriod);
+                    setShowPeriodPicker(false);
+                    setIsDatePickerOpen(false);
+                  }}
+                >
+                  Применить
+                </button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+        {dateMode === "period" && period?.from && period?.to && (
+          <div className="text-sm text-slate-600 dark:text-slate-300">
+            {formatDate(period.from)} → {formatDate(period.to)}
+          </div>
+        )}
         <ShopSelector
           shopOptions={shopOptions}
           isLoadingShops={isLoadingShops}

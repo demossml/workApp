@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { client } from "../helpers/api";
+import { PlanForTodayResponseSchema } from "@work-appt/backend/src/contracts/planMetrics";
 
 interface SalesData {
   [shopName: string]: {
@@ -26,8 +27,12 @@ export const PlanSalesReport: React.FC = () => {
         if (!response.ok) {
           throw new Error(`Error: ${response.status}`);
         }
-        const data = await response.json();
-        setSalesData(data.salesData);
+        const raw = await response.json();
+        const parsed = PlanForTodayResponseSchema.safeParse(raw);
+        if (!parsed.success) {
+          throw new Error("Некорректный формат данных плана");
+        }
+        setSalesData(parsed.data.salesData);
       } catch (err) {
         console.error(err);
         setError("Не удалось загрузить данные о продажах");
@@ -128,9 +133,9 @@ export const PlanSalesReport: React.FC = () => {
                 </h4>
                 {dataQuantityArray.length > 0 ? (
                   <ul className="space-y-1">
-                    {dataQuantityArray.map((item, index) => (
+                    {dataQuantityArray.map((item) => (
                       <li
-                        key={index}
+                        key={`${shopName}-${item.productNam}-${item.quantity}`}
                         className="text-sm text-gray-700 dark:text-gray-300"
                       >
                         {item.productNam} — {item.quantity} шт.

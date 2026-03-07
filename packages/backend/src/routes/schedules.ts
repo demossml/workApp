@@ -8,17 +8,25 @@ import {
 } from "../validation";
 import {
 	formatDate,
+	formatDateWithTime,
 	getMonthStartAndEnd,
 	replaceUuidsWithNames,
 	transformScheduleDataD,
 } from "../utils";
 import { getData } from "../db/repositories/openShops";
+import { getDocumentsByPeriod } from "../db/repositories/documents";
+import {
+	createIndexDocumentsTable,
+	createIndexOnType,
+	saveNewIndexDocuments,
+} from "../db/repositories/indexDocuments";
 import {
 	createScheduleTable,
 	getScheduleByPeriod,
 	getScheduleByPeriodAndShopId,
 	updateSchedule,
 } from "../db/repositories/schedule";
+import { OpenTimesResponseSchema } from "../contracts/openTimes";
 
 export const schedulesRoutes = new Hono<IEnv>()
 
@@ -77,20 +85,59 @@ export const schedulesRoutes = new Hono<IEnv>()
 
 	.get("/schedule", async (c) => {
 		const date = formatDate(new Date());
+		const since = formatDateWithTime(new Date(), false);
+		const until = formatDateWithTime(new Date(), true);
 		const shopsUuid = await c.var.evotor.getShopUuids();
 
 		const shopNamesMap = await c.var.evotor.getShopNamesByUuids(shopsUuid);
+
+		await createIndexDocumentsTable(c.get("db"));
+		await createIndexOnType(c.get("db"));
 
 		const dataPromises = shopsUuid.map((uuid) =>
 			getData(date, uuid, c.get("db")),
 		);
 		const dataResults = await Promise.all(dataPromises);
 
+		const sessionFallbackByShop = new Map<
+			string,
+			{ openUserUuid: string | null; closeDate: string | null }
+		>();
+		for (const shopUuid of shopsUuid) {
+			let docs = await getDocumentsByPeriod(c.get("db"), shopUuid, since, until);
+			let openSession = docs.find(
+				(doc) => doc.type === "OPEN_SESSION" && !!doc.openUserUuid,
+			);
+			if (!openSession) {
+				const directDocs = await c.var.evotor.getDocumentsIndex(
+					shopUuid,
+					since,
+					until,
+				);
+				if (directDocs.length > 0) {
+					await saveNewIndexDocuments(c.get("db"), directDocs);
+					docs = await getDocumentsByPeriod(c.get("db"), shopUuid, since, until);
+					openSession = docs.find(
+						(doc) => doc.type === "OPEN_SESSION" && !!doc.openUserUuid,
+					);
+				}
+			}
+			sessionFallbackByShop.set(shopUuid, {
+				openUserUuid: openSession?.openUserUuid || null,
+				closeDate: openSession?.closeDate || null,
+			});
+		}
+
 		const userIds = [
 			...new Set(
-				dataResults
-					.filter((data): data is NonNullable<typeof data> => data !== null)
-					.map((data) => data.userId as string),
+				[
+					...dataResults
+						.filter((data): data is NonNullable<typeof data> => data !== null)
+						.map((data) => data.userId as string),
+					...Array.from(sessionFallbackByShop.values())
+						.map((item) => item.openUserUuid)
+						.filter((value): value is string => Boolean(value)),
+				],
 			),
 		];
 
@@ -115,7 +162,18 @@ export const schedulesRoutes = new Hono<IEnv>()
 				dataReport[shopName] =
 					`${employeeName} открыта в  ${date.toISOString().slice(11, 16)}`;
 			} else {
-				dataReport[shopName] = "ЕЩЕ НЕ ОТКРЫТА!!!";
+				const sessionFallback = sessionFallbackByShop.get(uuid);
+				if (sessionFallback?.openUserUuid && sessionFallback.closeDate) {
+					const date = new Date(sessionFallback.closeDate);
+					date.setHours(date.getHours() + 3);
+					const employeeName =
+						employeeNamesMap[sessionFallback.openUserUuid] ||
+						"Неизвестный сотрудник";
+					dataReport[shopName] =
+						`${employeeName} открыта в  ${date.toISOString().slice(11, 16)}`;
+				} else {
+					dataReport[shopName] = "ЕЩЕ НЕ ОТКРЫТА!!!";
+				}
 			}
 		}
 
@@ -123,5 +181,9 @@ export const schedulesRoutes = new Hono<IEnv>()
 			throw new Error("not an employee");
 		}
 
-		return c.json({ dataReport });
+		return c.json(
+			OpenTimesResponseSchema.parse({
+				dataReport,
+			}),
+		);
 	});

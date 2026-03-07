@@ -11,6 +11,9 @@ export type IEnv = {
 		R2: R2Bucket;
 		R2_PUBLIC_URL: string;
 		R2_ACCOUNT_ID?: string;
+		ALERT_TZ_OFFSET_MINUTES?: string;
+		ALERT_REFUND_THRESHOLD_PCT?: string;
+		ALERT_REVENUE_DROP_THRESHOLD_PCT?: string;
 	};
 	Variables: {
 		userId: string;

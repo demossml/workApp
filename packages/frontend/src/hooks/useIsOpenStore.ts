@@ -6,19 +6,23 @@ interface IsOpenStoreResponse {
   error?: string;
 }
 
-export const useIsOpenStore = (userId: string, date: string) =>
+export const useIsOpenStore = (
+  userId: string,
+  date: string,
+  shopUuid: string | null,
+) =>
   useQuery<IsOpenStoreResponse>({
-    queryKey: ["isOpenStore", userId, date],
+    queryKey: ["isOpenStore", userId, date, shopUuid],
     queryFn: async () => {
       const res = await client.api.stores["is-open-store"].$post({
-        json: { userId, date },
+        json: { userId, date, shopUuid: shopUuid ?? "" },
       });
 
       if (!res.ok) {
-        throw new Error("Ошибка при проверке открытия магазина");
+        return { exists: false, error: "temporary_unavailable" };
       }
 
       return res.json();
     },
-    enabled: !!userId && !!date, // запрос выполняется только если есть userId и date
+    enabled: !!userId && !!date && !!shopUuid,
   });

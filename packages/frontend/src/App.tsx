@@ -1,38 +1,51 @@
-import { Route, Routes } from "react-router";
-import { useEffect, useState } from "react";
-import { Topbar } from "./components/Topbar";
+import { Route, Routes, useLocation } from "react-router";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { BottomNavigation } from "./components/BottomNavigation";
 import { PWAInstall } from "./pwa";
 import Home from "./pages/Home";
-import Settings from "./pages/reports/Settings";
-import PlanSalesReport from "./pages/reports/PlanSalesReport";
-import SalesReport from "./pages/reports/SaleRepor";
-import SalaryReports from "./pages/reports/SalarysReport";
-import SalestReportForThePeriod from "./pages/reports/SalestReportForThePeriod";
-import Orders from "./pages/reports/Orders";
-import QuantityTableProps from "./pages/reports/QuantityTable";
-import StoreOpeningReport from "./pages/reports/StoreOpeningReport";
-import ProfitReportPage from "./pages/reports/ProfitReportPage";
-import StaffRatingsReport from "./pages/reports/StaffRatingsReport";
-import SalaryReport from "./pages/reports/SalaryReport";
-import SalesTodayReport from "./pages/reports/SalesTodayReport";
-import SchedulesReport from "./pages/reports/SchedulesReport";
 import { useEmployeeRole } from "./hooks/useApi";
 import { useTheme } from "./hooks/useTheme";
 import { useUser } from "./hooks/userProvider";
-import StoreOpeningPage from "./pages/opening/StoreOpeningPage";
-import DeadStocks from "./pages/deadstock/DeadStock";
 import {
   startBackgroundUpload,
   hasFilesInQueue,
 } from "./helpers/backgroundUploader";
+import { trackEvent } from "./helpers/analytics";
+import { useTelegramFullscreenLayout } from "./hooks/useTelegramFullscreenLayout";
+
+const Settings = lazy(() => import("./pages/reports/Settings"));
+const PlanSalesReport = lazy(() => import("./pages/reports/PlanSalesReport"));
+const SalesReport = lazy(() => import("./pages/reports/SaleRepor"));
+const SalaryReports = lazy(() => import("./pages/reports/SalarysReport"));
+const SalestReportForThePeriod = lazy(
+  () => import("./pages/reports/SalestReportForThePeriod")
+);
+const Orders = lazy(() => import("./pages/reports/Orders"));
+const QuantityTableProps = lazy(() => import("./pages/reports/QuantityTable"));
+const StoreOpeningReport = lazy(
+  () => import("./pages/reports/StoreOpeningReport")
+);
+const ProfitReportPage = lazy(() => import("./pages/reports/ProfitReportPage"));
+const StaffRatingsReport = lazy(
+  () => import("./pages/reports/StaffRatingsReport")
+);
+const SalaryReport = lazy(() => import("./pages/reports/SalaryReport"));
+const SalesTodayReport = lazy(() => import("./pages/reports/SalesTodayReport"));
+const SchedulesReport = lazy(() => import("./pages/reports/SchedulesReport"));
+const StoreOpeningPage = lazy(() => import("./pages/opening/StoreOpeningPage"));
+const DeadStocks = lazy(() => import("./pages/deadstock/DeadStock"));
+const StoreOpeningsAdminReport = lazy(
+  () => import("./pages/reports/StoreOpeningsAdminReport")
+);
 
 function App() {
   const { data } = useEmployeeRole();
   const tg = useUser();
   const userId = tg?.id?.toString();
+  const location = useLocation();
 
   useTheme();
+  useTelegramFullscreenLayout();
 
   const [uploadStatus, setUploadStatus] = useState<{
     isUploading: boolean;
@@ -75,16 +88,36 @@ function App() {
     // Запускаем проверку через 2 секунды после загрузки
     const timer = setTimeout(checkAndUpload, 2000);
 
-    return () => clearTimeout(timer);
+    const onOnline = () => {
+      void checkAndUpload();
+    };
+    window.addEventListener("online", onOnline);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("online", onOnline);
+    };
   }, [userId]);
+
+  useEffect(() => {
+    const screen = location.pathname || "/";
+    void trackEvent("screen_open", { screen });
+    return () => {
+      void trackEvent("screen_close", { screen });
+    };
+  }, [location.pathname]);
 
   return (
     <>
-      <Topbar />
       <PWAInstall />
       {/* Индикатор фоновой загрузки */}
       {uploadStatus.isUploading && uploadStatus.total > 0 && (
-        <div className="fixed top-16 right-4 z-50 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg animate-pulse">
+        <div
+          className="fixed right-4 z-50 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg animate-pulse"
+          style={{
+            top: "calc(var(--tg-app-top-offset, var(--tg-safe-top, 0px)) + 0.5rem)",
+          }}
+        >
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
             <span className="text-sm">
@@ -94,33 +127,56 @@ function App() {
         </div>
       )}
       {/* <div className="pb-20"> */} {/* отступ снизу под меню */}
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/evotor/settings" element={<Settings />} />
-        <Route path="/evotor/plan-for-today" element={<PlanSalesReport />} />
-        <Route path="/evotor/sales-report" element={<SalesReport />} />
-        <Route path="/evotor/salary-report" element={<SalaryReports />} />
-        <Route
-          path="/evotor/sales-for-the-period"
-          element={<SalestReportForThePeriod />}
-        />
-        <Route path="/evotor/orders" element={<Orders />} />
-        <Route
-          path="/evotor/stock-realization-report"
-          element={<QuantityTableProps />}
-        />
-        <Route
-          path="/evotor/store-opening-report"
-          element={<StoreOpeningReport />}
-        />
-        <Route path="/evotor/profit" element={<ProfitReportPage />} />
-        <Route path="/evotor/staff-analysi" element={<StaffRatingsReport />} />
-        <Route path="/evotor/salary-user-report" element={<SalaryReport />} />
-        <Route path="/evotor/sales-today" element={<SalesTodayReport />} />
-        <Route path="/evotor/schedules" element={<SchedulesReport />} />
-        <Route path="/evotor/open-store" element={<StoreOpeningPage />} />
-        <Route path="evotor/dead-stock" element={<DeadStocks />} />
-      </Routes>
+      <main className="app-shell-main">
+        <Suspense
+          fallback={
+            <div className="min-h-[50vh] flex items-center justify-center text-gray-500">
+              Загрузка экрана...
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/evotor/settings" element={<Settings />} />
+            <Route
+              path="/evotor/plan-for-today"
+              element={<PlanSalesReport />}
+            />
+            <Route path="/evotor/sales-report" element={<SalesReport />} />
+            <Route path="/evotor/salary-report" element={<SalaryReports />} />
+            <Route
+              path="/evotor/sales-for-the-period"
+              element={<SalestReportForThePeriod />}
+            />
+            <Route path="/evotor/orders" element={<Orders />} />
+            <Route
+              path="/evotor/stock-realization-report"
+              element={<QuantityTableProps />}
+            />
+            <Route
+              path="/evotor/store-opening-report"
+              element={<StoreOpeningReport />}
+            />
+            <Route
+              path="/evotor/store-openings-admin"
+              element={<StoreOpeningsAdminReport />}
+            />
+            <Route path="/evotor/profit" element={<ProfitReportPage />} />
+            <Route
+              path="/evotor/staff-analysi"
+              element={<StaffRatingsReport />}
+            />
+            <Route
+              path="/evotor/salary-user-report"
+              element={<SalaryReport />}
+            />
+            <Route path="/evotor/sales-today" element={<SalesTodayReport />} />
+            <Route path="/evotor/schedules" element={<SchedulesReport />} />
+            <Route path="/evotor/open-store" element={<StoreOpeningPage />} />
+            <Route path="evotor/dead-stock" element={<DeadStocks />} />
+          </Routes>
+        </Suspense>
+      </main>
       {(() => {
         const allowedRoles = ["SUPERADMIN", "CASHIER", "ADMIN"];
         const role = allowedRoles.includes(data?.employeeRole ?? "")

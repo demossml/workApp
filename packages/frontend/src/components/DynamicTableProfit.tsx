@@ -71,23 +71,20 @@ export const DynamicTableProfit: React.FC<DynamicTableProfitProps> = ({
     restDelta: 0.001,
   });
 
-  // Подготовка данных с пересчётом чистой прибыли и итогами
+  // Подготовка данных отчета (чистая прибыль приходит из API)
   const tableData = React.useMemo(() => {
     if (!report || !shops) return [];
 
     const data: TableRow[] = Object.entries(report.report).map(
       ([uuid, shopData]) => {
         const shopName = shops.find((s) => s.uuid === uuid)?.name || uuid;
-        const netProfitCalc =
-          shopData.grossProfit -
-          (shopData.expenses1C + shopData.totalEvoExpenses);
         return {
           shopName,
           byCategory: shopData.byCategory,
           totalEvoExpenses: shopData.totalEvoExpenses,
           expenses1C: shopData.expenses1C,
           grossProfit: shopData.grossProfit,
-          netProfit: netProfitCalc,
+          netProfit: shopData.netProfit,
         };
       }
     );
@@ -105,9 +102,7 @@ export const DynamicTableProfit: React.FC<DynamicTableProfitProps> = ({
       totals.totalEvoExpenses += shopData.totalEvoExpenses;
       totals.expenses1C += shopData.expenses1C;
       totals.grossProfit += shopData.grossProfit;
-      totals.netProfit +=
-        shopData.grossProfit -
-        (shopData.expenses1C + shopData.totalEvoExpenses);
+      totals.netProfit += shopData.netProfit;
 
       for (const [cat, val] of Object.entries(shopData.byCategory)) {
         if (!totals.byCategory[cat]) totals.byCategory[cat] = 0;

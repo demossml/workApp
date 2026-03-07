@@ -7,18 +7,21 @@ type ErrorDisplayProps = {
 };
 
 export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error }) => {
+  const message = /AbortError|timeout/i.test(error)
+    ? "Время ожидания ответа истекло. Попробуйте еще раз."
+    : error;
   return (
-    <div className="relative min-h-screen p-4">
+    <div className="app-page relative p-4">
       {/* Контейнер для кнопки "Назад", расположенной в верхнем левом углу */}
       <div className="absolute top-4 left-4">
         <GoBackButton />
       </div>
 
       {/* Основной контент */}
-      <div className="flex flex-col items-center justify-center min-h-screen">
+      <div className="flex min-h-full flex-col items-center justify-center">
         {/* Сообщение об ошибке */}
         <div className="text-red-500 text-center font-semibold mt-4 dark:text-red-400">
-          Ошибка: {error}
+          Ошибка: {message}
         </div>
       </div>
     </div>

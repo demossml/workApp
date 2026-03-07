@@ -1,19 +1,27 @@
-export type StoreOpeningStep = "initial" | "photos" | "cash_check";
+export type StoreOpeningStep = "shop" | "initial" | "photos" | "cash_check";
 
 interface OpeningProgress {
   step: StoreOpeningStep;
   date: string; // YYYY-MM-DD
+  shopUuid?: string;
+  shopName?: string;
 }
 
 /**
  * Сохраняем шаг на сегодня
  */
-export function saveProgress(step: StoreOpeningStep) {
+export function saveProgress(
+  step: StoreOpeningStep,
+  shopUuid?: string,
+  shopName?: string,
+) {
   const today = new Date().toISOString().slice(0, 10);
 
   const data: OpeningProgress = {
     step,
     date: today,
+    shopUuid,
+    shopName,
   };
 
   localStorage.setItem("openingProgress", JSON.stringify(data));

@@ -4,6 +4,7 @@ import {
 	getDocumentsBySalesPeriod,
 } from "../db/repositories/documents";
 import { logger } from "../logger";
+import { aggregateShopFinancialFromDocuments } from "../contracts/financialAggregation";
 
 import type { D1Database } from "@cloudflare/workers-types";
 
@@ -135,36 +136,13 @@ export async function getSalesgardenReportData(
 		let totalChecks = 0;
 
 		for (const { uuid, docs } of documentsByShop) {
-			const sellMap = new Map<string, number>();
-			const refundMap = new Map<string, number>();
-			let totalSell = 0;
-			let totalRefund = 0;
-			let checksCount = 0;
-
-			for (const { type: docType, transactions } of docs) {
-				const isRefund = docType === "PAYBACK";
-				const targetMap = isRefund ? refundMap : sellMap;
-				checksCount++;
-
-				for (const { type, paymentType, sum } of transactions) {
-					if (type !== "PAYMENT" || !paymentType) continue;
-					const label =
-						paymentTypeLabels[paymentType] || paymentTypeLabels.UNKNOWN;
-					// Для возвратов sum приходит отрицательным, берем абсолютное значение
-					const absSum = Math.abs(sum);
-					targetMap.set(label, (targetMap.get(label) ?? 0) + absSum);
-					if (isRefund) {
-						totalRefund += absSum;
-					} else {
-						totalSell += sum;
-					}
-				}
-			}
+			const { sell, refund, totalSell, totalRefund, checksCount } =
+				aggregateShopFinancialFromDocuments(docs, paymentTypeLabels);
 
 			const shopName = shopNameMap[uuid] || uuid;
 			salesDataByShopName[shopName] = {
-				sell: Object.fromEntries(sellMap),
-				refund: Object.fromEntries(refundMap),
+				sell,
+				refund,
 				totalSell,
 				checksCount,
 			};

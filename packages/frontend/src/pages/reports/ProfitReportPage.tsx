@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useGetShops } from "../../hooks/useApi";
-import { DateRangePicker } from "../../components/DateRangePicker";
 import { DynamicTableProfit } from "../../components/DynamicTableProfit"; // поправь путь, если нужно
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
@@ -19,17 +18,95 @@ interface ProfitReport {
   report: Record<string, ReportData>;
 }
 
+interface ProfitReportSnapshotListItem {
+  id: number;
+  createdAt: string;
+  createdBy: string | null;
+  since: string;
+  until: string;
+}
+
 export default function ProfitReportPage() {
   const { data, isLoading, error } = useGetShops();
-  const [startDate, setStartDate] = useState<string | null>(null);
-  const [endDate, setEndDate] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [formData, setFormData] = useState<
     Record<string, { expenses: number; grossProfit: number }>
   >({});
   const [report, setReport] = useState<ProfitReport | null>(null);
   const [loadingReport, setLoadingReport] = useState(false);
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const [snapshotItems, setSnapshotItems] = useState<ProfitReportSnapshotListItem[]>(
+    []
+  );
+  const [loadingSnapshots, setLoadingSnapshots] = useState(false);
 
   useTelegramBackButton();
+
+  const formatMonthFromIso = (isoDate: string) => {
+    const m = isoDate.match(/^(\d{4})-(\d{2})-/);
+    if (!m) return "";
+    return `${m[2]}.${m[1]}`;
+  };
+
+  const getMonthRange = (month: string) => {
+    if (!month) return null;
+    const match = month.match(/^(\d{2})\.(\d{4})$/);
+    if (!match) return null;
+
+    const monthRaw = match[1];
+    const yearRaw = match[2];
+    const year = Number(yearRaw);
+    const monthIndex = Number(monthRaw);
+    if (
+      !Number.isInteger(year) ||
+      !Number.isInteger(monthIndex) ||
+      monthIndex < 1 ||
+      monthIndex > 12
+    ) {
+      return null;
+    }
+
+    const since = `${yearRaw}-${monthRaw}-01`;
+    const lastDay = new Date(year, monthIndex, 0).getDate();
+    const until = `${yearRaw}-${monthRaw}-${String(lastDay).padStart(2, "0")}`;
+    return { since, until };
+  };
+
+  const monthOptions = (() => {
+    const now = new Date();
+    const options: { value: string; label: string }[] = [];
+    for (let i = 0; i < 24; i += 1) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const year = String(d.getFullYear());
+      const value = `${month}.${year}`;
+      const label = `${month}.${year}`;
+      options.push({ value, label });
+    }
+    return options;
+  })();
+
+  const loadSnapshots = async () => {
+    setLoadingSnapshots(true);
+    try {
+      const response = await client.api.evotor["profit-report"].snapshots.$get({
+        query: { limit: "20" },
+      });
+      if (!response.ok) {
+        throw new Error(`Ошибка: ${response.status}`);
+      }
+      const payload = await response.json();
+      setSnapshotItems(payload.items || []);
+    } catch (err) {
+      console.error("Ошибка загрузки истории отчетов прибыли:", err);
+    } finally {
+      setLoadingSnapshots(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadSnapshots();
+  }, []);
 
   const handleChange = (
     shopUuid: string,
@@ -46,8 +123,9 @@ export default function ProfitReportPage() {
   };
 
   const handleSubmit = async () => {
-    if (!startDate || !endDate) {
-      alert("Заполните даты");
+    const monthRange = getMonthRange(selectedMonth);
+    if (!monthRange) {
+      alert("Выберите месяц");
       return;
     }
 
@@ -56,8 +134,8 @@ export default function ProfitReportPage() {
       const response = await client.api.evotor["profit-report"].$post({
         json: {
           shopUuids: data?.shopsNameAndUuid.map((shop) => shop.uuid) || [],
-          since: startDate,
-          until: endDate,
+          since: monthRange.since,
+          until: monthRange.until,
           dataFrom1C: formData,
         },
       });
@@ -75,9 +153,50 @@ export default function ProfitReportPage() {
     }
   };
 
+  const handleSaveSnapshot = async () => {
+    if (!report) return;
+    setSavingSnapshot(true);
+    try {
+      const response = await client.api.evotor["profit-report"].snapshots.$post({
+        json: {
+          period: report.period,
+          report: report.report,
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`Ошибка: ${response.status}`);
+      }
+      await loadSnapshots();
+      alert("Отчет сохранен в историю");
+    } catch (err) {
+      console.error("Ошибка сохранения отчета прибыли:", err);
+      alert("Не удалось сохранить отчет");
+    } finally {
+      setSavingSnapshot(false);
+    }
+  };
+
+  const handleLoadSnapshot = async (id: number) => {
+    try {
+      const response = await client.api.evotor["profit-report"].snapshots[
+        ":id"
+      ].$get({
+        param: { id: String(id) },
+      });
+      if (!response.ok) {
+        throw new Error(`Ошибка: ${response.status}`);
+      }
+      const payload = await response.json();
+      setReport(payload.payload);
+      setSelectedMonth(formatMonthFromIso(payload.since));
+    } catch (err) {
+      console.error("Ошибка загрузки snapshot отчета:", err);
+      alert("Не удалось загрузить отчет");
+    }
+  };
+
   const isFormValid =
-    startDate !== null &&
-    endDate !== null &&
+    !!getMonthRange(selectedMonth) &&
     data?.shopsNameAndUuid.every((shop) => {
       const shopData = formData[shop.uuid];
       return (
@@ -106,23 +225,70 @@ export default function ProfitReportPage() {
 
   return (
     <motion.div
-      className="min-h-screen p-4 bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 overflow-y-auto"
+      className="app-page-scroll p-4 bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
     >
       <h1 className="text-2xl font-bold text-center mb-4">Отчет по прибыли</h1>
 
+      <div className="w-full mb-6 bg-white dark:bg-gray-800 rounded-md shadow-sm p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold text-base">История отчетов</h2>
+          <button
+            type="button"
+            onClick={() => void loadSnapshots()}
+            className="text-sm px-3 py-1 rounded-md bg-gray-200 dark:bg-gray-700"
+          >
+            Обновить
+          </button>
+        </div>
+        {loadingSnapshots ? (
+          <div className="text-sm text-gray-500">Загрузка истории...</div>
+        ) : snapshotItems.length === 0 ? (
+          <div className="text-sm text-gray-500">История пока пустая</div>
+        ) : (
+          <div className="space-y-2 max-h-56 overflow-y-auto">
+            {snapshotItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => void handleLoadSnapshot(item.id)}
+                className="w-full text-left p-3 rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                <div className="font-medium text-sm">
+                  {formatMonthFromIso(item.since)} ({item.since} - {item.until})
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  #{item.id} • {new Date(item.createdAt).toLocaleString("ru-RU")}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {!report && (
         <>
-          {/* Фильтр по датам */}
+          {/* Фильтр по месяцу */}
           <div className="w-full mb-6">
-            <DateRangePicker
-              onDateChange={(start, end) => {
-                setStartDate(start);
-                setEndDate(end);
-              }}
-            />
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-md shadow-sm">
+              <label className="block text-sm font-medium mb-2">
+                Месяц отчета
+              </label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-full p-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Выберите месяц</option>
+                {monthOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Таблица ввода данных 1С */}
@@ -192,7 +358,30 @@ export default function ProfitReportPage() {
 
       {/* Если отчет сформирован — показываем только его */}
       {report && (
-        <DynamicTableProfit report={report} shops={data?.shopsNameAndUuid} />
+        <>
+          <div className="flex gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => void handleSaveSnapshot()}
+              disabled={savingSnapshot}
+              className={`px-4 py-2 rounded-md text-white ${
+                savingSnapshot
+                  ? "bg-emerald-300 cursor-not-allowed"
+                  : "bg-emerald-500 hover:bg-emerald-600"
+              }`}
+            >
+              {savingSnapshot ? "Сохранение..." : "Сохранить отчет"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setReport(null)}
+              className="px-4 py-2 rounded-md bg-gray-300 dark:bg-gray-700"
+            >
+              Новый расчет
+            </button>
+          </div>
+          <DynamicTableProfit report={report} shops={data?.shopsNameAndUuid} />
+        </>
       )}
 
       {/* Добавь CSS для скрытия спиннеров */}

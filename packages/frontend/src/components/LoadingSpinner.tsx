@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 
 export const LoadingSpinner: React.FC = () => {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-custom-gray dark:bg-gray-800 p-4">
+    <div className="app-page flex flex-col items-center justify-center bg-custom-gray dark:bg-gray-800 p-4">
       <div className="flex items-center mb-4">
         {/* Spinner с анимацией появления */}
         <motion.div

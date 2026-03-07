@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { SalesData } from "../../components/dashboard/type";
+import { computeRevenueSummary } from "@work-appt/backend/src/contracts/revenueMath";
 
 export function useFilteredSalesData(
   data: SalesData | null,
@@ -10,25 +11,37 @@ export function useFilteredSalesData(
     if (!data || isSuperAdmin) return data;
 
     const shopName = currentWorkShop?.name;
-    if (!shopName) return data;
+    // Для обычного пользователя без определенного магазина не показываем
+    // сводные данные по всей сети, чтобы не завышать выручку.
+    if (!shopName || currentWorkShop?.isWorkingToday === false) return null;
 
     const shopData = data.salesDataByShopName[shopName];
     if (!shopData) return null;
 
+    const grandTotalRefund = Object.values(shopData.refund).reduce(
+      (a, b) => a + b,
+      0
+    );
+    const totalChecks = shopData.checksCount;
+    const { netRevenue, averageCheck } = computeRevenueSummary(
+      shopData.totalSell,
+      grandTotalRefund,
+      totalChecks
+    );
+
     return {
       salesDataByShopName: { [shopName]: shopData },
       grandTotalSell: shopData.totalSell,
-      grandTotalRefund: Object.values(shopData.refund).reduce(
-        (a, b) => a + b,
-        0
-      ),
+      grandTotalRefund,
+      netRevenue,
+      averageCheck,
       grandTotalCashOutcome: Object.values(
         data.cashOutcomeData[shopName] || {}
       ).reduce((a, b) => a + b, 0),
       cashOutcomeData: {
         [shopName]: data.cashOutcomeData[shopName] || {},
       },
-      totalChecks: shopData.checksCount,
+      totalChecks,
       topProducts: data.topProducts ?? [],
     };
   }, [data, isSuperAdmin, currentWorkShop]);

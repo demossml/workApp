@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import type { SalesData } from "../../components/dashboard/type";
 import { client } from "../../helpers/api";
+import { FinancialMetricsResponseSchema } from "@work-appt/backend/src/contracts/financialMetrics";
 
 interface UseSalesDataParams {
   since?: string;
@@ -70,7 +71,12 @@ export function useSalesData(params?: UseSalesDataParams): UseSalesDataReturn {
           );
         }
 
-        const json: SalesData = await res.json();
+        const rawJson = await res.json();
+        const parsed = FinancialMetricsResponseSchema.safeParse(rawJson);
+        if (!parsed.success) {
+          throw new Error("Некорректный формат финансовых данных");
+        }
+        const json: SalesData = parsed.data;
 
         if (isMounted) {
           setData(json);

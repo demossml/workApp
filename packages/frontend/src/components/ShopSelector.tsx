@@ -1,6 +1,7 @@
 import type React from "react";
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import { createPortal } from "react-dom";
 
 type ShopSelectorProps = {
   isLoadingShops: boolean;
@@ -21,6 +22,7 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({
 }) => {
   const [showAllShops, setShowAllShops] = useState(false);
   const [tempSelectedShop, setTempSelectedShop] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Уведомляем родительский компонент об изменении состояния модального окна
   useEffect(() => {
@@ -41,29 +43,47 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({
     }
   }, [sortedShops, selectedShop, fetchGroups, setSelectedShop]);
 
+  useEffect(() => {
+    setTempSelectedShop(selectedShop);
+  }, [selectedShop]);
+
   // Переключатель видимости модалки
-  const handleShowAllShops = () => setShowAllShops((prev) => !prev);
+  const handleShowAllShops = () => {
+    setTempSelectedShop(selectedShop);
+    setSearchTerm("");
+    setShowAllShops((prev) => !prev);
+  };
 
   // Выбор магазина во всплывающем окне
   const handleShopChange = (uuid: string) => setTempSelectedShop(uuid);
 
-  // Подтверждение выбора магазина
-  const handleConfirmShopSelection = () => {
-    if (tempSelectedShop) {
+  const applyShopSelectionFromModal = () => {
+    if (!tempSelectedShop) return;
+    if (tempSelectedShop !== selectedShop) {
       setSelectedShop(tempSelectedShop);
-      fetchGroups(tempSelectedShop);
+      void fetchGroups(tempSelectedShop);
     }
     setShowAllShops(false);
   };
 
+  // Подтверждение выбора магазина
+  const handleConfirmShopSelection = () => {
+    applyShopSelectionFromModal();
+  };
+
   // Отмена выбора и закрытие модального окна
   const handleCancelSelection = () => {
-    setTempSelectedShop(null);
+    setTempSelectedShop(selectedShop);
+    setSearchTerm("");
     setShowAllShops(false);
   };
 
+  const filteredShops = sortedShops.filter(([, name]) =>
+    name.toLowerCase().includes(searchTerm.toLowerCase().trim())
+  );
+
   // Группировка магазинов по первой букве
-  const groupedShops = sortedShops.reduce<Record<string, [string, string][]>>(
+  const groupedShops = filteredShops.reduce<Record<string, [string, string][]>>(
     (groups, [uuid, name]) => {
       const firstLetter = name.charAt(0).toUpperCase();
       if (!groups[firstLetter]) groups[firstLetter] = [];
@@ -72,6 +92,118 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({
     },
     {}
   );
+
+  const selectedShopName = selectedShop ? shopOptions[selectedShop] : null;
+  const modalContent =
+    showAllShops ? (
+      <motion.div
+        className="fixed inset-0 z-[70] h-[100dvh] bg-custom-gray dark:bg-gray-900 flex flex-col"
+        style={{
+          paddingTop: "calc(max(var(--tg-safe-top, 0px), 4px) + 56px)",
+          paddingBottom: "max(var(--tg-safe-bottom, 0px), 4px)",
+        }}
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+      >
+        {/* Заголовок */}
+        <div className="p-2 border-b bg-gray-50 dark:bg-gray-800 flex justify-between items-center shrink-0">
+          <p className="font-semibold text-lg text-gray-900 dark:text-gray-100">
+            Выберите магазин
+          </p>
+          <button
+            onClick={handleCancelSelection}
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="p-3 border-b bg-gray-50 dark:bg-gray-800 shrink-0">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Поиск магазина..."
+            className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Список магазинов */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-4">
+          {isLoadingShops ? (
+            <div className="flex items-center justify-center w-full h-full">
+              <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
+            </div>
+          ) : filteredShops.length === 0 ? (
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Ничего не найдено.
+            </div>
+          ) : (
+            Object.entries(groupedShops).map(([letter, shops]) => (
+              <motion.div
+                key={letter}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="mb-4"
+              >
+                <h3 className="font-semibold text-gray-700 dark:text-gray-300 bg-custom-gray dark:bg-gray-700 mb-2">
+                  {letter}
+                </h3>
+                <div className="space-y-2">
+                  {shops.map(([uuid, name]) => (
+                    <div
+                      key={uuid}
+                      className="flex items-center mt-2 cursor-pointer"
+                      onClick={() => handleShopChange(uuid)}
+                    >
+                      <div
+                        className={`w-4 h-4 rounded-full ${
+                          tempSelectedShop === uuid
+                            ? "border-4 border-blue-500 bg-white dark:bg-gray-900"
+                            : "border-2 border-gray-300 dark:border-gray-600 bg-custom-gray dark:bg-gray-800"
+                        }`}
+                      />
+                      <span className="text-lg ml-2 text-gray-900 dark:text-gray-100">
+                        {name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            ))
+          )}
+        </div>
+
+        {/* Кнопки подтверждения и отмены */}
+        <div className="sticky bottom-0 left-0 right-0 z-10 bg-gray-50 dark:bg-gray-800 border-t p-2 flex gap-2 shrink-0">
+          <motion.button
+            onClick={handleCancelSelection}
+            className="flex-1 p-2 rounded-md text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            Отмена
+          </motion.button>
+          <motion.button
+            onClick={handleConfirmShopSelection}
+            className={`flex-1 p-2 rounded-md text-white ${
+              tempSelectedShop
+                ? "bg-blue-500 hover:bg-blue-600"
+                : "bg-gray-300 dark:bg-gray-700 cursor-not-allowed"
+            }`}
+            disabled={!tempSelectedShop}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            Подтвердить
+          </motion.button>
+        </div>
+      </motion.div>
+    ) : null;
 
   return (
     <div className="shop-selector">
@@ -87,6 +219,14 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({
           {showAllShops ? "Скрыть" : "Все →"}
         </button>
       </div>
+      {selectedShopName && (
+        <div className="mb-3 text-xs text-gray-600 dark:text-gray-300">
+          Выбран:{" "}
+          <span className="font-semibold text-gray-800 dark:text-gray-100">
+            {selectedShopName}
+          </span>
+        </div>
+      )}
 
       {/* Кнопки магазинов (первые 5) */}
       <div className="flex flex-wrap gap-2 mb-4">
@@ -123,7 +263,8 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({
               `}
               onClick={() => {
                 setSelectedShop(uuid);
-                fetchGroups(uuid);
+                void fetchGroups(uuid);
+                setTempSelectedShop(uuid);
               }}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -135,101 +276,10 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({
         )}
       </div>
 
-      {/* Модальное окно выбора магазина */}
-      <AnimatePresence>
-        {showAllShops && (
-          <motion.div
-            className="fixed inset-0 bg-custom-gray dark:bg-gray-900 flex flex-col z-50"
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 40 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
-          >
-            {/* Заголовок */}
-            <div className="p-2 border-b bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
-              <p className="font-semibold text-lg text-gray-900 dark:text-gray-100">
-                Выберите магазин
-              </p>
-              <button
-                onClick={handleCancelSelection}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Список магазинов */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {isLoadingShops ? (
-                <div className="flex items-center justify-center w-full h-full">
-                  <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
-                </div>
-              ) : (
-                Object.entries(groupedShops).map(([letter, shops]) => (
-                  <motion.div
-                    key={letter}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="mb-4"
-                  >
-                    <h3 className="font-semibold text-gray-700 dark:text-gray-300 bg-custom-gray dark:bg-gray-700 mb-2">
-                      {letter}
-                    </h3>
-                    <div className="space-y-2">
-                      {shops.map(([uuid, name]) => (
-                        <div
-                          key={uuid}
-                          className="flex items-center mt-2 cursor-pointer"
-                          onClick={() => handleShopChange(uuid)}
-                        >
-                          <div
-                            className={`w-4 h-4 rounded-full ${
-                              tempSelectedShop === uuid
-                                ? "border-4 border-blue-500 bg-white dark:bg-gray-900"
-                                : "border-2 border-gray-300 dark:border-gray-600 bg-custom-gray dark:bg-gray-800"
-                            }`}
-                          />
-                          <span className="text-lg ml-2 text-gray-900 dark:text-gray-100">
-                            {name}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                ))
-              )}
-            </div>
-
-            {/* Кнопки подтверждения и отмены */}
-            <div className="sticky bottom-0 left-0 right-0 z-10 bg-gray-50 dark:bg-gray-800 border-t p-2 flex gap-2">
-              <motion.button
-                onClick={handleCancelSelection}
-                className="flex-1 p-2 rounded-md text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                Отмена
-              </motion.button>
-              <motion.button
-                onClick={handleConfirmShopSelection}
-                className={`flex-1 p-2 rounded-md text-white ${
-                  tempSelectedShop
-                    ? "bg-blue-500 hover:bg-blue-600"
-                    : "bg-gray-300 dark:bg-gray-700 cursor-not-allowed"
-                }`}
-                disabled={!tempSelectedShop}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                Подтвердить
-              </motion.button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Модальное окно выбора магазина (portal в body) */}
+      {typeof document !== "undefined" &&
+        showAllShops &&
+        createPortal(modalContent, document.body)}
     </div>
   );
 };

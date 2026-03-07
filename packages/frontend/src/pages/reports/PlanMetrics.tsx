@@ -76,7 +76,11 @@ export default function PlanMetrics() {
             : planRaw && typeof planRaw === "object"
               ? planRaw.datePlan || 0
               : 0;
-        const actual = shopData.totalSell || 0;
+        const totalRefund = Object.values(shopData.refund || {}).reduce(
+          (sum, val) => sum + val,
+          0
+        );
+        const actual = (shopData.totalSell || 0) - totalRefund;
         const progress = calculatePlanProgress(actual, plan);
         const difference = actual - plan;
 
@@ -131,7 +135,7 @@ export default function PlanMetrics() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 pt-20 pb-24 px-4">
+    <div className="app-page bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 px-4 py-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

@@ -13,7 +13,7 @@ export default function SchedulesReport() {
         initial={{ opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="flex flex-col items-center justify-center min-h-screen bg-custom-gray p-4"
+        className="app-page flex flex-col items-center justify-center bg-custom-gray p-4"
       >
         <div className="flex items-center mb-4">
           <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
@@ -29,7 +29,7 @@ export default function SchedulesReport() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="flex flex-col items-center justify-center min-h-screen bg-custom-gray p-4"
+        className="app-page flex flex-col items-center justify-center bg-custom-gray p-4"
       >
         <h1 className="mb-4 text-xl sm:text-2xl text-gray-800 font-bold">
           Ошибка: {error.message}
@@ -44,7 +44,7 @@ export default function SchedulesReport() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="flex flex-col items-center justify-center min-h-screen bg-custom-gray p-4"
+        className="app-page flex flex-col items-center justify-center bg-custom-gray p-4"
       >
         <h1 className="mb-4 text-xl sm:text-2xl text-gray-800 font-bold">
           Нет данных для отображения.
@@ -68,7 +68,7 @@ export default function SchedulesReport() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="fixed w-screen h-screen px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900"
+      className="app-page w-full px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900"
     >
       <h2 className="text-xl font-bold text-gray-800 dark:text-gray-300 mb-4">
         Отчет о времени открытия

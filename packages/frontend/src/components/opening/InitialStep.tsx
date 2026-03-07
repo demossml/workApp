@@ -1,13 +1,17 @@
 import { motion } from "framer-motion";
 import type { StoreOpeningStep } from "../../pages/opening/types";
 import { useIsOpenStore } from "../../hooks/useIsOpenStore";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Check, Camera, DollarSign, AlertCircle } from "lucide-react";
 import { client } from "../../helpers/api";
+import { clearProgress } from "../../helpers/openingProgress";
+import { trackEvent } from "../../helpers/analytics";
 
 interface InitialStepProps {
   setCurrentStep: React.Dispatch<React.SetStateAction<StoreOpeningStep>>;
   userId: string;
+  selectedShop: string | null;
+  userName?: string;
 }
 
 interface OpenStoreDetails {
@@ -22,7 +26,12 @@ interface OpenStoreDetails {
 export default function InitialStep({
   setCurrentStep,
   userId,
+  selectedShop,
+  userName,
 }: InitialStepProps) {
+  const [isStarting, setIsStarting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   // Формируем текущую дату в dd-mm-yyyy
   const today = useMemo(() => {
     const d = new Date();
@@ -32,18 +41,67 @@ export default function InitialStep({
     return `${day}-${month}-${year}`;
   }, []);
 
-  const { data, isLoading } = useIsOpenStore(userId, today);
+  const { data, isLoading, isError, refetch } = useIsOpenStore(
+    userId,
+    today,
+    selectedShop,
+  );
   const details = data as OpenStoreDetails | undefined;
 
   const handleStart = async () => {
-    const response = await client.api.stores["open-store"].$post({
-      json: { timestamp: new Date().toISOString(), userId },
-    });
-    if (!response.ok) {
-      throw new Error(`Ошибка открытия магазина: ${response.status}`);
-    }
+    try {
+      setErrorMessage(null);
+      setIsStarting(true);
+      if (!selectedShop) {
+        throw new Error("Сначала выберите магазин");
+      }
+      void trackEvent("open_store_started", {
+        shopUuid: selectedShop,
+        props: { date: today },
+      });
+      const response = await client.api.stores["open-store"].$post({
+        json: {
+          timestamp: new Date().toISOString(),
+          userId,
+          shopUuid: selectedShop,
+          date: today,
+          userName,
+        },
+      });
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        void trackEvent("open_store_failed", {
+          shopUuid: selectedShop,
+          props: {
+            status: response.status,
+            reason: (errorBody as { error?: string } | null)?.error ?? null,
+          },
+        });
+        throw new Error(
+          (errorBody as { error?: string } | null)?.error ??
+            `Ошибка открытия магазина: ${response.status}`
+        );
+      }
+      void trackEvent("open_store_success", {
+        shopUuid: selectedShop,
+      });
 
-    setCurrentStep("photos");
+      setCurrentStep("photos");
+    } catch (error) {
+      void trackEvent("open_store_failed", {
+        shopUuid: selectedShop || undefined,
+        props: {
+          reason: error instanceof Error ? error.message : "unknown_error",
+        },
+      });
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Не удалось открыть магазин. Повторите попытку."
+      );
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   const handleContinuePhotos = () => {
@@ -53,6 +111,28 @@ export default function InitialStep({
   const handleCashCheck = () => {
     setCurrentStep("cash_check");
   };
+
+  const getNextStep = () => {
+    if (!details?.exists) return null;
+    if (!details.hasPhotos || (details.photoCount || 0) < 7) {
+      return {
+        step: "photos" as const,
+        label:
+          (details.photoCount || 0) > 0
+            ? `Продолжить с фото (${7 - (details.photoCount || 0)} осталось)`
+            : "Продолжить с фото",
+      };
+    }
+    if (!details.hasCashCheck) {
+      return {
+        step: "cash_check" as const,
+        label: "Перейти к проверке кассы",
+      };
+    }
+    return null;
+  };
+
+  const nextStep = getNextStep();
 
   const formatTime = (isoString: string) => {
     const date = new Date(isoString);
@@ -66,8 +146,33 @@ export default function InitialStep({
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Утреннее открытие магазина</h1>
 
+      {!selectedShop && (
+        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+          Выберите магазин на первом шаге.
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+          {errorMessage}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="text-gray-500">Загрузка данных…</div>
+      ) : isError ? (
+        <div className="space-y-2">
+          <div className="text-sm text-red-600">
+            Не удалось получить статус открытия магазина.
+          </div>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm"
+          >
+            Повторить
+          </button>
+        </div>
       ) : details?.exists ? (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -170,33 +275,43 @@ export default function InitialStep({
 
           {/* Действия */}
           <div className="space-y-2">
-            {!details.hasPhotos && (
+            {nextStep && (
               <motion.button
-                onClick={handleContinuePhotos}
+                onClick={() => setCurrentStep(nextStep.step)}
                 className="w-full py-3 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700"
                 whileTap={{ scale: 0.97 }}
               >
-                📸 Загрузить фотографии
+                {nextStep.label}
+              </motion.button>
+            )}
+
+            {!details.hasPhotos && (
+              <motion.button
+                onClick={handleContinuePhotos}
+                className="w-full py-3 bg-gray-200 text-gray-800 rounded-xl shadow"
+                whileTap={{ scale: 0.97 }}
+              >
+                📸 К шагу фото
               </motion.button>
             )}
 
             {details.hasPhotos && (details.photoCount || 0) < 7 && (
               <motion.button
                 onClick={handleContinuePhotos}
-                className="w-full py-3 bg-amber-500 text-white rounded-xl shadow hover:bg-amber-600"
+                className="w-full py-3 bg-gray-200 text-gray-800 rounded-xl shadow"
                 whileTap={{ scale: 0.97 }}
               >
-                📸 Дозагрузить фото ({7 - (details.photoCount || 0)} осталось)
+                📸 Открыть фото ({7 - (details.photoCount || 0)} осталось)
               </motion.button>
             )}
 
             {!details.hasCashCheck && (
               <motion.button
                 onClick={handleCashCheck}
-                className="w-full py-3 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700"
+                className="w-full py-3 bg-gray-200 text-gray-800 rounded-xl shadow"
                 whileTap={{ scale: 0.97 }}
               >
-                💰 Проверить кассу
+                💰 К шагу кассы
               </motion.button>
             )}
 
@@ -205,6 +320,15 @@ export default function InitialStep({
                 <span className="text-green-700 dark:text-green-300 text-sm font-medium">
                   ✅ Все задачи выполнены!
                 </span>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={clearProgress}
+                    className="text-xs text-green-700 underline"
+                  >
+                    Сбросить прогресс на сегодня
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -212,10 +336,11 @@ export default function InitialStep({
       ) : (
         <motion.button
           onClick={handleStart}
+          disabled={isStarting}
           className="w-full py-3 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700"
           whileTap={{ scale: 0.97 }}
         >
-          Открыть магазин
+          {isStarting ? "Открываю..." : "Открыть магазин"}
         </motion.button>
       )}
     </div>

@@ -27,8 +27,8 @@ export const DynamicTable: React.FC<DynamicTableProps> = ({ data }) => {
     key: string | null;
     direction: "asc" | "desc" | null;
   }>({
-    key: null,
-    direction: null,
+    key: "sum",
+    direction: "desc",
   });
 
   // Реф на скроллируемый контейнер
@@ -47,29 +47,65 @@ export const DynamicTable: React.FC<DynamicTableProps> = ({ data }) => {
   // Функция для сортировки данных
   const sortedData = React.useMemo(() => {
     const sortableData = [...data];
-    if (sortConfig.key) {
+    if (sortConfig.key && sortConfig.direction) {
       const key = sortConfig.key;
       sortableData.sort((a, b) => {
-        if (a[key] < b[key]) {
-          return sortConfig.direction === "asc" ? -1 : 1;
+        const aValue = a[key];
+        const bValue = b[key];
+
+        if (typeof aValue === "number" && typeof bValue === "number") {
+          return sortConfig.direction === "asc"
+            ? aValue - bValue
+            : bValue - aValue;
         }
-        if (a[key] > b[key]) {
-          return sortConfig.direction === "asc" ? 1 : -1;
-        }
-        return 0;
+
+        const aText = String(aValue ?? "");
+        const bText = String(bValue ?? "");
+        const compare = aText.localeCompare(bText, "ru");
+        return sortConfig.direction === "asc" ? compare : -compare;
       });
     }
     return sortableData;
   }, [data, sortConfig]);
 
+  const isNumericColumn = (key: string) =>
+    data.some((row) => typeof row[key] === "number");
+
+  const formatNumber = (value: number) => value.toLocaleString("ru-RU");
+
+  const formatCellValue = (key: string, value: string | number) => {
+    if (typeof value !== "number") return value;
+    if (key === "sum") return `${formatNumber(value)} ₽`;
+    return formatNumber(value);
+  };
+
+  const valueToneClass = (key: string, value: string | number) => {
+    if (key === "sum" && typeof value === "number" && value < 0) {
+      return "text-red-600 dark:text-red-400";
+    }
+    return "text-gray-700 dark:text-gray-300";
+  };
+
   // Обработчик сортировки по клику на заголовок
   const handleSort = (key: string) => {
-    let direction: "asc" | "desc" = "asc";
-    if (sortConfig.key === key && sortConfig.direction === "asc") {
-      direction = "desc";
+    if (sortConfig.key === key) {
+      setSortConfig({
+        key,
+        direction: sortConfig.direction === "desc" ? "asc" : "desc",
+      });
+      return;
     }
-    setSortConfig({ key, direction });
+    setSortConfig({ key, direction: "desc" });
   };
+
+  const columns = Object.keys(data[0] || {});
+  if (columns.length === 0) {
+    return (
+      <div className="w-full rounded-xl bg-white dark:bg-gray-900 px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+        Нет данных для отображения.
+      </div>
+    );
+  }
 
   return (
     // Основной контейнер таблицы, занимающий весь экран
@@ -84,23 +120,34 @@ export const DynamicTable: React.FC<DynamicTableProps> = ({ data }) => {
       />
       <div className="relative">
         {/* Заголовок таблицы */}
-        <table className="w-full table-auto bg-custom-gray dark:bg-gray-900 rounded-lg shadow-md">
+        <table className="w-full table-auto bg-custom-gray dark:bg-gray-900 rounded-lg shadow-sm">
           <thead className="bg-gray-100 dark:bg-gray-700 sticky top-0 z-10">
             <tr>
-              {Object.keys(data[0] || {}).map((key) => (
-                <th
-                  key={key}
-                  className="px-2 sm:px-4 py-0.5 sm:py-1 text-left text-[10px] sm:text-xs text-gray-700 dark:text-gray-400 cursor-pointer bg-gray-100 dark:bg-gray-700"
-                  onClick={() => handleSort(key)}
-                >
-                  {tableN[key] || key.charAt(0).toUpperCase() + key.slice(1)}{" "}
-                  {sortConfig.key === key
-                    ? sortConfig.direction === "asc"
-                      ? "↑"
-                      : "↓"
-                    : null}
-                </th>
-              ))}
+              {columns.map((key) => {
+                const alignClass = isNumericColumn(key) ? "text-right" : "text-left";
+                const isActive = sortConfig.key === key;
+                const indicator = isActive
+                  ? sortConfig.direction === "asc"
+                    ? "▲"
+                    : "▼"
+                  : "↕";
+                return (
+                  <th
+                    key={key}
+                    className={`px-3 sm:px-4 py-2 text-[10px] sm:text-xs text-gray-700 dark:text-gray-300 cursor-pointer bg-gray-100 dark:bg-gray-700 ${alignClass}`}
+                    onClick={() => handleSort(key)}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      <span>{tableN[key] || key.charAt(0).toUpperCase() + key.slice(1)}</span>
+                      <span
+                        className={`text-[10px] ${isActive ? "text-blue-600 dark:text-blue-400" : "text-gray-400 dark:text-gray-500"}`}
+                      >
+                        {indicator}
+                      </span>
+                    </span>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
         </table>
@@ -114,78 +161,85 @@ export const DynamicTable: React.FC<DynamicTableProps> = ({ data }) => {
             overflowX: "auto",
           }}
         >
-          <table className="w-full table-auto bg-custom-gray dark:bg-gray-900 rounded-lg shadow-md">
+          <table className="w-full table-auto bg-custom-gray dark:bg-gray-900 rounded-lg shadow-sm">
             <tbody>
-              {sortedData.map((row, rowIndex) => (
-                <Fragment key={rowIndex}>
-                  <motion.tr
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      duration: 0.25,
-                      delay: rowIndex * 0.07,
-                      ease: "easeInOut",
-                    }}
-                  >
-                    <td
-                      className="px-2 sm:px-4 py-0.5 sm:py-1 text-[10px] sm:text-xs text-left text-gray-700 dark:text-gray-400"
-                      colSpan={Object.keys(row).length}
-                      style={{
-                        wordWrap: "break-word",
-                        maxWidth: "150px",
+              {sortedData.map((row, rowIndex) => {
+                const zebraClass =
+                  rowIndex % 2 === 0
+                    ? "bg-white/70 dark:bg-gray-900/40"
+                    : "bg-gray-50/80 dark:bg-gray-900/70";
+                const hoverClass = "hover:bg-blue-50/70 dark:hover:bg-blue-900/20";
+                return (
+                  <Fragment key={rowIndex}>
+                    <motion.tr
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        duration: 0.25,
+                        delay: rowIndex * 0.03,
+                        ease: "easeInOut",
                       }}
+                      className={`${zebraClass} ${hoverClass} transition-colors`}
                     >
-                      {Object.keys(row).map((key) => {
-                        const value = row[key];
-                        if (
-                          key === "productName" &&
-                          typeof value === "string"
-                        ) {
-                          return value.length > 34 ? (
-                            <span className="break-all">{value}</span>
-                          ) : (
-                            value
+                      <td
+                        className="px-3 sm:px-4 py-2 text-[11px] sm:text-xs text-left text-gray-800 dark:text-gray-200"
+                        colSpan={Object.keys(row).length}
+                        style={{
+                          wordWrap: "break-word",
+                          maxWidth: "150px",
+                        }}
+                      >
+                        {Object.keys(row).map((key) => {
+                          const value = row[key];
+                          if (
+                            key === "productName" &&
+                            typeof value === "string"
+                          ) {
+                            return value.length > 34 ? (
+                              <span className="break-all">{value}</span>
+                            ) : (
+                              value
+                            );
+                          }
+                          return null;
+                        })}
+                      </td>
+                    </motion.tr>
+                    <motion.tr
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        duration: 0.3,
+                        delay: rowIndex * 0.03,
+                        ease: "easeInOut",
+                      }}
+                      className={`${zebraClass} ${hoverClass} border-b border-gray-200/40 dark:border-gray-700/40 transition-colors`}
+                    >
+                      <td className="px-3 sm:px-4 py-2" />
+                      {Object.keys(row).map((key, index) => {
+                        if (key !== "productName") {
+                          const value = row[key];
+                          const alignClass =
+                            typeof value === "number" ? "text-right tabular-nums" : "text-left";
+                          const emphasisClass = key === "sum" ? "font-semibold" : "font-medium";
+                          return (
+                            <td
+                              key={index}
+                              className={`px-3 sm:px-4 py-2 text-[11px] sm:text-xs ${alignClass} ${emphasisClass} ${valueToneClass(
+                                key,
+                                value
+                              )}`}
+                            >
+                              <span>{formatCellValue(key, value)}</span>
+                            </td>
                           );
                         }
                         return null;
                       })}
-                    </td>
-                  </motion.tr>
-                  <motion.tr
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      duration: 0.4,
-                      delay: rowIndex * 0.07,
-                      ease: "easeInOut",
-                    }}
-                  >
-                    <td className="px-2 sm:px-4 py-0.5 sm:py-1" />
-                    {Object.keys(row).map((key, index) => {
-                      if (key !== "productName") {
-                        // Центрируем "Количество" и "Сумма"
-                        const isCenter =
-                          key === "quantitySale" || key === "sum"
-                            ? "text-center font-semibold"
-                            : "text-left";
-                        return (
-                          <td
-                            key={index}
-                            className={`px-2 sm:px-4 py-0.5 sm:py-1 text-[10px] sm:text-xs text-gray-700 dark:text-gray-400 ${isCenter}`}
-                          >
-                            {key === "sum" && typeof row[key] === "number" ? (
-                              <span>{row[key]} ₽</span>
-                            ) : (
-                              <span>{row[key]}</span>
-                            )}
-                          </td>
-                        );
-                      }
-                      return null;
-                    })}
-                  </motion.tr>
-                </Fragment>
-              ))}
+                    </motion.tr>
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

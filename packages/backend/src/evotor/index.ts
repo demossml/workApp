@@ -448,7 +448,23 @@ export class Evotor {
 		});
 
 		const results = await Promise.all(fetchPromises);
-		return results.flat();
+		const merged = results.flat();
+
+		// Интервалы строятся по границам и могут частично пересекаться по датам.
+		// Дедуплицируем документы, чтобы не завышать суммы в агрегатах.
+		const uniqueDocs = new Map<string, Document>();
+		for (const doc of merged) {
+			const key =
+				doc.id ||
+				`${doc.storeUuid || shopId}:${doc.number}:${doc.type}:${doc.closeDate}`;
+			if (!uniqueDocs.has(key)) {
+				uniqueDocs.set(key, doc);
+			}
+		}
+
+		return Array.from(uniqueDocs.values()).sort(
+			(a, b) => new Date(a.closeDate).getTime() - new Date(b.closeDate).getTime(),
+		);
 	}
 
 	/**
@@ -2222,13 +2238,15 @@ export class Evotor {
 	 * Получает план продаж для продуктов на основе заданной даты и UUID продуктов.
 	 *
 	 * @param {Date} datePlan - Дата плана, для которого рассчитывается прогноз.
-	 * @param {string[]} productUuids - Массив UUID продуктов, для которых рассчитываются продажи.
+	 * @param productUuidsSource - Источник UUID продуктов:
+	 * 1) общий список для всех магазинов;
+	 * 2) функция, возвращающая список UUID для конкретного магазина.
 	 * @returns {Promise<Record<string, number>>} - Объект, где ключ - ID магазина, а значение - скорректированные продажи.
 	 * @throws {Error} - При ошибке получения данных или вычислений.
 	 */
 	async getPlan(
 		datePlan: Date,
-		productUuids: string[],
+		productUuidsSource: string[] | ((shopId: string) => Promise<string[]>),
 	): Promise<Record<string, number>> {
 		const shopUuids: string[] = await this.getShopUuids();
 		const datPlan: Record<string, number> = {};
@@ -2241,6 +2259,10 @@ export class Evotor {
 		await Promise.all(
 			shopUuids.map(async (shopId) => {
 				if (shopId === "20231001-6611-407F-8068-AC44283C9196") return;
+				const productUuids =
+					typeof productUuidsSource === "function"
+						? await productUuidsSource(shopId)
+						: productUuidsSource;
 
 				const sumSales = await this.calculateSalesForShop(
 					shopId,
@@ -2316,8 +2338,14 @@ export class Evotor {
 	}
 
 	private async _fetchData(url: string): Promise<any> {
+		let timeoutId: ReturnType<typeof setTimeout> | undefined;
 		try {
-			const response = await fetch(url, { headers: this.headers }); // Выполнение запроса
+			const controller = new AbortController();
+			timeoutId = setTimeout(() => controller.abort(), 15000);
+			const response = await fetch(url, {
+				headers: this.headers,
+				signal: controller.signal,
+			}); // Выполнение запроса
 			const responseBody = await response.text(); // Получение текста ответа
 
 			if (!response.ok) {
@@ -2330,6 +2358,8 @@ export class Evotor {
 		} catch (error) {
 			this._logError(`Ошибка запроса к URL ${url}`, error); // Логирование ошибки
 			throw error; // Пробрасывание ошибки дальше
+		} finally {
+			if (timeoutId) clearTimeout(timeoutId);
 		}
 	}
 

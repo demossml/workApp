@@ -10,13 +10,17 @@ import { client } from "../../helpers/api";
 interface CashCheckStepProps {
   setCurrentStep: React.Dispatch<React.SetStateAction<StoreOpeningStep>>;
   userId: string;
+  selectedShop: string | null;
 }
 
 export default function CashCheckStep({
   setCurrentStep,
   userId,
+  selectedShop,
 }: CashCheckStepProps) {
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [discrepancy, setDiscrepancy] = useState<CashDiscrepancyData>({
     amount: "",
     type: "+",
@@ -28,23 +32,53 @@ export default function CashCheckStep({
   }, []);
 
   const finish = async () => {
-    const response = await client.api.stores["finish-opening"].$post({
-      json: {
-        ok: isCorrect,
-        discrepancy: isCorrect ? null : discrepancy,
-        userId,
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`Ошибка завершения открытия: ${response.status}`);
+    if (isCorrect === false) {
+      const amount = Number(discrepancy.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        setErrorMessage("Введите корректную сумму расхождения");
+        return;
+      }
     }
 
-    setCurrentStep("initial");
+    try {
+      setErrorMessage(null);
+      setIsSubmitting(true);
+      if (!selectedShop) {
+        throw new Error("Сначала выберите магазин");
+      }
+      const response = await client.api.stores["finish-opening"].$post({
+        json: {
+          ok: isCorrect,
+          discrepancy: isCorrect ? null : discrepancy,
+          userId,
+          shopUuid: selectedShop,
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`Ошибка завершения открытия: ${response.status}`);
+      }
+
+      setCurrentStep("initial");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Не удалось завершить открытие. Повторите попытку."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Проверка кассы</h2>
+
+      {errorMessage && (
+        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+          {errorMessage}
+        </div>
+      )}
 
       <div className="space-y-2">
         <label className="flex items-center gap-2">
@@ -72,13 +106,22 @@ export default function CashCheckStep({
         <CashDiscrepancyForm data={discrepancy} setData={setDiscrepancy} />
       )}
 
-      <button
-        className="w-full py-3 bg-blue-600 text-white rounded-xl shadow"
-        onClick={finish}
-        disabled={isCorrect === null}
-      >
-        Завершить открытие
-      </button>
+      <div className="flex gap-2">
+        <button
+          className="flex-1 py-3 bg-gray-200 text-gray-800 rounded-xl shadow"
+          onClick={() => setCurrentStep("photos")}
+          disabled={isSubmitting}
+        >
+          Назад к фото
+        </button>
+        <button
+          className="flex-1 py-3 bg-blue-600 text-white rounded-xl shadow"
+          onClick={finish}
+          disabled={isCorrect === null || isSubmitting}
+        >
+          {isSubmitting ? "Сохраняю..." : "Завершить открытие"}
+        </button>
+      </div>
     </div>
   );
 }

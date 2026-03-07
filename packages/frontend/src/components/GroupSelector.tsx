@@ -1,6 +1,7 @@
 import type React from "react";
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import { createPortal } from "react-dom";
 
 // Тип для элемента группы
 interface GroupOption {
@@ -30,19 +31,36 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
   onOpenChange,
 }) => {
   const [showGroups, setShowGroups] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [tempSelectedGroups, setTempSelectedGroups] = useState<string[]>([]);
 
   // Уведомляем родительский компонент об изменении состояния модального окна
   useEffect(() => {
     onOpenChange?.(showGroups);
   }, [showGroups, onOpenChange]);
 
+  useEffect(() => {
+    setTempSelectedGroups(selectedGroups);
+  }, [selectedGroups]);
+
   // Обработчик для переключения видимости групп
   const handleShowGroups = () => {
+    setSearchTerm("");
+    setTempSelectedGroups(selectedGroups);
     setShowGroups((prevState) => !prevState);
   };
 
   // Обработчик для добавления или удаления группы из выбранных
   const handleGroupToggle = (groupUuid: string) => {
+    setTempSelectedGroups((prevSelectedGroups) =>
+      prevSelectedGroups.includes(groupUuid)
+        ? prevSelectedGroups.filter((uuid) => uuid !== groupUuid)
+        : [...prevSelectedGroups, groupUuid]
+    );
+  };
+
+  // Быстрые плитки на основном экране применяются сразу
+  const handleQuickGroupToggle = (groupUuid: string) => {
     setSelectedGroups((prevSelectedGroups) =>
       prevSelectedGroups.includes(groupUuid)
         ? prevSelectedGroups.filter((uuid) => uuid !== groupUuid)
@@ -52,11 +70,22 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
 
   // Закрытие модального окна
   const handleCloseModal = () => {
+    setTempSelectedGroups(selectedGroups);
+    setSearchTerm("");
     setShowGroups(false);
   };
 
+  const applyGroupsSelection = () => {
+    setSelectedGroups(tempSelectedGroups);
+    setShowGroups(false);
+  };
+
+  const filteredGroupOptions = groupOptions.filter((group) =>
+    group.name.toLowerCase().includes(searchTerm.toLowerCase().trim())
+  );
+
   // Группируем группы по первой букве
-  const groupedByLetter = groupOptions.reduce<GroupDictionary>(
+  const groupedByLetter = filteredGroupOptions.reduce<GroupDictionary>(
     (groups, group) => {
       const firstLetter = group.name.charAt(0).toUpperCase();
       if (!groups[firstLetter]) {
@@ -67,6 +96,142 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
     },
     {}
   );
+
+  const modalContent =
+    showGroups ? (
+      <motion.div
+        className="fixed inset-0 z-[70] h-[100dvh] bg-custom-gray dark:bg-gray-900 flex flex-col"
+        style={{
+          paddingTop: "calc(max(var(--tg-safe-top, 0px), 4px) + 56px)",
+          paddingBottom: "max(var(--tg-safe-bottom, 0px), 4px)",
+        }}
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 40 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+      >
+        {/* Заголовок */}
+        <div className="p-2 border-b bg-gray-50 dark:bg-gray-800 flex justify-between items-center shrink-0">
+          <p className="font-semibold text-lg text-gray-900 dark:text-gray-100">
+            Выберите группу
+          </p>
+          <button
+            onClick={handleCloseModal}
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="p-2 border-b bg-gray-50 dark:bg-gray-800 shrink-0">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Поиск группы..."
+            className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Список групп */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-3">
+          {isLoadingGroups ? (
+            <div className="flex items-center justify-center w-full h-full">
+              <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
+            </div>
+          ) : filteredGroupOptions.length === 0 ? (
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Ничего не найдено.
+            </div>
+          ) : (
+            Object.entries(groupedByLetter).map(([letter, groups]) => (
+              <motion.div
+                key={letter}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="mb-4"
+              >
+                <h3 className="font-semibold text-gray-700 dark:text-gray-300 bg-custom-gray dark:bg-gray-700 mb-2">
+                  {letter}
+                </h3>
+                <div className="space-y-2">
+                  {groups.map((group) => (
+                    <div
+                      key={group.uuid}
+                      className="flex items-center mt-2 cursor-pointer"
+                      onClick={() => handleGroupToggle(group.uuid)}
+                    >
+                      <div
+                        className={`w-4 h-4 rounded-full ${
+                          tempSelectedGroups.includes(group.uuid)
+                            ? "border-4 border-blue-500 bg-white dark:bg-gray-900"
+                            : "border-2 border-gray-300 dark:border-gray-600 bg-custom-gray dark:bg-gray-800"
+                        }`}
+                      />
+                      <span className="text-lg ml-2 text-gray-900 dark:text-gray-100">
+                        {group.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            ))
+          )}
+        </div>
+
+        {/* Кнопки внизу */}
+        <div className="sticky bottom-0 left-0 right-0 z-10 bg-gray-50 dark:bg-gray-800 border-t p-2 shrink-0">
+          <div className="mb-2 flex items-center justify-between gap-2 px-1">
+            <div
+              className="flex items-center cursor-pointer"
+              onClick={() => {
+                const allGroupIds = groupOptions.map((group) => group.uuid);
+                if (tempSelectedGroups.length === groupOptions.length) {
+                  setTempSelectedGroups([]);
+                } else {
+                  setTempSelectedGroups(allGroupIds);
+                }
+              }}
+            >
+              <div
+                className={`w-4 h-4 rounded-full mr-2 ${
+                  tempSelectedGroups.length === groupOptions.length
+                    ? "border-4 border-blue-500 bg-white dark:bg-gray-900"
+                    : "border-2 border-gray-300 dark:border-gray-600 bg-custom-gray dark:bg-gray-800"
+                }`}
+              />
+              <span className="text-base text-gray-900 dark:text-gray-100">
+                Выбрать все группы
+              </span>
+            </div>
+            <motion.button
+              onClick={applyGroupsSelection}
+              className={`px-4 py-2 rounded-md text-white ${
+                tempSelectedGroups.length > 0
+                  ? "bg-blue-500 hover:bg-blue-600"
+                  : "bg-gray-300 dark:bg-gray-700 cursor-not-allowed"
+              }`}
+              disabled={tempSelectedGroups.length === 0}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              Применить
+            </motion.button>
+          </div>
+          <motion.button
+            onClick={handleCloseModal}
+            className="w-full p-2 rounded-md text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            Отмена
+          </motion.button>
+        </div>
+      </motion.div>
+    ) : null;
 
   return (
     <div className="group-selector">
@@ -79,6 +244,12 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
         >
           {showGroups ? "Скрыть" : "Все →"}
         </button>
+      </div>
+      <div className="mb-3 text-xs text-gray-600 dark:text-gray-300">
+        Выбрано:{" "}
+        <span className="font-semibold text-gray-800 dark:text-gray-100">
+          {selectedGroups.length}
+        </span>
       </div>
 
       {/* Плитки групп (только для первых 7) */}
@@ -113,7 +284,7 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
                 h-7
                 whitespace-nowrap
               `}
-              onClick={() => handleGroupToggle(group.uuid)}
+              onClick={() => handleQuickGroupToggle(group.uuid)}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: idx * 0.05 }}
@@ -123,124 +294,10 @@ export const GroupSelector: React.FC<GroupSelectorProps> = ({
           ))
         )}
       </div>
-
-      {/* Список групп с анимацией */}
-      <AnimatePresence>
-        {showGroups && (
-          <motion.div
-            className="fixed inset-0 bg-custom-gray dark:bg-gray-900 flex flex-col z-50"
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 40 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
-          >
-            {/* Заголовок */}
-            <div className="p-2 border-b bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
-              <p className="font-semibold text-lg text-gray-900 dark:text-gray-100">
-                Выберите группу
-              </p>
-              <button
-                onClick={handleCloseModal}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Список групп */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {isLoadingGroups ? (
-                <div className="flex items-center justify-center w-full h-full">
-                  <div className="w-8 h-8 border-4 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
-                </div>
-              ) : (
-                Object.entries(groupedByLetter).map(([letter, groups]) => (
-                  <motion.div
-                    key={letter}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="mb-4"
-                  >
-                    <h3 className="font-semibold text-gray-700 dark:text-gray-300 bg-custom-gray dark:bg-gray-700 mb-2">
-                      {letter}
-                    </h3>
-                    <div className="space-y-2">
-                      {groups.map((group) => (
-                        <div
-                          key={group.uuid}
-                          className="flex items-center mt-2 cursor-pointer"
-                          onClick={() => handleGroupToggle(group.uuid)}
-                        >
-                          <div
-                            className={`w-4 h-4 rounded-full ${
-                              selectedGroups.includes(group.uuid)
-                                ? "border-4 border-blue-500 bg-white dark:bg-gray-900"
-                                : "border-2 border-gray-300 dark:border-gray-600 bg-custom-gray dark:bg-gray-800"
-                            }`}
-                          />
-                          <span className="text-lg ml-2 text-gray-900 dark:text-gray-100">
-                            {group.name}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                ))
-              )}
-            </div>
-
-            {/* Кнопки внизу */}
-            <div className="sticky bottom-0 left-0 right-0 z-10 bg-gray-50 dark:bg-gray-800 border-t p-2">
-              <div className="flex items-center cursor-pointer mb-2 p-2">
-                <div
-                  className={`w-4 h-4 rounded-full mr-2 ${
-                    selectedGroups.length === groupOptions.length
-                      ? "border-4 border-blue-500 bg-white dark:bg-gray-900"
-                      : "border-2 border-gray-300 dark:border-gray-600 bg-custom-gray dark:bg-gray-800"
-                  }`}
-                  onClick={() => {
-                    const allGroupIds = groupOptions.map((group) => group.uuid);
-                    if (selectedGroups.length === groupOptions.length) {
-                      setSelectedGroups([]);
-                    } else {
-                      setSelectedGroups(allGroupIds);
-                    }
-                  }}
-                />
-                <span className="text-lg text-gray-900 dark:text-gray-100">
-                  Выбрать все группы
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <motion.button
-                  onClick={handleCloseModal}
-                  className="flex-1 p-2 rounded-md text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  Отмена
-                </motion.button>
-                <motion.button
-                  onClick={handleCloseModal}
-                  className={`flex-1 p-2 rounded-md text-white ${
-                    selectedGroups.length > 0
-                      ? "bg-blue-500 hover:bg-blue-600"
-                      : "bg-gray-300 dark:bg-gray-700 cursor-not-allowed"
-                  }`}
-                  disabled={selectedGroups.length === 0}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  Подтвердить
-                </motion.button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Список групп (portal в body, всегда поверх экрана) */}
+      {typeof document !== "undefined" &&
+        showGroups &&
+        createPortal(modalContent, document.body)}
     </div>
   );
 };

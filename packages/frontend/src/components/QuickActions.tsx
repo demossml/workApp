@@ -1,5 +1,12 @@
 import { useNavigate } from "react-router-dom";
-import { DoorOpen, Package, FileText, TrendingUp } from "lucide-react";
+import {
+  DoorOpen,
+  Package,
+  FileText,
+  TrendingUp,
+  Store,
+  Calculator,
+} from "lucide-react";
 
 interface QuickAction {
   title: string;
@@ -48,6 +55,22 @@ export default function QuickActions({ employeeRole }: QuickActionsProps) {
       icon: <TrendingUp className="w-6 h-6" />,
       path: "/evotor/sales-report",
       color: "from-orange-500 to-orange-600",
+      roles: ["ADMIN", "SUPERADMIN"],
+    },
+    {
+      title: "Открытия ТТ",
+      description: "Сводка по открытиям",
+      icon: <Store className="w-6 h-6" />,
+      path: "/evotor/store-openings-admin",
+      color: "from-teal-500 to-cyan-600",
+      roles: ["SUPERADMIN"],
+    },
+    {
+      title: "Расчеты прибыли",
+      description: "Валовая и чистая",
+      icon: <Calculator className="w-6 h-6" />,
+      path: "/evotor/profit",
+      color: "from-emerald-500 to-teal-600",
       roles: ["ADMIN", "SUPERADMIN"],
     },
   ];

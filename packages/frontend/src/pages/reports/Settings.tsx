@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
+import {
+  DEFAULT_ACCESSORY_SHARE_TARGET_PCT,
+  getAccessoryShareTargetPct,
+  setAccessoryShareTargetPct,
+} from "../../config/tempoSettings";
 
 // Определяем тип GroupOption для TypeScript
 interface GroupOption {
@@ -19,8 +24,16 @@ const Settings = () => {
     groupsName: string[];
     salary: string;
     bonus: string;
+    savedAt: string;
   } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showGroups, setShowGroups] = useState(false);
+  const [accessoryShareTargetInput, setAccessoryShareTargetInput] = useState(
+    String(DEFAULT_ACCESSORY_SHARE_TARGET_PCT)
+  );
+  const [tempoSettingsMessage, setTempoSettingsMessage] = useState<string | null>(
+    null
+  );
 
   useTelegramBackButton();
 
@@ -43,6 +56,10 @@ const Settings = () => {
     fetchGroupOptions();
   }, []);
 
+  useEffect(() => {
+    setAccessoryShareTargetInput(String(getAccessoryShareTargetPct()));
+  }, []);
+
   // Обрабатываем изменения выбранных групп
   const handleGroupChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const { value, checked } = event.target;
@@ -62,10 +79,24 @@ const Settings = () => {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
+    const salaryNumber = Number(salary);
+    const bonusNumber = Number(bonus);
+    if (!Number.isFinite(salaryNumber) || salaryNumber < 0) {
+      setError("Оклад должен быть неотрицательным числом");
+      return;
+    }
+    if (!Number.isFinite(bonusNumber) || bonusNumber < 0) {
+      setError("Премия должна быть неотрицательным числом");
+      return;
+    }
+
+    setError(null);
+    setIsSubmitting(true);
+
     const data = {
       groups: selectedGroups,
-      salary,
-      bonus,
+      salary: salaryNumber,
+      bonus: bonusNumber,
     };
 
     try {
@@ -81,12 +112,8 @@ const Settings = () => {
           groupsName: result.groupsName,
           salary: String(result.salary),
           bonus: String(result.bonus),
+          savedAt: new Date().toLocaleString("ru-RU"),
         });
-
-        // Сброс данных формы после успешной отправки
-        setSelectedGroups([]);
-        setSalary("");
-        setBonus("");
       } else {
         console.error("Ошибка при отправке данных:", response.statusText);
         setError("Не удалось отправить данные");
@@ -94,12 +121,25 @@ const Settings = () => {
     } catch (error) {
       console.error("Ошибка при отправке формы:", error);
       setError("Не удалось отправить данные");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   // Обрабатываем переключение видимости списка групп
   const toggleGroups = () => {
     setShowGroups(!showGroups);
+  };
+
+  const saveTempoSettings = () => {
+    const parsed = Number(accessoryShareTargetInput);
+    if (!Number.isFinite(parsed)) {
+      setTempoSettingsMessage("Введите число от 1 до 100");
+      return;
+    }
+    const next = setAccessoryShareTargetPct(parsed);
+    setAccessoryShareTargetInput(String(next));
+    setTempoSettingsMessage(`Порог сохранен: ${next}%`);
   };
 
   return (
@@ -110,40 +150,64 @@ const Settings = () => {
 
       {error && <div className="text-red-500 mb-4">{error}</div>}
 
-      {/* Если responseData присутствует, показываем только результаты, иначе показываем форму */}
-      {responseData ? (
-        <div className="mt-4 p-4 bg-green-100 rounded">
-          <h3 className="text-lg font-semibold">Результаты:</h3>
+      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <h3 className="text-lg font-semibold mb-2">
+          Настройка темпа продаж: доля аксессуаров
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+          Целевой порог доли высокомаржинальных аксессуаров в общей массе продаж.
+          По умолчанию: {DEFAULT_ACCESSORY_SHARE_TARGET_PCT}%.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="w-full sm:w-64">
+            <label
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              htmlFor="accessoryShareTarget"
+            >
+              Целевой порог, %
+            </label>
+            <input
+              id="accessoryShareTarget"
+              type="number"
+              min={1}
+              max={100}
+              value={accessoryShareTargetInput}
+              onChange={(e) => setAccessoryShareTargetInput(e.target.value)}
+              className="border border-gray-300 p-2 rounded w-full dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={saveTempoSettings}
+            className="bg-indigo-600 text-white py-2 px-4 rounded hover:bg-indigo-700 transition duration-300"
+          >
+            Сохранить порог
+          </button>
+        </div>
+        {tempoSettingsMessage && (
+          <div className="mt-2 text-sm text-indigo-700 dark:text-indigo-300">
+            {tempoSettingsMessage}
+          </div>
+        )}
+      </div>
 
-          {/* Display each group on a new line */}
+      {responseData && (
+        <div className="mt-4 p-4 bg-green-100 rounded dark:bg-green-900/30">
+          <h3 className="text-lg font-semibold mb-2">Настройки сохранены</h3>
+          <p className="text-sm mb-2">Время: {responseData.savedAt}</p>
           <p>
-            <strong>Группы:</strong>
+            <strong>Группы:</strong> {responseData.groupsName.join(", ") || "—"}
           </p>
-          <ul className="list-disc pl-5">
-            {responseData.groupsName.map((groupName, index) => (
-              <li key={index}>{groupName}</li>
-            ))}
-          </ul>
-
           <p>
             <strong>Оклад:</strong> {responseData.salary} ₽
           </p>
           <p>
             <strong>Премия:</strong> {responseData.bonus} ₽
           </p>
-
-          {/* Navigation button */}
-          <div className="text-left mt-4">
-            <a
-              href="/"
-              className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-700 active:bg-blue-800 transition duration-300"
-            >
-              На главную
-            </a>
-          </div>
         </div>
-      ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
           {/* Поле для ввода оклада */}
           <div>
             <label className="block text-lg font-semibold" htmlFor="salary">
@@ -208,12 +272,16 @@ const Settings = () => {
           {/* Кнопка отправки формы */}
           <button
             type="submit"
-            className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-700 active:bg-blue-800 transition duration-300"
+            disabled={isSubmitting}
+            className={`text-white py-2 px-4 rounded transition duration-300 ${
+              isSubmitting
+                ? "bg-blue-300 cursor-not-allowed"
+                : "bg-blue-500 hover:bg-blue-700 active:bg-blue-800"
+            }`}
           >
-            Отправить
+            {isSubmitting ? "Сохранение..." : "Сохранить"}
           </button>
-        </form>
-      )}
+      </form>
     </div>
   );
 };
