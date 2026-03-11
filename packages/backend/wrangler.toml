@@ -39,6 +39,7 @@ R2_PUBLIC_URL = "c1e9f63e6135bb4fa5600e83bf4a1a4b.r2.cloudflarestorage.com/evoto
 ALERT_TZ_OFFSET_MINUTES = "180"
 ALERT_REFUND_THRESHOLD_PCT = "15"
 ALERT_REVENUE_DROP_THRESHOLD_PCT = "20"
+ONEC_API_KEY = "секретный_ключ_минимум_32_символа"
 
 [triggers]
 # Индексация каждые 3 минуты; ежедневный дайджест запускается в коде в 06:00 UTC.

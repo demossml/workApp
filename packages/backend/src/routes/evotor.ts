@@ -2,12 +2,14 @@ import { Hono } from "hono";
 import type { IEnv } from "../types";
 import { logger } from "../logger";
 import {
+	AccessoryGroupsSaveSchema,
 	GroupsByShopSchema,
 	OrderSchema,
 	ProfitReportSchema,
 	ProfitReportSnapshotBodySchema,
 	ProfitReportSnapshotIdSchema,
 	ProfitReportSnapshotsListSchema,
+	SalaryBonusSaveSchema,
 	SalarySchema,
 	SalesGardenReportSchema,
 	SalesResultSchema,
@@ -34,6 +36,7 @@ import { trackAppEvent } from "../analytics/track";
 import { createPlanTable, getPlan, updatePlan } from "../db/repositories/plan";
 import {
 	createSalaryBonusTable,
+	getSalaryAndBonus,
 	saveSalaryAndBonus,
 } from "../db/repositories/salaryBonus";
 import { getSalaryData } from "../db/repositories/salaryData";
@@ -45,12 +48,6 @@ import {
 import {
 	getProductsByGroup,
 } from "../db/repositories/products";
-import { getDocumentsByPeriod } from "../db/repositories/documents";
-import {
-	createIndexDocumentsTable,
-	createIndexOnType,
-	saveNewIndexDocuments,
-} from "../db/repositories/indexDocuments";
 import {
 	getSalesDataG,
 	getTopProductsData,
@@ -68,6 +65,7 @@ import { computeRevenueSummary } from "../contracts/revenueMath";
 import { PlanForTodayResponseSchema } from "../contracts/planMetrics";
 import { WorkingByShopsResponseSchema } from "../contracts/workingByShops";
 import { CurrentWorkShopResponseSchema } from "../contracts/currentWorkShop";
+import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
 
 const paymentTypeLabels: Record<string, string> = {
 	CARD: "Банковской картой:",
@@ -152,11 +150,16 @@ async function getFinancialDataDirectFromEvotor(
 		totalChecks += shop.checksCount;
 	}
 
-	const [cashOutcomeData, topProducts] = await Promise.all([
+	const [cashOutcomeData, topProducts, cashBalanceByShop] = await Promise.all([
 		evo.getDocumentsByCashOutcomeData(shopUuids, since, until),
 		getTopProductsData(evo, shopUuids, since, until),
+		evo.getCashByShops(),
 	]);
 	const grandTotalCashOutcome = calculateTotalSum(cashOutcomeData);
+	const totalCashBalance = Object.values(cashBalanceByShop).reduce(
+		(sum, value) => sum + Number(value || 0),
+		0,
+	);
 	const { netRevenue, averageCheck } = computeRevenueSummary(
 		grandTotalSell,
 		grandTotalRefund,
@@ -172,13 +175,14 @@ async function getFinancialDataDirectFromEvotor(
 			averageCheck,
 			grandTotalCashOutcome,
 			cashOutcomeData,
+			cashBalanceByShop,
+			totalCashBalance,
 			totalChecks,
 			topProducts,
 		}),
 	};
 }
 
-const INDEX_STALE_THRESHOLD_MS = 5 * 60 * 1000;
 const STOCK_SNAPSHOT_TTL_MS = 5 * 60 * 1000;
 
 function buildGroupsKey(groups: string[]): string {
@@ -191,48 +195,19 @@ function isStockSnapshotFresh(updatedAt: string): boolean {
 	return Date.now() - updatedAtTs <= STOCK_SNAPSHOT_TTL_MS;
 }
 
-function isIndexFreshEnough(
-	documents: IndexDocument[],
-	untilIso: string,
-): boolean {
-	if (documents.length === 0) return false;
-	const latestCloseDate = documents[documents.length - 1]?.closeDate;
-	if (!latestCloseDate) return false;
-
-	const latestTs = new Date(latestCloseDate).getTime();
-	const untilTs = new Date(untilIso).getTime();
-	if (!Number.isFinite(latestTs) || !Number.isFinite(untilTs)) return false;
-
-	return untilTs - latestTs <= INDEX_STALE_THRESHOLD_MS;
-}
-
-async function getIndexedDocumentsForShopWithFallback(
-	db: IEnv["Bindings"]["DB"],
-	evo: IEnv["Variables"]["evotor"],
-	shopUuid: string,
-	since: string,
-	until: string,
-): Promise<IndexDocument[]> {
-	let indexedDocs = await getDocumentsByPeriod(db, shopUuid, since, until);
-
-	if (!isIndexFreshEnough(indexedDocs, until)) {
-		const fetchSince =
-			indexedDocs.length > 0
-				? indexedDocs[indexedDocs.length - 1].closeDate
-				: since;
-		const directDocs = await evo.getDocumentsIndex(shopUuid, fetchSince, until);
-		if (directDocs.length > 0) {
-			await saveNewIndexDocuments(db, directDocs);
-			indexedDocs = await getDocumentsByPeriod(db, shopUuid, since, until);
-		}
-	}
-
-	return indexedDocs;
-}
-
 function buildTopProductsFromIndexedDocuments(
 	documentsByShop: Array<{ shopUuid: string; docs: IndexDocument[] }>,
+	until: string,
 ) {
+	const endDate = new Date(until);
+	const dayKeys: string[] = [];
+	for (let i = 6; i >= 0; i--) {
+		const d = new Date(endDate);
+		d.setDate(endDate.getDate() - i);
+		dayKeys.push(d.toISOString().slice(0, 10));
+	}
+	const dayIndex = new Map(dayKeys.map((key, idx) => [key, idx]));
+
 	const productStats = new Map<
 		string,
 		{
@@ -240,6 +215,9 @@ function buildTopProductsFromIndexedDocuments(
 			quantity: number;
 			refundRevenue: number;
 			refundQuantity: number;
+			cost: number;
+			refundCost: number;
+			dailyNetRevenue7: number[];
 		}
 	>();
 
@@ -256,14 +234,29 @@ function buildTopProductsFromIndexedDocuments(
 					quantity: 0,
 					refundRevenue: 0,
 					refundQuantity: 0,
+					cost: 0,
+					refundCost: 0,
+					dailyNetRevenue7: [0, 0, 0, 0, 0, 0, 0],
 				};
+				const lineCost =
+					Number(trans.costPrice || 0) * Number(trans.quantity || 0);
+				const dayKey = new Date(doc.closeDate).toISOString().slice(0, 10);
+				const idx = dayIndex.get(dayKey);
 
 				if (isRefund) {
 					existing.refundRevenue += Number(trans.sum || 0);
 					existing.refundQuantity += Number(trans.quantity || 0);
+					existing.refundCost += lineCost;
+					if (typeof idx === "number") {
+						existing.dailyNetRevenue7[idx] -= Number(trans.sum || 0);
+					}
 				} else {
 					existing.revenue += Number(trans.sum || 0);
 					existing.quantity += Number(trans.quantity || 0);
+					existing.cost += lineCost;
+					if (typeof idx === "number") {
+						existing.dailyNetRevenue7[idx] += Number(trans.sum || 0);
+					}
 				}
 
 				productStats.set(productName, existing);
@@ -272,18 +265,25 @@ function buildTopProductsFromIndexedDocuments(
 	}
 
 	return Array.from(productStats.entries())
-		.map(([productName, stats]) => ({
-			productName,
-			revenue: stats.revenue,
-			quantity: stats.quantity,
-			refundRevenue: stats.refundRevenue,
-			refundQuantity: stats.refundQuantity,
-			netRevenue: stats.revenue - stats.refundRevenue,
-			netQuantity: stats.quantity - stats.refundQuantity,
-			averagePrice: stats.quantity > 0 ? stats.revenue / stats.quantity : 0,
-			refundRate:
-				stats.revenue > 0 ? (stats.refundRevenue / stats.revenue) * 100 : 0,
-		}))
+		.map(([productName, stats]) => {
+			const netRevenue = stats.revenue - stats.refundRevenue;
+			const grossProfit = netRevenue - (stats.cost - stats.refundCost);
+			return {
+				productName,
+				revenue: stats.revenue,
+				quantity: stats.quantity,
+				refundRevenue: stats.refundRevenue,
+				refundQuantity: stats.refundQuantity,
+				netRevenue,
+				netQuantity: stats.quantity - stats.refundQuantity,
+				grossProfit,
+				marginPct: netRevenue > 0 ? (grossProfit / netRevenue) * 100 : 0,
+				averagePrice: stats.quantity > 0 ? stats.revenue / stats.quantity : 0,
+				refundRate:
+					stats.revenue > 0 ? (stats.refundRevenue / stats.revenue) * 100 : 0,
+				dailyNetRevenue7: stats.dailyNetRevenue7,
+			};
+		})
 		.filter((item) => item.netRevenue > 0)
 		.sort((a, b) => b.netRevenue - a.netRevenue);
 }
@@ -295,9 +295,6 @@ async function getFinancialDataFromIndexWithFallback(
 	since: string,
 	until: string,
 ) {
-	await createIndexDocumentsTable(db);
-	await createIndexOnType(db);
-
 	const shopNamesMap = await evo.getShopNamesByUuids(shopUuids);
 	const paymentCategory: Record<number, string> = {
 		1: "Инкассация",
@@ -311,7 +308,7 @@ async function getFinancialDataFromIndexWithFallback(
 	const docsByShop = await Promise.all(
 		shopUuids.map(async (shopUuid) => ({
 			shopUuid,
-			docs: await getIndexedDocumentsForShopWithFallback(
+			docs: await getDocumentsFromIndexFirst(
 				db,
 				evo,
 				shopUuid,
@@ -368,8 +365,15 @@ async function getFinancialDataFromIndexWithFallback(
 		cashOutcomeData[shopName] = cashByCategory;
 	}
 
-	const topProducts = buildTopProductsFromIndexedDocuments(docsByShop);
+	const [topProducts, cashBalanceByShop] = await Promise.all([
+		Promise.resolve(buildTopProductsFromIndexedDocuments(docsByShop, until)),
+		evo.getCashByShops(),
+	]);
 	const grandTotalCashOutcome = calculateTotalSum(cashOutcomeData);
+	const totalCashBalance = Object.values(cashBalanceByShop).reduce(
+		(sum, value) => sum + Number(value || 0),
+		0,
+	);
 	const { netRevenue, averageCheck } = computeRevenueSummary(
 		grandTotalSell,
 		grandTotalRefund,
@@ -385,6 +389,8 @@ async function getFinancialDataFromIndexWithFallback(
 			averageCheck,
 			grandTotalCashOutcome,
 			cashOutcomeData,
+			cashBalanceByShop,
+			totalCashBalance,
 			totalChecks,
 			topProducts,
 		}),
@@ -432,7 +438,7 @@ async function getOrderFromIndexWithFallback(
 
 	for (let periodIndex = 0; periodIndex < dateRanges.length; periodIndex++) {
 		const [periodSince, periodUntil] = dateRanges[periodIndex];
-		const docs = await getIndexedDocumentsForShopWithFallback(
+		const docs = await getDocumentsFromIndexFirst(
 			db,
 			evo,
 			params.shopId,
@@ -483,7 +489,7 @@ async function getOrderFromIndexWithFallback(
 export const evotorRoutes = new Hono<IEnv>()
 
 	.get("/sales-today", async (c) => {
-		const salesData = await c.var.evotor.getSalesToday();
+		const salesData = await c.var.evotor.getSalesToday(c.get("db"));
 		assert(salesData, "No sales data found");
 		return c.json({ salesData });
 	})
@@ -562,7 +568,13 @@ export const evotorRoutes = new Hono<IEnv>()
 
 			const sessionsByShop = await Promise.all(
 				shopUuids.map(async (shopUuid) => {
-					const docs = await evo.getDocuments(shopUuid, since, until);
+					const docs = await getDocumentsFromIndexFirst(
+						c.get("db"),
+						evo,
+						shopUuid,
+						since,
+						until,
+					);
 					const openSession = docs.find(
 						(doc) => doc.type === "OPEN_SESSION" && !!doc.openUserUuid,
 					);
@@ -684,7 +696,14 @@ export const evotorRoutes = new Hono<IEnv>()
 					shopId: string,
 					accessoryProductUuids: string[],
 				): Promise<Record<string, { quantity: number; sum: number }>> => {
-					const docs = await evo.getDocumentsBySellPayback(shopId, since, until);
+					const docs = await getDocumentsFromIndexFirst(
+						db,
+						evo,
+						shopId,
+						since,
+						until,
+						{ types: ["SELL", "PAYBACK"] },
+					);
 					const accessorySet = new Set(accessoryProductUuids);
 					const result: Record<string, { quantity: number; sum: number }> = {};
 					for (const doc of docs) {
@@ -1057,12 +1076,19 @@ export const evotorRoutes = new Hono<IEnv>()
 					const shopProductUuids = shopProductsResults[index];
 
 					const [sumSalesData, podQuantity] = await Promise.all([
-						c.var.evotor.getSalesSum(shopId, since, until, shopProductUuids),
+						c.var.evotor.getSalesSum(
+							shopId,
+							since,
+							until,
+							shopProductUuids,
+							db,
+						),
 						c.var.evotor.getSalesSumQuantity(
 							shopId,
 							since,
 							until,
 							shopProductUuids,
+							db,
 						),
 					]);
 
@@ -1257,6 +1283,7 @@ export const evotorRoutes = new Hono<IEnv>()
 						since,
 						until,
 						productsAks,
+						db,
 					);
 					const bonusAccessories = Math.floor(salesDataAks * 0.05);
 
@@ -1270,6 +1297,7 @@ export const evotorRoutes = new Hono<IEnv>()
 						since,
 						until,
 						productsVape,
+						db,
 					);
 
 					const bonusPlan = salesDataVape >= currentPlan ? 450 : 0;
@@ -1328,6 +1356,80 @@ export const evotorRoutes = new Hono<IEnv>()
 		} catch (error) {
 			logger.error("Ошибка при разборе JSON:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
+		}
+	})
+	.get("/settings-config", async (c) => {
+		try {
+			const db = c.get("db");
+			await createAccessoriesTable(db);
+			await createSalaryBonusTable(db);
+
+			const shopIds: string[] = await c.var.evotor.getShopUuids();
+			const filteredUuids = shopIds.filter(
+				(uuid: string) => uuid !== "20231001-6611-407F-8068-AC44283C9196",
+			);
+			const baseShopUuid = filteredUuids[0];
+
+			const groupOptions = baseShopUuid
+				? await c.var.evotor.getGroupsByNameUuid(baseShopUuid)
+				: [];
+			const selectedGroupUuids = await getAllUuid(db);
+			const selectedGroupNames = baseShopUuid
+				? await c.var.evotor.getGroupsByName(baseShopUuid, selectedGroupUuids)
+				: [];
+
+			const currentDate = formatDate(new Date());
+			const salaryBonus = await getSalaryAndBonus(currentDate, db);
+
+			return c.json({
+				groupOptions,
+				selectedGroupUuids,
+				selectedGroupNames,
+				salary: salaryBonus?.salary ?? 0,
+				bonus: salaryBonus?.bonus ?? 0,
+			});
+		} catch (error) {
+			logger.error("Ошибка получения настроек", error);
+			return c.json({ message: "Не удалось загрузить настройки" }, 400);
+		}
+	})
+	.post("/settings/accessory-groups", async (c) => {
+		try {
+			const data = await c.req.json();
+			const { groups } = validate(AccessoryGroupsSaveSchema, data);
+
+			const db = c.get("db");
+			await createAccessoriesTable(db);
+			await saveOrUpdateUUIDs(groups, db);
+
+			const shopIds: string[] = await c.var.evotor.getShopUuids();
+			const filteredUuids = shopIds.filter(
+				(uuid: string) => uuid !== "20231001-6611-407F-8068-AC44283C9196",
+			);
+			const baseShopUuid = filteredUuids[0];
+			const groupsName = baseShopUuid
+				? await c.var.evotor.getGroupsByName(baseShopUuid, groups)
+				: [];
+
+			return c.json({ groups, groupsName });
+		} catch (error) {
+			logger.error("Ошибка сохранения групп аксессуаров", error);
+			return c.json({ message: "Не удалось сохранить группы аксессуаров" }, 400);
+		}
+	})
+	.post("/settings/salary-bonus", async (c) => {
+		try {
+			const data = await c.req.json();
+			const { salary, bonus } = validate(SalaryBonusSaveSchema, data);
+
+			const db = c.get("db");
+			await createSalaryBonusTable(db);
+			await saveSalaryAndBonus(formatDate(new Date()), salary, bonus, db);
+
+			return c.json({ salary, bonus });
+		} catch (error) {
+			logger.error("Ошибка сохранения оклада и премии", error);
+			return c.json({ message: "Не удалось сохранить оклад и премию" }, 400);
 		}
 	})
 	.post("/shops", async (c) => {
@@ -1769,12 +1871,18 @@ export const evotorRoutes = new Hono<IEnv>()
 			// );
 
 			const { salesDataByShopName, grandTotalSell, grandTotaRefund } =
-				await c.var.evotor.getSalesgardenReportData(shopUuids, since, until);
+				await c.var.evotor.getSalesgardenReportData(
+					shopUuids,
+					since,
+					until,
+					c.get("db"),
+				);
 
 			const cashOutcomeData = await c.var.evotor.getDocumentsByCashOutcomeData(
 				shopUuids,
 				since,
 				until,
+				c.get("db"),
 			);
 
 			const cash = await c.var.evotor.getCashByShops();

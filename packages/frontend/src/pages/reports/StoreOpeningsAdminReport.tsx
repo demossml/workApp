@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import type { DateRange } from "react-day-picker";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { useEmployeeRole } from "../../hooks/useApi";
 import { client } from "../../helpers/api";
+import { Calendar, Popover, PopoverContent, PopoverTrigger } from "../../components/ui";
 
 interface OpeningsSummary {
   startDate: string;
@@ -55,6 +57,14 @@ export default function StoreOpeningsAdminReport() {
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
+  const [dateMode, setDateMode] = useState<"today" | "yesterday" | "period">(
+    "today"
+  );
+  const [period, setPeriod] = useState<DateRange | undefined>(undefined);
+  const [tempPeriod, setTempPeriod] = useState<DateRange | undefined>(undefined);
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
+  const [shopSearch, setShopSearch] = useState("");
+  const [onlyIssues, setOnlyIssues] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<OpeningsReportResponse | null>(null);
@@ -72,6 +82,54 @@ export default function StoreOpeningsAdminReport() {
   };
 
   const categoryOrder = ["area", "stock", "cash", "mrc", "other"];
+  const formatDate = (date: Date) =>
+    date.toLocaleDateString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+
+  useEffect(() => {
+    const now = new Date();
+    const formatDate = (date: Date) => date.toISOString().slice(0, 10);
+
+    if (dateMode === "today") {
+      const d = formatDate(now);
+      setStartDate(d);
+      setEndDate(d);
+      return;
+    }
+
+    if (dateMode === "yesterday") {
+      const date = new Date(now);
+      date.setDate(now.getDate() - 1);
+      const d = formatDate(date);
+      setStartDate(d);
+      setEndDate(d);
+      setShowPeriodPicker(false);
+      setPeriod(undefined);
+      setTempPeriod(undefined);
+      return;
+    }
+
+    if (dateMode !== "period") {
+      setShowPeriodPicker(false);
+      setPeriod(undefined);
+      setTempPeriod(undefined);
+    }
+  }, [dateMode]);
+
+  useEffect(() => {
+    if (dateMode !== "period" || !period?.from || !period?.to) return;
+    const formatLocalDate = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+    setStartDate(formatLocalDate(period.from));
+    setEndDate(formatLocalDate(period.to));
+  }, [dateMode, period]);
 
   const loadReport = async () => {
     setIsLoading(true);
@@ -98,6 +156,25 @@ export default function StoreOpeningsAdminReport() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperAdmin]);
+
+  const filteredRecords = useMemo(() => {
+    const records = report?.records ?? [];
+    const search = shopSearch.trim().toLowerCase();
+
+    return records.filter((row) => {
+      const matchesSearch =
+        !search ||
+        row.shopName.toLowerCase().includes(search) ||
+        row.employeeName.toLowerCase().includes(search);
+      const hasIssue =
+        row.completionPercent < 100 ||
+        row.photoCount < row.requiredPhotoCount ||
+        row.cashStatus === "surplus" ||
+        row.cashStatus === "shortage" ||
+        row.cashStatus === "not_checked";
+      return matchesSearch && (!onlyIssues || hasIssue);
+    });
+  }, [report?.records, shopSearch, onlyIssues]);
 
   const loadPhotos = async (row: OpeningRecord) => {
     setPreviewRow(row);
@@ -140,25 +217,96 @@ export default function StoreOpeningsAdminReport() {
         <h1 className="text-xl font-semibold">Отчет по открытиям магазинов</h1>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-          <div>
-            <label className="block text-sm mb-1">Дата с</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full rounded-lg border p-2 bg-white dark:bg-gray-700"
-            />
+          <div className="md:col-span-4 grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setDateMode("today")}
+              className={`h-10 rounded-lg border text-sm font-semibold ${
+                dateMode === "today"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "border-gray-300 dark:border-gray-600"
+              }`}
+            >
+              Сегодня
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateMode("yesterday")}
+              className={`h-10 rounded-lg border text-sm font-semibold ${
+                dateMode === "yesterday"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "border-gray-300 dark:border-gray-600"
+              }`}
+            >
+              Вчера
+            </button>
+            <Popover
+              open={showPeriodPicker}
+              onOpenChange={(open) => {
+                setShowPeriodPicker(open);
+                if (!open) {
+                  setTempPeriod(period);
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDateMode("period");
+                    setTempPeriod(period);
+                    setShowPeriodPicker(true);
+                  }}
+                  className={`h-10 rounded-lg border text-sm font-semibold ${
+                    dateMode === "period"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "border-gray-300 dark:border-gray-600"
+                  }`}
+                >
+                  Период
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto p-0">
+                <Calendar
+                  mode="range"
+                  selected={tempPeriod?.from ? tempPeriod : undefined}
+                  onSelect={setTempPeriod}
+                  numberOfMonths={1}
+                  disabled={(date) => date > new Date()}
+                  initialFocus
+                />
+                <div className="flex items-center justify-end gap-2 p-2 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    className="px-3 py-1 rounded bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100"
+                    onClick={() => {
+                      setTempPeriod(period);
+                      setShowPeriodPicker(false);
+                    }}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1 rounded bg-blue-600 text-white disabled:bg-gray-400"
+                    disabled={!(tempPeriod?.from && tempPeriod?.to)}
+                    onClick={() => {
+                      setPeriod(tempPeriod);
+                      setShowPeriodPicker(false);
+                    }}
+                  >
+                    Применить
+                  </button>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
-          <div>
-            <label className="block text-sm mb-1">Дата по</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-full rounded-lg border p-2 bg-white dark:bg-gray-700"
-            />
-          </div>
-          <div className="md:col-span-2 flex items-end">
+          {dateMode === "period" && period?.from && period?.to && (
+            <div className="md:col-span-4 text-sm text-slate-600 dark:text-slate-300">
+              {formatDate(period.from)} → {formatDate(period.to)}
+            </div>
+          )}
+          <div className="md:col-span-4 flex items-end gap-2">
             <button
               onClick={() => void loadReport()}
               disabled={isLoading || endDate < startDate}
@@ -167,6 +315,24 @@ export default function StoreOpeningsAdminReport() {
               {isLoading ? "Загрузка..." : "Обновить отчет"}
             </button>
           </div>
+          <div className="md:col-span-3">
+            <label className="block text-sm mb-1">Поиск (магазин/сотрудник)</label>
+            <input
+              type="text"
+              value={shopSearch}
+              onChange={(e) => setShopSearch(e.target.value)}
+              placeholder="Например: Победа или Карина"
+              className="w-full rounded-lg border p-2 bg-white dark:bg-gray-700"
+            />
+          </div>
+          <label className="md:col-span-1 flex items-center gap-2 text-sm mt-6 md:mt-0">
+            <input
+              type="checkbox"
+              checked={onlyIssues}
+              onChange={(e) => setOnlyIssues(e.target.checked)}
+            />
+            Только проблемные
+          </label>
         </div>
 
         {error && (
@@ -175,18 +341,11 @@ export default function StoreOpeningsAdminReport() {
           </div>
         )}
 
-        {report?.summary && (
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-            <div className="rounded-xl bg-white dark:bg-gray-800 p-3 border">Всего ТТ: {report.summary.totalShops}</div>
-            <div className="rounded-xl bg-white dark:bg-gray-800 p-3 border">Открыто: {report.summary.openedShops}</div>
-            <div className="rounded-xl bg-white dark:bg-gray-800 p-3 border">Не открыто: {report.summary.notOpenedShops}</div>
-            <div className="rounded-xl bg-white dark:bg-gray-800 p-3 border">Средний %: {report.summary.avgCompletion}%</div>
-            <div className="rounded-xl bg-white dark:bg-gray-800 p-3 border">Проблемы кассы: {report.summary.withCashDiscrepancy}</div>
-            <div className="rounded-xl bg-white dark:bg-gray-800 p-3 border">Недобор фото: {report.summary.missingPhotos}</div>
-          </div>
-        )}
+        <div className="text-sm text-gray-500 dark:text-gray-400">
+          Показано записей: {filteredRecords.length}
+        </div>
 
-        <div className="overflow-x-auto rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+        <div className="hidden md:block overflow-x-auto rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
           <table className="w-full text-sm">
             <thead className="bg-gray-100 dark:bg-gray-700">
               <tr>
@@ -200,8 +359,8 @@ export default function StoreOpeningsAdminReport() {
               </tr>
             </thead>
             <tbody>
-              {report?.records?.length ? (
-                report.records.map((row) => (
+              {filteredRecords.length ? (
+                filteredRecords.map((row) => (
                   <tr key={`${row.shopUuid}-${row.openedAt}`} className="border-t border-gray-200 dark:border-gray-700">
                     <td className="p-2">{row.shopName}</td>
                     <td className="p-2">{row.employeeName}</td>
@@ -229,6 +388,46 @@ export default function StoreOpeningsAdminReport() {
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="md:hidden space-y-3">
+          {filteredRecords.length ? (
+            filteredRecords.map((row) => (
+              <div
+                key={`${row.shopUuid}-${row.openedAt}`}
+                className="rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold">{row.shopName}</div>
+                  <div className="text-xs text-gray-500">{row.completionPercent}%</div>
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-300">
+                  {row.employeeName}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  {new Date(row.openedAt).toLocaleString("ru-RU")}
+                </div>
+                <div className="text-sm">
+                  Фото: {row.photoCount}/{row.requiredPhotoCount}
+                </div>
+                <div className="text-sm">
+                  Касса: {cashStatusLabel[row.cashStatus]}
+                  {row.cashMessage ? ` (${row.cashMessage})` : ""}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadPhotos(row)}
+                  className="w-full px-2 py-2 rounded-md bg-blue-600 text-white text-sm"
+                >
+                  Смотреть фото
+                </button>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 text-center text-gray-500">
+              Нет данных за выбранный период
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { DateRangePicker } from "../../components/DateRangePicker";
+import { useEffect, useMemo, useState } from "react";
+import type { DateRange } from "react-day-picker";
 import { motion } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
+import { Calendar, Popover, PopoverContent, PopoverTrigger } from "../../components/ui";
 
 type PaymentData = {
   sell: Record<string, number>;
@@ -21,35 +22,84 @@ type ReportData = {
   cash: Record<string, number>;
 };
 
-const formatAmount = (amount: number): number | string => {
-  const roundedSum = amount.toFixed(2);
-  if (Number.parseFloat(roundedSum) % 1 === 0) {
-    return Number.parseInt(roundedSum, 10);
-  }
-  return Number.parseFloat(roundedSum);
+const formatMoney = (value: number) =>
+  `${value.toLocaleString("ru-RU", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })} ₽`;
+
+const formatDate = (date: Date) =>
+  date.toLocaleDateString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+const formatLocalDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
-export default function SalesTodayReport() {
+export default function SalesSummaryReport() {
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
+  const [dateMode, setDateMode] = useState<"today" | "yesterday" | "period">(
+    "today"
+  );
+  const [period, setPeriod] = useState<DateRange | undefined>(undefined);
+  const [tempPeriod, setTempPeriod] = useState<DateRange | undefined>(undefined);
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
   const [reportData, setReportData] = useState<ReportData | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
 
   useTelegramBackButton();
 
-  const submitForecast = async () => {
-    if (!startDate || !endDate) {
-      alert("Пожалуйста, выберите все параметры для формирования прогноза.");
+  useEffect(() => {
+    const now = new Date();
+    if (dateMode === "today") {
+      const today = formatLocalDate(now);
+      setStartDate(today);
+      setEndDate(today);
       return;
     }
-    const data = { startDate, endDate };
+    if (dateMode === "yesterday") {
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      const y = formatLocalDate(yesterday);
+      setStartDate(y);
+      setEndDate(y);
+      return;
+    }
+    if (dateMode !== "period") {
+      setShowPeriodPicker(false);
+      setTempPeriod(undefined);
+    }
+  }, [dateMode]);
+
+  useEffect(() => {
+    if (dateMode !== "period" || !period?.from || !period?.to) return;
+    setStartDate(formatLocalDate(period.from));
+    setEndDate(formatLocalDate(period.to));
+  }, [dateMode, period]);
+
+  const canRunReport = !!startDate && !!endDate;
+
+  const loadReport = async () => {
+    if (!canRunReport) {
+      setError("Выберите период отчёта");
+      return;
+    }
+
     setLoading(true);
     setError(null);
-
+    setReportData(null);
     try {
       const response = await client.api.evotor.salesGardenReport.$post({
-        json: data,
+        json: { startDate, endDate },
       });
 
       if (!response.ok) {
@@ -59,263 +109,309 @@ export default function SalesTodayReport() {
       setReportData(report);
     } catch (err) {
       console.error(err);
-      setError("Не удалось получить отчет");
+      setError("Не удалось получить отчёт");
     } finally {
       setLoading(false);
     }
   };
 
+  const analytics = useMemo(() => {
+    if (!reportData) return null;
+
+    const allShopNames = Array.from(
+      new Set([
+        ...Object.keys(reportData.salesDataByShopName || {}),
+        ...Object.keys(reportData.cash || {}),
+        ...Object.keys(reportData.cashOutcomeData || {}),
+      ])
+    );
+
+    const shops = allShopNames.map((shopName) => {
+        const data = reportData.salesDataByShopName[shopName] || {
+          sell: {},
+          refund: {},
+          totalSell: 0,
+        };
+        const refunds = Object.values(data.refund).reduce((sum, v) => sum + v, 0);
+        const payouts = Object.values(reportData.cashOutcomeData[shopName] || {}).reduce(
+          (sum, v) => sum + v,
+          0
+        );
+        const cashBalance = reportData.cash[shopName] || 0;
+        return {
+          shopName,
+          totalSell: data.totalSell || 0,
+          refunds,
+          payouts,
+          netRevenue: (data.totalSell || 0) - refunds - payouts,
+          cashBalance,
+          sell: data.sell,
+          refund: data.refund,
+          cashOutcome: reportData.cashOutcomeData[shopName] || {},
+        };
+      });
+
+    shops.sort((a, b) => b.totalSell - a.totalSell);
+
+    const sumSellFromRows = shops.reduce((sum, row) => sum + row.totalSell, 0);
+    const sumRefundFromRows = shops.reduce((sum, row) => sum + row.refunds, 0);
+    const sumPayoutsFromRows = shops.reduce((sum, row) => sum + row.payouts, 0);
+    const cashTotal = Object.values(reportData.cash || {}).reduce(
+      (sum, value) => sum + Number(value || 0),
+      0
+    );
+    const netTotal = shops.reduce((sum, row) => sum + row.netRevenue, 0);
+
+    const diffSell = Math.abs(sumSellFromRows - (reportData.grandTotalSell || 0));
+    const diffRefund = Math.abs(
+      sumRefundFromRows - (reportData.grandTotaRefund || 0)
+    );
+    const diffPayouts = Math.abs(
+      sumPayoutsFromRows - (reportData.grandTotaCashOutcome || 0)
+    );
+
+    const hasConsistencyIssue = diffSell > 1 || diffRefund > 1 || diffPayouts > 1;
+
+    return {
+      shops,
+      sumSellFromRows,
+      sumRefundFromRows,
+      sumPayoutsFromRows,
+      cashTotal,
+      netTotal,
+      hasConsistencyIssue,
+      diffSell,
+      diffRefund,
+      diffPayouts,
+    };
+  }, [reportData]);
+
   if (loading) {
     return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.97 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-        className="app-page flex flex-col items-center justify-center bg-gray-100 p-4"
-      >
-        <div className="flex items-center mb-4">
-          <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
-          <h1 className="ml-4 text-xl sm:text-2xl text-gray-800 font-bold" />
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (error) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="text-red-500 text-center mt-4"
-      >
-        Ошибка: {error}
-      </motion.div>
-    );
-  }
-
-  if (reportData) {
-    const {
-      salesDataByShopName,
-      grandTotalSell,
-      grandTotaRefund,
-      grandTotaCashOutcome,
-      startDate,
-      endDate,
-      cashOutcomeData,
-      cash,
-    } = reportData;
-
-    const totalPayments: Record<string, number> = {};
-    Object.values(salesDataByShopName).forEach((data) => {
-      Object.entries(data.sell).forEach(([paymentType, amount]) => {
-        totalPayments[paymentType] = (totalPayments[paymentType] || 0) + amount;
-      });
-      Object.entries(data.refund).forEach(([paymentType, amount]) => {
-        totalPayments[paymentType] = (totalPayments[paymentType] || 0) + amount;
-      });
-    });
-
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-        className="app-page-scroll px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900"
-      >
-        <h2 className="text-xl font-bold">Сводный финансовый отчет</h2>
-        <div className="mt-4">
-          <h3 className="text-xl font-bold">
-            За период с {startDate} по {endDate}
-          </h3>
-        </div>
-        <ul className="mt-4 space-y-4">
-          {Object.entries(salesDataByShopName).map(([shopName, data], idx) => {
-            const shopCashData = cashOutcomeData[shopName] || {};
-            const shopCash = cash[shopName] || 0;
-            const totalShopPayments = Object.values(shopCashData).reduce(
-              (total, amount) => total + amount,
-              0
-            );
-            const formattedShopPayments = formatAmount(totalShopPayments);
-
-            return (
-              <motion.li
-                key={shopName}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.4,
-                  delay: idx * 0.07,
-                  ease: "easeInOut",
-                }}
-                className="bg-white shadow-md rounded-lg p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <strong className="text-lg">{shopName}</strong>
-                </div>
-                <div className="mt-2">
-                  <h4 className="font-semibold">Продажи:</h4>
-                  <ul>
-                    {Object.entries(data.sell).map(([paymentType, amount]) => (
-                      <li
-                        key={paymentType}
-                        className="flex justify-between text-gray-700 mt-1"
-                      >
-                        <span>{paymentType}</span>
-                        <span className="font-bold">{amount} ₽</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="flex justify-between text-gray-700 mt-1">
-                    <span className="font-semibold">Всего продажи:</span>
-                    <span className="font-bold">{data.totalSell} ₽</span>
-                  </div>
-                </div>
-                {Object.keys(data.refund).length > 0 && (
-                  <div className="mt-2">
-                    <h4 className="font-semibold">Возвраты:</h4>
-                    <ul>
-                      {Object.entries(data.refund).map(
-                        ([paymentType, amount]) => (
-                          <li
-                            key={paymentType}
-                            className="flex justify-between text-gray-700 mt-1"
-                          >
-                            <span>{paymentType}</span>
-                            <span className="font-bold">{amount} ₽</span>
-                          </li>
-                        )
-                      )}
-                    </ul>
-                  </div>
-                )}
-                {Object.keys(shopCashData).length > 0 && (
-                  <div className="mt-2">
-                    <h4 className="font-semibold">Выплаты:</h4>
-                    <ul>
-                      {Object.entries(shopCashData).map(
-                        ([paymentType, amount]) => (
-                          <li
-                            key={paymentType}
-                            className="flex justify-between text-gray-700 mt-1"
-                          >
-                            <span>{paymentType}</span>
-                            <span className="font-bold">
-                              {formatAmount(amount)} ₽
-                            </span>
-                          </li>
-                        )
-                      )}
-                    </ul>
-                  </div>
-                )}
-                {Object.keys(shopCashData).length > 0 && (
-                  <div className="flex justify-between text-gray-700 mt-1">
-                    <span className="font-semibold">Всего выплаты:</span>
-                    <span className="font-bold">{formattedShopPayments} ₽</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-gray-700 mt-1">
-                  <span className="font-semibold">Нал. в кассе:</span>
-                  <span className="font-bold">{formatAmount(shopCash)} ₽</span>
-                </div>
-              </motion.li>
-            );
-          })}
-        </ul>
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-          className="mt-6 space-y-4"
-        >
-          <h3 className="text-xl font-semibold">Общий итог:</h3>
-          <div className="bg-white shadow-md rounded-lg p-4">
-            <ul>
-              <li className="flex font-bold justify-between text-gray-700 mt-1">
-                <span>Итого выплаты:</span>
-                <span className="font-bold">
-                  {formatAmount(grandTotaCashOutcome || 0)} ₽
-                </span>
-              </li>
-              <li className="flex font-bold justify-between text-gray-700 mt-1">
-                <span>Итого возвраты:</span>
-                <span className="font-bold">
-                  {formatAmount(grandTotaRefund)} ₽
-                </span>
-              </li>
-              <li className="flex font-bold justify-between text-gray-700 mt-1">
-                <span>Итого прод. банк. картой:</span>
-                <span className="font-bold">
-                  {formatAmount(totalPayments["Банковской картой:"] || 0)} ₽
-                </span>
-              </li>
-              <li className="flex font-bold justify-between text-gray-700 mt-1">
-                <span>Итого продажи нал. сред.:</span>
-                <span className="font-bold">
-                  {formatAmount(totalPayments["Нал. средствами:"] || 0)} ₽
-                </span>
-              </li>
-              <li className="flex font-bold justify-between text-gray-700 mt-1">
-                <span>Итого продажи:</span>
-                <span className="font-bold">
-                  {formatAmount(grandTotalSell)} ₽
-                </span>
-              </li>
-              <li className="flex font-bold justify-between text-gray-700 mt-1">
-                <span>Итого нал. в кассе:</span>
-                <span className="font-bold">
-                  {formatAmount(
-                    Object.values(cash).reduce((sum, c) => sum + c, 0)
-                  )}{" "}
-                  ₽
-                </span>
-              </li>
-            </ul>
-          </div>
-        </motion.div>
-      </motion.div>
+      <div className="app-page flex min-h-[60vh] items-center justify-center">
+        <div className="w-16 h-16 border-4 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
+      </div>
     );
   }
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
-      className="app-page px-4 bg-custom-gray dark:text-gray-400 dark:bg-gray-900"
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      className="app-page w-full px-4 sm:px-6 py-6 flex flex-col gap-4"
+      style={{
+        paddingTop: "calc(var(--app-top-clearance) + 0.5rem)",
+        paddingBottom: "calc(var(--app-bottom-clearance) + 0.75rem)",
+      }}
     >
-      <h1 className="text-xl font-bold"> Сводный финансовый отчет</h1>
-
-      <div className="w-full">
-        <DateRangePicker
-          onDateChange={(start, end) => {
-            setStartDate(start);
-            setEndDate(end);
-          }}
-        />
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-100">
+          Сводный финансовый отчёт
+        </h1>
+        <p className="mt-1 text-sm text-slate-400">
+          Продажи, возвраты, выплаты и остаток наличных по магазинам
+        </p>
       </div>
-      <motion.button
-        onClick={submitForecast}
-        className={`w-full p-2 rounded-md dark:text-gray-400 mt-8 ${
-          startDate && endDate
-            ? "bg-blue-400 dark:hover:bg-blue-500"
-            : "bg-gray-700"
-        }`}
-        disabled={!(startDate && endDate)}
-        whileHover={{
-          scale: startDate && endDate ? 1.04 : 1,
-        }}
-        whileTap={{
-          scale: startDate && endDate ? 0.97 : 1,
-        }}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.1 }}
-      >
-        Сгенерировать отчет
-      </motion.button>
+
+      {!reportData && (
+        <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4 flex flex-col gap-4">
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              onClick={() => setDateMode("today")}
+              className={`rounded-lg border px-3 py-2 text-sm transition ${
+                dateMode === "today"
+                  ? "border-blue-600 bg-blue-600 text-white"
+                  : "border-slate-300 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              }`}
+            >
+              Сегодня
+            </button>
+            <button
+              onClick={() => setDateMode("yesterday")}
+              className={`rounded-lg border px-3 py-2 text-sm transition ${
+                dateMode === "yesterday"
+                  ? "border-blue-600 bg-blue-600 text-white"
+                  : "border-slate-300 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              }`}
+            >
+              Вчера
+            </button>
+            <Popover
+              open={showPeriodPicker}
+              onOpenChange={(open) => {
+                setShowPeriodPicker(open);
+                if (!open) {
+                  setTempPeriod(undefined);
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <button
+                  className={`rounded-lg border px-3 py-2 text-sm transition ${
+                    dateMode === "period"
+                      ? "border-blue-600 bg-blue-600 text-white"
+                      : "border-slate-300 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                  }`}
+                  onClick={() => {
+                    setDateMode("period");
+                    setTempPeriod(period);
+                    setShowPeriodPicker(true);
+                  }}
+                >
+                  Период
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto p-0">
+                <Calendar
+                  mode="range"
+                  selected={tempPeriod?.from ? tempPeriod : undefined}
+                  onSelect={setTempPeriod}
+                  numberOfMonths={1}
+                  disabled={(date) => date > new Date()}
+                  initialFocus
+                />
+                <div className="flex items-center justify-end gap-2 p-2 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    className="px-3 py-1 rounded bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100"
+                    onClick={() => {
+                      setTempPeriod(period);
+                      setShowPeriodPicker(false);
+                    }}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    className="px-3 py-1 rounded bg-blue-600 text-white disabled:bg-gray-400"
+                    disabled={!(tempPeriod?.from && tempPeriod?.to)}
+                    onClick={() => {
+                      setPeriod(tempPeriod);
+                      setShowPeriodPicker(false);
+                    }}
+                  >
+                    Применить
+                  </button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+          {dateMode === "period" && period?.from && period?.to && (
+            <div className="text-sm text-slate-600 dark:text-slate-300">
+              {formatDate(period.from)} → {formatDate(period.to)}
+            </div>
+          )}
+          <button
+            onClick={loadReport}
+            className={`w-full py-3 rounded-xl font-medium text-white transition ${
+              canRunReport
+                ? "bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                : "bg-gray-300 dark:bg-gray-700 cursor-not-allowed"
+            }`}
+            disabled={!canRunReport}
+          >
+            Сгенерировать отчёт
+          </button>
+          {error && (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+              {error}
+            </div>
+          )}
+        </div>
+      )}
+
+      {reportData && analytics && (
+        <>
+          <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4 space-y-2">
+            <p className="text-sm text-slate-300">
+              Период: {reportData.startDate} - {reportData.endDate}
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="rounded-xl bg-slate-800/80 p-3">
+                <div className="text-xs text-slate-400">Продажи</div>
+                <div className="text-base font-semibold text-white">
+                  {formatMoney(reportData.grandTotalSell || 0)}
+                </div>
+              </div>
+              <div className="rounded-xl bg-slate-800/80 p-3">
+                <div className="text-xs text-slate-400">Возвраты</div>
+                <div className="text-base font-semibold text-white">
+                  {formatMoney(reportData.grandTotaRefund || 0)}
+                </div>
+              </div>
+              <div className="rounded-xl bg-slate-800/80 p-3">
+                <div className="text-xs text-slate-400">Выплаты</div>
+                <div className="text-base font-semibold text-white">
+                  {formatMoney(reportData.grandTotaCashOutcome || 0)}
+                </div>
+              </div>
+              <div className="rounded-xl bg-slate-800/80 p-3">
+                <div className="text-xs text-slate-400">Нетто (прод-возвр-выпл)</div>
+                <div className="text-base font-semibold text-white">
+                  {formatMoney(analytics.netTotal)}
+                </div>
+              </div>
+            </div>
+
+            {analytics.hasConsistencyIssue ? (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                Проверка данных: есть расхождения между итогами и детализацией.
+                Продажи Δ {analytics.diffSell.toFixed(2)}, возвраты Δ{" "}
+                {analytics.diffRefund.toFixed(2)}, выплаты Δ{" "}
+                {analytics.diffPayouts.toFixed(2)}.
+              </div>
+            ) : (
+              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+                Проверка данных: итоги совпадают с детализацией по магазинам.
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                setReportData(null);
+                setError(null);
+              }}
+              className="text-sm text-blue-400 hover:text-blue-300"
+            >
+              Сформировать новый отчёт
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {analytics.shops.map((shop) => (
+              <div
+                key={shop.shopName}
+                className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-semibold text-white">{shop.shopName}</h3>
+                  <span className="text-sm text-slate-300">
+                    Нетто: {formatMoney(shop.netRevenue)}
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-lg bg-slate-800/70 p-2 text-slate-300">
+                    Продажи: <span className="text-white">{formatMoney(shop.totalSell)}</span>
+                  </div>
+                  <div className="rounded-lg bg-slate-800/70 p-2 text-slate-300">
+                    Возвраты: <span className="text-white">{formatMoney(shop.refunds)}</span>
+                  </div>
+                  <div className="rounded-lg bg-slate-800/70 p-2 text-slate-300">
+                    Выплаты: <span className="text-white">{formatMoney(shop.payouts)}</span>
+                  </div>
+                  <div className="rounded-lg bg-slate-800/70 p-2 text-slate-300">
+                    Нал. в кассе (текущий остаток): <span className="text-white">{formatMoney(shop.cashBalance)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4 text-sm text-slate-300">
+            Наличные по всем магазинам:{" "}
+            <span className="font-semibold text-white">{formatMoney(analytics.cashTotal)}</span>
+          </div>
+        </>
+      )}
     </motion.div>
   );
 }

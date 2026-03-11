@@ -186,6 +186,21 @@ export const SubmitGroupsSchema = z.object({
 });
 
 /**
+ * POST /api/evotor/settings/accessory-groups
+ */
+export const AccessoryGroupsSaveSchema = z.object({
+	groups: z.array(UuidSchema),
+});
+
+/**
+ * POST /api/evotor/settings/salary-bonus
+ */
+export const SalaryBonusSaveSchema = z.object({
+	salary: z.number().nonnegative(),
+	bonus: z.number().nonnegative(),
+});
+
+/**
  * POST /api/evotor/sales-result
  */
 export const SalesResultSchema = z.object({

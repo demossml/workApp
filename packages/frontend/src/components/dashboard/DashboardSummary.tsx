@@ -4,21 +4,30 @@ import { useSalesData } from "../../hooks/dashboard/useSalesData";
 import { useEmployeeRole, useMe } from "../../hooks/useApi";
 import { useCurrentWorkShop } from "../../hooks/useCurrentWorkShop";
 import { useGetReportAndPlan } from "../../hooks/useReportData";
-import { BestShopCard } from "./cards/BestShopCard";
+import {
+  BestShopCard,
+  type LeaderMode,
+  type ShopLeaderCardData,
+  type LeaderReason,
+} from "./cards/BestShopCard";
 import { ExpensesCard } from "./cards/ExpensesCard";
 import { RevenueCard } from "./cards/RevenueCard";
 import { RevenueDetailsAdmin } from "./cards/RevenueDetailsAdmin";
 import { RevenueDetailsUser } from "./cards/RevenueDetailsUser";
 import { RevenueTempoCard, RevenueTempoDetails } from "./cards/RevenueTempoCard";
-import { ExpensesDetailsAdmin } from "./cards/ExpensesDetailsAdmin";
-import { ExpensesDetailsUser } from "./cards/ExpensesDetailsUser";
+import { FinancialReportDetails } from "./cards/FinancialReportDetails";
 import {
   useAccessoriesSales,
   type AccessoriesSalesData,
 } from "../../hooks/dashboard/useAccessoriesSales";
 import { client } from "../../helpers/api";
-import { BestShopDetails } from "./cards/BestShopDetails";
+import { BestShopDetails, type ShopKpiRow } from "./cards/BestShopDetails";
 import { TopProductsDetails } from "./cards/TopProductsDetails";
+import {
+  TopProductCard,
+  type TopProductMetricMode,
+  type TopProductRefundFilter,
+} from "./cards/TopProductCard";
 import { SummaryHeader } from "./SummaryHeader";
 import { EmptyWorkDay } from "./ui/EmptyWorkDay";
 import type {
@@ -39,6 +48,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import type { SalesData } from "./type";
 
 type OpeningPhotoDigestResponse = {
   date: string;
@@ -91,6 +101,62 @@ const getDiffDaysInclusive = (since: string, until: string) => {
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return 1;
   const diffMs = to.getTime() - from.getTime();
   return Math.max(1, Math.floor(diffMs / (24 * 60 * 60 * 1000)) + 1);
+};
+
+const sumRecordValues = (record?: Record<string, number>) =>
+  Object.values(record || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+
+const buildShopKpiRows = (data: SalesData | null): ShopKpiRow[] => {
+  if (!data) return [];
+  return Object.entries(data.salesDataByShopName).map(([name, shop]) => {
+    const refunds = sumRecordValues(shop.refund);
+    const expenses = sumRecordValues(data.cashOutcomeData?.[name]);
+    const netRevenue = shop.totalSell - refunds - expenses;
+    const averageCheck = shop.checksCount > 0 ? shop.totalSell / shop.checksCount : 0;
+    const refundRate = shop.totalSell > 0 ? (refunds / shop.totalSell) * 100 : 0;
+    return {
+      name,
+      revenue: shop.totalSell,
+      averageCheck,
+      refunds,
+      expenses,
+      netRevenue,
+      checks: shop.checksCount,
+      refundRate,
+    };
+  });
+};
+
+const getLeaderReason = (leader: ShopKpiRow, rows: ShopKpiRow[]): LeaderReason => {
+  if (rows.length === 0) return "чек";
+  const avgCheck =
+    rows.reduce((sum, item) => sum + item.averageCheck, 0) / Math.max(1, rows.length);
+  const avgTraffic =
+    rows.reduce((sum, item) => sum + item.checks, 0) / Math.max(1, rows.length);
+  const avgRefundRate =
+    rows.reduce((sum, item) => sum + item.refundRate, 0) / Math.max(1, rows.length);
+
+  const checkScore = avgCheck > 0 ? leader.averageCheck / avgCheck : 0;
+  const trafficScore = avgTraffic > 0 ? leader.checks / avgTraffic : 0;
+  const conversionScore =
+    avgRefundRate > 0 ? (avgRefundRate - leader.refundRate) / avgRefundRate + 1 : 1;
+
+  if (checkScore >= trafficScore && checkScore >= conversionScore) return "чек";
+  if (trafficScore >= checkScore && trafficScore >= conversionScore) return "трафик";
+  return "конверсия";
+};
+
+const buildLeaderCardData = (rows: ShopKpiRow[]): ShopLeaderCardData | null => {
+  if (rows.length === 0) return null;
+  const sorted = [...rows].sort((a, b) => b.netRevenue - a.netRevenue);
+  const leader = sorted[0];
+  const second = sorted[1];
+  return {
+    name: leader.name,
+    netRevenue: leader.netRevenue,
+    gapToSecond: second ? leader.netRevenue - second.netRevenue : leader.netRevenue,
+    reason: getLeaderReason(leader, rows),
+  };
 };
 
 function LoadingTile({
@@ -499,7 +565,8 @@ export default function DashboardSummary2({
     isSuperAdmin,
     currentWorkShop ?? null
   );
-  const { netSales, bestShop } = useSalesCalculations(filteredData);
+  const { netSales } = useSalesCalculations(filteredData);
+  const [bestShopMode, setBestShopMode] = React.useState<LeaderMode>("day");
 
   const [expandedCard, setExpandedCard] = React.useState<string | null>(null);
   const [accessoriesShopFilter, setAccessoriesShopFilter] = React.useState<string>(
@@ -512,6 +579,8 @@ export default function DashboardSummary2({
   const [digestError, setDigestError] = React.useState<string | null>(null);
   const [digestData, setDigestData] =
     React.useState<OpeningPhotoDigestResponse | null>(null);
+  const topProductMetricMode: TopProductMetricMode = "revenue";
+  const topProductRefundFilter: TopProductRefundFilter = "all";
   const me = useMe();
   const accessoriesSales = useAccessoriesSales({
     role: roleData?.employeeRole || "CASHIER",
@@ -535,6 +604,39 @@ export default function DashboardSummary2({
     isSuperAdmin,
     currentWorkShop ?? null
   );
+  const weekRange = React.useMemo(
+    () => ({
+      since: shiftIsoDate(safeUntil, -6),
+      until: safeUntil,
+    }),
+    [safeUntil]
+  );
+  const weekSalesData = useSalesData({
+    since: weekRange.since,
+    until: weekRange.until,
+  });
+  const weekFilteredData = useFilteredSalesData(
+    weekSalesData.data,
+    isSuperAdmin,
+    currentWorkShop ?? null
+  );
+  const dayShopKpiRows = React.useMemo(
+    () => buildShopKpiRows(filteredData),
+    [filteredData]
+  );
+  const weekShopKpiRows = React.useMemo(
+    () => buildShopKpiRows(weekFilteredData),
+    [weekFilteredData]
+  );
+  const dayLeaderData = React.useMemo(
+    () => buildLeaderCardData(dayShopKpiRows),
+    [dayShopKpiRows]
+  );
+  const weekLeaderData = React.useMemo(
+    () => buildLeaderCardData(weekShopKpiRows),
+    [weekShopKpiRows]
+  );
+  const activeBestShopRows = bestShopMode === "week" ? weekShopKpiRows : dayShopKpiRows;
   const digestDate = since || new Date().toISOString().slice(0, 10);
 
   React.useEffect(() => {
@@ -1218,24 +1320,27 @@ export default function DashboardSummary2({
             }`}
           >
             {loading || !filteredData ? (
-              <LoadingTile title="Расходы" Icon={ShoppingCart} tone="orange" />
+              <LoadingTile title="Фин. отчет" Icon={ShoppingCart} tone="orange" />
             ) : (
               <ExpensesCard
                 value={filteredData.grandTotalCashOutcome}
                 onClick={() => toggleCard("expenses")}
+                label="Фин. отчет"
+                cashBalanceByShop={filteredData.cashBalanceByShop}
               />
             )}
           </div>
           {expandedCard === "expenses" && filteredData && (
             <div className="mt-3">
-              {isSuperAdmin ? (
-                <ExpensesDetailsAdmin
-                  cashOutcomeData={filteredData.cashOutcomeData}
-                  grandTotalCashOutcome={filteredData.grandTotalCashOutcome}
-                />
-              ) : (
-                <ExpensesDetailsUser cashOutcomeData={filteredData.cashOutcomeData} />
-              )}
+              <FinancialReportDetails
+                salesDataByShopName={filteredData.salesDataByShopName}
+                cashOutcomeData={filteredData.cashOutcomeData}
+                cashBalanceByShop={filteredData.cashBalanceByShop}
+                grandTotalSell={filteredData.grandTotalSell}
+                grandTotalRefund={filteredData.grandTotalRefund}
+                grandTotalCashOutcome={filteredData.grandTotalCashOutcome}
+                totalCashBalance={filteredData.totalCashBalance}
+              />
             </div>
           )}
         </div>
@@ -1249,8 +1354,13 @@ export default function DashboardSummary2({
           >
             {loading ? (
               <LoadingTile title="Лучший магазин" Icon={Store} tone="purple" />
-            ) : bestShop ? (
-              <BestShopCard shop={bestShop} onClick={() => toggleCard("best")} />
+            ) : dayLeaderData || weekLeaderData ? (
+              <BestShopCard
+                dayLeader={dayLeaderData}
+                weekLeader={weekLeaderData}
+                mode={bestShopMode}
+                onClick={() => toggleCard("best")}
+              />
             ) : (
               <LoadingTile title="Лучший магазин" Icon={Store} tone="purple" />
             )}
@@ -1258,8 +1368,11 @@ export default function DashboardSummary2({
           {expandedCard === "best" && filteredData && (
             <div className="mt-3">
               <BestShopDetails
-                salesDataByShopName={filteredData.salesDataByShopName}
-                netRevenue={filteredData.netRevenue}
+                shops={activeBestShopRows}
+                mode={bestShopMode}
+                dayLeader={dayLeaderData}
+                weekLeader={weekLeaderData}
+                onModeChange={setBestShopMode}
               />
             </div>
           )}
@@ -1275,10 +1388,12 @@ export default function DashboardSummary2({
             {loading || !filteredData ? (
               <LoadingTile title="Топ продукт" Icon={Package} tone="pink" />
             ) : filteredData.topProducts?.length > 0 ? (
-              <ExpensesCard
-                value={filteredData.topProducts[0].netRevenue}
+              <TopProductCard
+                topProducts={filteredData.topProducts}
+                previousTopProducts={previousFilteredData?.topProducts || []}
+                metricMode={topProductMetricMode}
+                refundFilter={topProductRefundFilter}
                 onClick={() => toggleCard("products")}
-                label="Топ продукт"
               />
             ) : (
               <LoadingTile title="Топ продукт" Icon={Package} tone="pink" />
@@ -1288,7 +1403,11 @@ export default function DashboardSummary2({
             filteredData &&
             filteredData.topProducts?.length > 0 && (
               <div className="mt-3">
-                <TopProductsDetails topProducts={filteredData.topProducts} />
+                <TopProductsDetails
+                  topProducts={filteredData.topProducts}
+                  metricMode={topProductMetricMode}
+                  refundFilter={topProductRefundFilter}
+                />
               </div>
             )}
         </div>

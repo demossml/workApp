@@ -13,8 +13,11 @@ export interface ProductData {
   refundQuantity: number;
   netRevenue: number;
   netQuantity: number;
+  grossProfit: number;
+  marginPct: number;
   averagePrice: number;
   refundRate: number;
+  dailyNetRevenue7: number[];
 }
 
 export interface SalesData {
@@ -25,6 +28,8 @@ export interface SalesData {
   averageCheck: number;
   grandTotalCashOutcome: number;
   cashOutcomeData: Record<string, Record<string, number>>;
+  cashBalanceByShop: Record<string, number>;
+  totalCashBalance: number;
   totalChecks: number;
   topProducts: ProductData[];
 }

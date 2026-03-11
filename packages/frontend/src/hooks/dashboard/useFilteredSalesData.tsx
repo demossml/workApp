@@ -41,6 +41,10 @@ export function useFilteredSalesData(
       cashOutcomeData: {
         [shopName]: data.cashOutcomeData[shopName] || {},
       },
+      cashBalanceByShop: {
+        [shopName]: Number(data.cashBalanceByShop?.[shopName] || 0),
+      },
+      totalCashBalance: Number(data.cashBalanceByShop?.[shopName] || 0),
       totalChecks,
       topProducts: data.topProducts ?? [],
     };

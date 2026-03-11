@@ -53,7 +53,7 @@ export default function QuickActions({ employeeRole }: QuickActionsProps) {
       title: "Прогноз закупки",
       description: "SMA заказы",
       icon: <TrendingUp className="w-6 h-6" />,
-      path: "/evotor/sales-report",
+      path: "/evotor/orders",
       color: "from-orange-500 to-orange-600",
       roles: ["ADMIN", "SUPERADMIN"],
     },

@@ -7,6 +7,7 @@ import {
 } from "../utils";
 import { getDocumentsBySales } from "../db/repositories/documents";
 import { logger } from "../logger";
+import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
 import type {
 	Document,
 	Employee,
@@ -430,14 +431,47 @@ export class Evotor {
 		const fetchPromises = intervals.map(async ([startDate, endDate]) => {
 			const start = formatDateWithTime(new Date(startDate), false);
 			const end = formatDateWithTime(new Date(endDate), true);
-			const url = this._replacePlaceholders(this.urls.getDoc, [
+			const baseUrl = this._replacePlaceholders(this.urls.getDoc, [
 				shopId,
 				start,
 				end,
 			]);
 			try {
-				const response = await this._fetchData(url);
-				return Array.isArray(response) ? response : [];
+				const intervalDocuments: Document[] = [];
+				let cursor: string | null = null;
+				let page = 0;
+
+				// По документации Evotor для документов используется cursor-пагинация.
+				// Первый запрос — с since/until, последующие — только по cursor.
+				while (true) {
+					const pageUrl = new URL(baseUrl);
+					if (cursor) {
+						pageUrl.search = "";
+						pageUrl.searchParams.set("cursor", cursor);
+					}
+
+					const response = await this._fetchData(pageUrl.toString());
+					const pageItems = Array.isArray(response)
+						? response
+						: Array.isArray(response?.items)
+							? response.items
+							: [];
+
+					intervalDocuments.push(...(pageItems as Document[]));
+
+					const nextCursor =
+						typeof response?.paging?.next_cursor === "string"
+							? response.paging.next_cursor
+							: typeof response?.next_cursor === "string"
+								? response.next_cursor
+								: null;
+
+					cursor = nextCursor;
+					page += 1;
+					if (!cursor || page > 200) break;
+				}
+
+				return intervalDocuments;
 			} catch (intervalError) {
 				logger.error(
 					`Ошибка для интервала ${startDate} - ${endDate}:`,
@@ -836,37 +870,67 @@ export class Evotor {
 	async getCash(shopId: string): Promise<number> {
 		let totalCash = 0;
 		const until = formatDateWithTime(new Date(), true);
-		const fromDate = new Date();
-		fromDate.setDate(fromDate.getDate() - 7);
-		const sinceAll = formatDateWithTime(fromDate, true);
+		let lookbackDays = 14;
+		let sinceAll = "";
+		let documents: Document[] = [];
+		let hasSnapshotPoint = false;
 
-		const documents = await this.getCachedData(
-			`documents_${shopId}_${sinceAll}_${until}`,
-			() => this.getDocuments(shopId, sinceAll, until),
-		);
+		// Ищем последнее закрытие смены (Z_REPORT) с расширением окна,
+		// чтобы не начинать расчёт с нуля, если смена закрывалась давно.
+		while (lookbackDays <= 180) {
+			const fromDate = new Date();
+			fromDate.setDate(fromDate.getDate() - lookbackDays);
+			sinceAll = formatDateWithTime(fromDate, false);
+			documents = await this.getCachedData(
+				`documents_${shopId}_${sinceAll}_${until}`,
+				() => this.getDocuments(shopId, sinceAll, until),
+			);
+			hasSnapshotPoint = documents.some((doc) => {
+				const bodyCash = Number(
+					(doc as unknown as { body?: { cash?: number } }).body?.cash ?? NaN,
+				);
+				if (Number.isFinite(bodyCash) && bodyCash >= 0) return true;
+				return (doc.transactions || []).some((tx) => tx.type === "FPRINT_Z_REPORT");
+			});
+			if (hasSnapshotPoint) break;
+			lookbackDays *= 2;
+		}
 
-		const zReports = documents
-			.filter((doc) => doc.type === "Z_REPORT")
+		const snapshotDocuments = documents
+			.filter((doc) => {
+				const bodyCash = Number(
+					(doc as unknown as { body?: { cash?: number } }).body?.cash ?? NaN,
+				);
+				return (
+					(Number.isFinite(bodyCash) && bodyCash >= 0) ||
+					(doc.transactions || []).some((tx) => tx.type === "FPRINT_Z_REPORT")
+				);
+			})
 			.sort(
 				(a, b) =>
 					new Date(b.closeDate).getTime() - new Date(a.closeDate).getTime(),
 			);
 
-		// let since = sinceAll;
-		let lastZReportDate: Date | null = null;
+		let lastSnapshotDate: Date | null = null;
 
-		if (zReports.length > 0) {
-			const lastZReport = zReports[0];
-			lastZReportDate = new Date(lastZReport.closeDate);
-			lastZReportDate.setMilliseconds(lastZReportDate.getMilliseconds() + 1);
-			// const since = formatDateTime(lastZReportDate);
-			totalCash = lastZReport.transactions
+		if (snapshotDocuments.length > 0) {
+			const lastSnapshot = snapshotDocuments[0];
+			lastSnapshotDate = new Date(lastSnapshot.closeDate);
+			lastSnapshotDate.setMilliseconds(lastSnapshotDate.getMilliseconds() + 1);
+			// По документации Evotor для Z_REPORT используем body.cash как базовый остаток.
+			const zReportBodyCash = Number(
+				(lastSnapshot as unknown as { body?: { cash?: number } }).body?.cash ?? NaN,
+			);
+			const fprintCash = lastSnapshot.transactions
 				.filter((trans) => trans.type === "FPRINT_Z_REPORT")
 				.reduce((sum, trans) => sum + (trans.cash || 0), 0);
+			totalCash = Number.isFinite(zReportBodyCash) && zReportBodyCash >= 0
+				? zReportBodyCash
+				: fprintCash;
 		}
 
 		const relevantDocuments = documents.filter(
-			(doc) => !lastZReportDate || new Date(doc.closeDate) > lastZReportDate,
+			(doc) => !lastSnapshotDate || new Date(doc.closeDate) > lastSnapshotDate,
 		);
 
 		for (const doc of relevantDocuments) {
@@ -934,6 +998,191 @@ export class Evotor {
 			);
 			throw error; // Пробрасываем ошибку дальше
 		}
+	}
+
+	/**
+	 * Рассчитывает наличные по формуле за период:
+	 * Остаток = начальный остаток смены + cash продажи - cash возвраты + внесения - изъятия.
+	 */
+	private calculateCashByFormula(
+		documents: Document[],
+		periodStart: Date,
+	): {
+		openingBalance: number;
+		incomeCashSumm: number;
+		refundIncomeCashSumm: number;
+		cashIncomeSumm: number;
+		cashOutcomeSumm: number;
+		result: number;
+	} {
+		const sortedDocuments = [...documents].sort(
+			(a, b) => new Date(a.closeDate).getTime() - new Date(b.closeDate).getTime(),
+		);
+
+		let openingBalance = 0;
+		const zReportsBeforePeriod = sortedDocuments
+			.filter(
+				(doc) => {
+					if (new Date(doc.closeDate) >= periodStart) return false;
+					const bodyCash = Number(
+						(doc as unknown as { body?: { cash?: number } }).body?.cash ?? NaN,
+					);
+					return (
+						(Number.isFinite(bodyCash) && bodyCash >= 0) ||
+						(doc.transactions || []).some((tx) => tx.type === "FPRINT_Z_REPORT")
+					);
+				},
+			)
+			.sort(
+				(a, b) =>
+					new Date(b.closeDate).getTime() - new Date(a.closeDate).getTime(),
+			);
+
+		if (zReportsBeforePeriod.length > 0) {
+			const latestZReport = zReportsBeforePeriod[0];
+			const zReportBodyCash = Number(
+				(latestZReport as unknown as { body?: { cash?: number } }).body?.cash ?? 0,
+			);
+			const fprintCash = latestZReport.transactions
+				.filter((trans) => trans.type === "FPRINT_Z_REPORT")
+				.reduce((sum, trans) => sum + Number(trans.cash || 0), 0);
+			openingBalance =
+				Number.isFinite(zReportBodyCash) && zReportBodyCash >= 0
+					? zReportBodyCash
+					: fprintCash;
+		}
+
+		let incomeCashSumm = 0;
+		let refundIncomeCashSumm = 0;
+		let cashIncomeSumm = 0;
+		let cashOutcomeSumm = 0;
+
+		for (const doc of sortedDocuments) {
+			const docDate = new Date(doc.closeDate);
+			if (docDate < periodStart) continue;
+
+			for (const trans of doc.transactions) {
+				if (
+					trans.type === "PAYMENT" &&
+					trans.paymentType === "CASH" &&
+					doc.type === "SELL"
+				) {
+					incomeCashSumm += Number(trans.sum || 0);
+					continue;
+				}
+
+				if (
+					trans.type === "PAYMENT" &&
+					trans.paymentType === "CASH" &&
+					doc.type === "PAYBACK"
+				) {
+					refundIncomeCashSumm += Number(trans.sum || 0);
+					continue;
+				}
+
+				if (trans.type === "CASH_INCOME" && doc.type === "CASH_INCOME") {
+					cashIncomeSumm += Number(trans.sum || 0);
+					continue;
+				}
+
+				if (trans.type === "CASH_OUTCOME" && doc.type === "CASH_OUTCOME") {
+					cashOutcomeSumm += Number(trans.sum || 0);
+				}
+			}
+		}
+
+		const result =
+			openingBalance +
+			incomeCashSumm -
+			refundIncomeCashSumm +
+			cashIncomeSumm -
+			cashOutcomeSumm;
+
+		return {
+			openingBalance,
+			incomeCashSumm,
+			refundIncomeCashSumm,
+			cashIncomeSumm,
+			cashOutcomeSumm,
+			result,
+		};
+	}
+
+	/**
+	 * Расчёт наличных по всем магазинам по формуле за выбранный период.
+	 */
+	async getCashByShopsForPeriod(
+		since: string,
+		until: string,
+	): Promise<Record<string, number>> {
+		const { cashByShop } = await this.getCashWithDebugByShopsForPeriod(since, until);
+		return cashByShop;
+	}
+
+	async getCashWithDebugByShopsForPeriod(
+		since: string,
+		until: string,
+	): Promise<{
+		cashByShop: Record<string, number>;
+		cashDebugByShop: Record<
+			string,
+			{
+				openingBalance: number;
+				incomeCashSumm: number;
+				refundIncomeCashSumm: number;
+				cashIncomeSumm: number;
+				cashOutcomeSumm: number;
+				result: number;
+			}
+		>;
+	}> {
+		const shops = await this.getShopNameUuids();
+		const reportData: Record<string, number> = {};
+		const debugData: Record<
+			string,
+			{
+				openingBalance: number;
+				incomeCashSumm: number;
+				refundIncomeCashSumm: number;
+				cashIncomeSumm: number;
+				cashOutcomeSumm: number;
+				result: number;
+			}
+		> = {};
+
+		if (!shops || shops.length === 0) {
+			return { cashByShop: reportData, cashDebugByShop: debugData };
+		}
+
+		const periodStart = new Date(since);
+		const fetchStartDate = new Date(periodStart);
+		fetchStartDate.setDate(fetchStartDate.getDate() - 14);
+		const fetchSince = formatDateWithTime(fetchStartDate, false);
+
+		for (const shop of shops) {
+			try {
+				const documents = await this.getDocuments(shop.uuid, fetchSince, until);
+				const breakdown = this.calculateCashByFormula(documents, periodStart);
+				reportData[shop.name] = breakdown.result;
+				debugData[shop.name] = breakdown;
+			} catch (error) {
+				this._logError(
+					`Ошибка при расчете наличных за период для магазина "${shop.name}"`,
+					error,
+				);
+				reportData[shop.name] = 0;
+				debugData[shop.name] = {
+					openingBalance: 0,
+					incomeCashSumm: 0,
+					refundIncomeCashSumm: 0,
+					cashIncomeSumm: 0,
+					cashOutcomeSumm: 0,
+					result: 0,
+				};
+			}
+		}
+
+		return { cashByShop: reportData, cashDebugByShop: debugData };
 	}
 
 	/**
@@ -1227,9 +1476,14 @@ export class Evotor {
 		since: string,
 		until: string,
 		productUuids: string[],
+		db?: D1Database,
 	): Promise<Record<string, number>> {
 		try {
-			const documents = await this.getDocuments(shopId, since, until);
+			const documents = db
+				? await getDocumentsFromIndexFirst(db, this, shopId, since, until, {
+						types: ["SELL", "PAYBACK"],
+					})
+				: await this.getDocuments(shopId, since, until);
 
 			const salesSummary: Record<string, number> = {};
 
@@ -1280,7 +1534,14 @@ export class Evotor {
 		productUuids: string[],
 	): Promise<Record<string, { quantitySale: number; sum: number }>> {
 		try {
-			const documents = await this.getDocuments(shopId, since, until);
+			const documents = await getDocumentsFromIndexFirst(
+				db,
+				this,
+				shopId,
+				since,
+				until,
+				{ types: ["SELL", "PAYBACK"] },
+			);
 			// console.log("Полученные документы:", documents);
 
 			const doc = getDocumentsBySales(db, shopId, since, until);
@@ -1353,9 +1614,14 @@ export class Evotor {
 		since: string,
 		until: string,
 		productUuids: string[],
+		db?: D1Database,
 	): Promise<number> {
 		try {
-			const documents = await this.getDocuments(shopId, since, until);
+			const documents = db
+				? await getDocumentsFromIndexFirst(db, this, shopId, since, until, {
+						types: ["SELL", "PAYBACK"],
+					})
+				: await this.getDocuments(shopId, since, until);
 
 			let salesSummary = 0;
 
@@ -1388,7 +1654,9 @@ export class Evotor {
 	 *
 	 * @throws {Error} - В случае ошибки при получении данных.
 	 */
-	async getSalesToday(): Promise<Record<string, Record<string, number>>> {
+	async getSalesToday(
+		db?: D1Database,
+	): Promise<Record<string, Record<string, number>>> {
 		try {
 			const newDate = new Date(); // Получаем текущую дату
 			const since = formatDateWithTime(newDate, false);
@@ -1404,15 +1672,15 @@ export class Evotor {
 				UNKNOWN: "Неизвестно. По-умолчанию:",
 			};
 
-			const salesByProduct: Record<string, Record<string, number>> = {};
-			const shopUuids: string[] = await this.getShopUuids();
+				const salesByProduct: Record<string, Record<string, number>> = {};
+				const shopUuids: string[] = await this.getShopUuids();
 
-			for (const shopUuid of shopUuids) {
-				const salesData: Document[] = await this.getDocumentsBySellPayback(
-					shopUuid,
-					since,
-					until,
-				);
+				for (const shopUuid of shopUuids) {
+					const salesData = db
+						? await getDocumentsFromIndexFirst(db, this, shopUuid, since, until, {
+								types: ["SELL", "PAYBACK"],
+							})
+						: await this.getDocumentsBySellPayback(shopUuid, since, until);
 
 				for (const doc of salesData) {
 					for (const trans of doc.transactions) {
@@ -1480,6 +1748,7 @@ export class Evotor {
 		shopUuids: string[],
 		since: string,
 		until: string,
+		db?: D1Database,
 	): Promise<Record<string, Record<string, number>>> {
 		// Словарь категорий выплат
 		const paymentCategory: Record<number, string> = {
@@ -1502,8 +1771,11 @@ export class Evotor {
 			const sumPaymentCategory: Record<string, number> = {};
 
 			// Получение документов типа CASH_OUTCOME
-			const cashOutcomeDocuments: Document[] =
-				await this.getDocumentsByCashOutcome(shopUuid, since, until);
+				const cashOutcomeDocuments = db
+					? await getDocumentsFromIndexFirst(db, this, shopUuid, since, until, {
+							types: ["CASH_OUTCOME"],
+						})
+					: await this.getDocumentsByCashOutcome(shopUuid, since, until);
 
 			for (const doc of cashOutcomeDocuments) {
 				for (const trans of doc.transactions) {
@@ -1542,6 +1814,7 @@ export class Evotor {
 		shopUuids: string[],
 		since: string,
 		until: string,
+		db?: D1Database,
 	): Promise<{
 		salesDataByShopName: Record<
 			string,
@@ -1570,13 +1843,13 @@ export class Evotor {
 				{ sell: Record<string, number>; refund: Record<string, number> }
 			> = {};
 
-			// Проходим по каждому магазину
-			for (const shopUuid of shopUuids) {
-				const salesData: Document[] = await this.getDocumentsBySellPayback(
-					shopUuid,
-					since,
-					until,
-				);
+				// Проходим по каждому магазину
+				for (const shopUuid of shopUuids) {
+					const salesData = db
+						? await getDocumentsFromIndexFirst(db, this, shopUuid, since, until, {
+								types: ["SELL", "PAYBACK"],
+							})
+						: await this.getDocumentsBySellPayback(shopUuid, since, until);
 
 				// Инициализируем структуру данных для текущего магазина
 				if (!salesDataByShop[shopUuid]) {

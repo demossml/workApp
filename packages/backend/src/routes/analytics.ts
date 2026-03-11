@@ -14,6 +14,7 @@ import { aggregateShopFinancialFromDocuments } from "../contracts/financialAggre
 import { getData as getOpeningByDateAndShop } from "../db/repositories/openShops";
 import { getAllUuid as getAccessoryGroupUuids } from "../db/repositories/accessories";
 import { getProductsByGroup } from "../db/repositories/products";
+import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
 
 function percentile(values: number[], p: number) {
 	if (values.length === 0) return 0;
@@ -98,6 +99,7 @@ function trimmedMean(values: number[], trimRatio = 0.1): number {
 }
 
 async function computeAutoTotalSalesPlan(
+	db: D1Database,
 	evo: IEnv["Variables"]["evotor"],
 	targetDate: Date,
 	options?: {
@@ -122,12 +124,18 @@ async function computeAutoTotalSalesPlan(
 
 	const since = formatDateWithTime(historyStart, false);
 	const until = formatDateWithTime(historyEnd, true);
-	const allDocs = await evo.getAllDocumentsByTypes(since, until);
-	const shopFilter = new Set(options?.shopUuidsFilter || []);
-	const docs =
-		shopFilter.size > 0
-			? allDocs.filter((doc) => shopFilter.has(doc.storeUuid))
-			: allDocs;
+	const shopUuids =
+		options?.shopUuidsFilter && options.shopUuidsFilter.length > 0
+			? options.shopUuidsFilter
+			: await evo.getShopUuids();
+	const docsByShop = await Promise.all(
+		shopUuids.map((shopUuid) =>
+			getDocumentsFromIndexFirst(db, evo, shopUuid, since, until, {
+				types: ["SELL", "PAYBACK"],
+			}),
+		),
+	);
+	const docs = docsByShop.flat();
 
 	const dailyNetMap = new Map<string, number>();
 	for (const doc of docs) {
@@ -186,6 +194,7 @@ async function computeAutoTotalSalesPlan(
 }
 
 async function computeHourlyPlanWeights(
+	db: D1Database,
 	evo: IEnv["Variables"]["evotor"],
 	targetDate: Date,
 	options: {
@@ -209,12 +218,18 @@ async function computeHourlyPlanWeights(
 
 	const since = formatDateWithTime(historyStart, false);
 	const until = formatDateWithTime(historyEnd, true);
-	const allDocs = await evo.getAllDocumentsByTypes(since, until);
-	const shopFilter = new Set(options.shopUuidsFilter || []);
-	const docs =
-		shopFilter.size > 0
-			? allDocs.filter((doc) => shopFilter.has(doc.storeUuid))
-			: allDocs;
+	const shopUuids =
+		options.shopUuidsFilter && options.shopUuidsFilter.length > 0
+			? options.shopUuidsFilter
+			: await evo.getShopUuids();
+	const docsByShop = await Promise.all(
+		shopUuids.map((shopUuid) =>
+			getDocumentsFromIndexFirst(db, evo, shopUuid, since, until, {
+				types: ["SELL", "PAYBACK"],
+			}),
+		),
+	);
+	const docs = docsByShop.flat();
 
 	const hours = Array.from({ length: closeHour - openHour + 1 }, (_, i) => i + openHour);
 	const hourNet = new Map<number, number>(hours.map((h) => [h, 0]));
@@ -896,10 +911,13 @@ export const analyticsRoutes = new Hono<IEnv>()
 
 		const stores = await Promise.all(
 			shopUuids.map(async (shopUuid) => {
-				const documents = await evo.getDocumentsBySellPayback(
+				const documents = await getDocumentsFromIndexFirst(
+					c.get("db"),
+					evo,
 					shopUuid,
 					sinceIso,
 					untilIso,
+					{ types: ["SELL", "PAYBACK"] },
 				);
 				let revenue = 0;
 				let refunds = 0;
@@ -989,10 +1007,13 @@ export const analyticsRoutes = new Hono<IEnv>()
 
 		const byShop = await Promise.all(
 			shopUuids.map(async (shopUuid) => {
-				const documents = await evo.getDocumentsBySellPayback(
+				const documents = await getDocumentsFromIndexFirst(
+					c.get("db"),
+					evo,
 					shopUuid,
 					sinceIso,
 					untilIso,
+					{ types: ["SELL", "PAYBACK"] },
 				);
 
 				const paymentAgg = aggregateShopFinancialFromDocuments(
@@ -1110,7 +1131,14 @@ export const analyticsRoutes = new Hono<IEnv>()
 
 		const refundsRaw = await Promise.all(
 			shopUuids.map(async (shopUuid) => {
-				const docs = await evo.getDocumentsBySellPayback(shopUuid, sinceIso, untilIso);
+				const docs = await getDocumentsFromIndexFirst(
+					c.get("db"),
+					evo,
+					shopUuid,
+					sinceIso,
+					untilIso,
+					{ types: ["SELL", "PAYBACK"] },
+				);
 				return docs
 					.filter((doc) => doc.type === "PAYBACK")
 					.map((doc) => {
@@ -1135,13 +1163,13 @@ export const analyticsRoutes = new Hono<IEnv>()
 							}))
 							.filter((item) => item.sum > 0 || item.quantity > 0);
 
-						return {
-							shopUuid,
-							shopName: shopNamesMap[shopUuid] || shopUuid,
-							documentId: doc.id,
-							documentNumber: doc.number,
-							closeDate: doc.closeDate,
-							openUserUuid: doc.openUserUuid || "",
+							return {
+								shopUuid,
+								shopName: shopNamesMap[shopUuid] || shopUuid,
+								documentId: `${shopUuid}-${doc.number}-${doc.closeDate}`,
+								documentNumber: doc.number,
+								closeDate: doc.closeDate,
+								openUserUuid: doc.openUserUuid || "",
 							refundTotal,
 							paymentBreakdown,
 							items,
@@ -1205,15 +1233,18 @@ export const analyticsRoutes = new Hono<IEnv>()
 		const docsByShop = await Promise.all(
 			shopUuids.map(async (shopUuid) => ({
 				shopUuid,
-				docs: await evo.getDocumentsBySellPayback(
+				docs: await getDocumentsFromIndexFirst(
+					c.get("db"),
+					evo,
 					shopUuid,
 					dateStartIso,
 					dateEndIso,
+					{ types: ["SELL", "PAYBACK"] },
 				),
 			})),
 		);
 
-		const autoPlanResult = await computeAutoTotalSalesPlan(evo, dateObj, {
+		const autoPlanResult = await computeAutoTotalSalesPlan(c.get("db"), evo, dateObj, {
 			historyDays: Number(c.req.query("historyDays") || 28),
 			growthBiasPct: Number(c.req.query("growthBiasPct") || 5),
 			shopUuidsFilter: shopUuids,
@@ -1251,7 +1282,7 @@ export const analyticsRoutes = new Hono<IEnv>()
 		);
 		const factByHour = new Map<number, number>(hours.map((h) => [h, 0]));
 		const accessoriesByHour = new Map<number, number>(hours.map((h) => [h, 0]));
-		const hourlyPlanWeights = await computeHourlyPlanWeights(evo, dateObj, {
+		const hourlyPlanWeights = await computeHourlyPlanWeights(c.get("db"), evo, dateObj, {
 			openHour,
 			closeHour,
 			historyDays,
@@ -1396,10 +1427,10 @@ export const analyticsRoutes = new Hono<IEnv>()
 			return true;
 		});
 
-		const result = await computeAutoTotalSalesPlan(c.var.evotor, dateObj, {
-			historyDays: Number(c.req.query("historyDays") || 28),
-			growthBiasPct: Number(c.req.query("growthBiasPct") || 5),
-			shopUuidsFilter: filteredShopUuids,
+			const result = await computeAutoTotalSalesPlan(c.get("db"), c.var.evotor, dateObj, {
+				historyDays: Number(c.req.query("historyDays") || 28),
+				growthBiasPct: Number(c.req.query("growthBiasPct") || 5),
+				shopUuidsFilter: filteredShopUuids,
 		});
 		return c.json({
 			date: queryDate,

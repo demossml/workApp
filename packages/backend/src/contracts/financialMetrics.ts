@@ -20,8 +20,11 @@ export const TopProductSchema = z
 		refundQuantity: z.number().finite(),
 		netRevenue: z.number().finite(),
 		netQuantity: z.number().finite(),
+		grossProfit: z.number().finite(),
+		marginPct: z.number().finite(),
 		averagePrice: z.number().finite(),
 		refundRate: z.number().finite(),
+		dailyNetRevenue7: z.array(z.number().finite()).length(7),
 	})
 	.strict();
 
@@ -34,6 +37,8 @@ export const FinancialMetricsResponseSchema = z
 		averageCheck: z.number().finite(),
 		grandTotalCashOutcome: z.number().finite().nonnegative(),
 		cashOutcomeData: z.record(AmountByPaymentTypeSchema),
+		cashBalanceByShop: z.record(z.number().finite()),
+		totalCashBalance: z.number().finite(),
 		totalChecks: z.number().int().nonnegative(),
 		topProducts: z.array(TopProductSchema),
 	})

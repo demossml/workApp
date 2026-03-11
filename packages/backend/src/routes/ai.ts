@@ -36,7 +36,8 @@ import {
 	analyzeDocsAnomaliesTask,
 	analyzeDocsPatternsTask,
 } from "../ai";
-import type { Document, Product } from "../evotor/types";
+import type { Product } from "../evotor/types";
+import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
 
 const toIsoDate = (date: Date) => date.toISOString().split("T")[0];
 
@@ -391,9 +392,17 @@ export const aiRoutes = new Hono<IEnv>()
 
 		const [start, end] = getTodayRangeEvotor();
 
-		const docs = await evo.getAllDocumentsByTypes(start, end);
+		const shopUuids = await evo.getShopUuids();
+		const docsByShop = await Promise.all(
+			shopUuids.map((shopUuid) =>
+				getDocumentsFromIndexFirst(c.get("db"), evo, shopUuid, start, end, {
+					types: ["SELL", "PAYBACK"],
+				}),
+			),
+		);
+		const docs = docsByShop.flat();
 
-		const docFiltered = await evo.extractSalesInfo(docs);
+		const docFiltered = await evo.extractSalesInfo(docs as any);
 
 		const result = await analyzeDocsStaffTask(c, docFiltered);
 
@@ -407,9 +416,17 @@ export const aiRoutes = new Hono<IEnv>()
 		const [start, end] = getPeriodRangeEvotor(3);
 		logger.debug("Period range", { start, end });
 
-		const docs = await evo.getAllDocumentsByTypes(start, end);
+		const shopUuids = await evo.getShopUuids();
+		const docsByShop = await Promise.all(
+			shopUuids.map((shopUuid) =>
+				getDocumentsFromIndexFirst(c.get("db"), evo, shopUuid, start, end, {
+					types: ["SELL", "PAYBACK"],
+				}),
+			),
+		);
+		const docs = docsByShop.flat();
 
-		const docFiltered = await evo.extractSalesInfo(docs);
+		const docFiltered = await evo.extractSalesInfo(docs as any);
 
 		const result = await analyzeDocsStaffTask(c, docFiltered);
 
@@ -457,7 +474,14 @@ export const aiRoutes = new Hono<IEnv>()
 			const since = formatDateWithTime(new Date(startDate), false);
 			const until = formatDateWithTime(new Date(endDate), true);
 
-			const docs = await evo.getDocumentsBySellPayback(shopUuid, since, until);
+			const docs = await getDocumentsFromIndexFirst(
+				c.get("db"),
+				evo,
+				shopUuid,
+				since,
+				until,
+				{ types: ["SELL", "PAYBACK"] },
+			);
 
 			if (!docs || docs.length === 0) {
 				return c.json(
@@ -471,7 +495,7 @@ export const aiRoutes = new Hono<IEnv>()
 				);
 			}
 
-			const salesInfo = await evo.extractSalesInfo(docs);
+			const salesInfo = await evo.extractSalesInfo(docs as any);
 
 			const {
 				calculateSalesMetrics,
@@ -502,13 +526,16 @@ export const aiRoutes = new Hono<IEnv>()
 				  }
 				| undefined;
 			try {
-				const prevDocs = await evo.getDocumentsBySellPayback(
+				const prevDocs = await getDocumentsFromIndexFirst(
+					c.get("db"),
+					evo,
 					shopUuid,
 					prevSince,
 					prevUntil,
+					{ types: ["SELL", "PAYBACK"] },
 				);
 				if (prevDocs && prevDocs.length > 0) {
-					const prevSalesInfo = await evo.extractSalesInfo(prevDocs);
+					const prevSalesInfo = await evo.extractSalesInfo(prevDocs as any);
 					const prevStats = calculateSalesMetrics(prevSalesInfo);
 					previousMetrics = {
 						revenue: prevStats.totalRevenue,
@@ -579,15 +606,21 @@ export const aiRoutes = new Hono<IEnv>()
 			);
 
 			const [docs, previousDocs, productsRaw] = await Promise.all([
-				evo.getDocumentsBySellPayback(
+				getDocumentsFromIndexFirst(
+					c.get("db"),
+					evo,
 					payload.shopUuid,
 					formatDateWithTime(new Date(payload.startDate), false),
 					formatDateWithTime(new Date(payload.endDate), true),
+					{ types: ["SELL", "PAYBACK"] },
 				),
-				evo.getDocumentsBySellPayback(
+				getDocumentsFromIndexFirst(
+					c.get("db"),
+					evo,
 					payload.shopUuid,
 					formatDateWithTime(new Date(previous.previousStart), false),
 					formatDateWithTime(new Date(previous.previousEnd), true),
+					{ types: ["SELL", "PAYBACK"] },
 				),
 				evo.getProducts(payload.shopUuid),
 			]);
@@ -604,7 +637,18 @@ export const aiRoutes = new Hono<IEnv>()
 			);
 			const productByUuid = new Map(products.map((p) => [p.uuid, p]));
 
-			const aggregateSales = (documents: Document[]) => {
+			const aggregateSales = (
+				documents: Array<{
+					type: string;
+					transactions?: Array<{
+						type?: string;
+						commodityUuid?: string;
+						quantity?: number;
+						sum?: number;
+						costPrice?: number;
+					}>;
+				}>,
+			) => {
 				const acc = new Map<
 					string,
 					{ quantity: number; revenue: number; cost: number }
@@ -614,8 +658,9 @@ export const aiRoutes = new Hono<IEnv>()
 					const sign = doc.type === "SELL" ? 1 : -1;
 					for (const tx of doc.transactions || []) {
 						if (tx.type !== "REGISTER_POSITION") continue;
-						if (!productByUuid.has(tx.commodityUuid)) continue;
-						const current = acc.get(tx.commodityUuid) || {
+						const commodityUuid = tx.commodityUuid;
+						if (!commodityUuid || !productByUuid.has(commodityUuid)) continue;
+						const current = acc.get(commodityUuid) || {
 							quantity: 0,
 							revenue: 0,
 							cost: 0,
@@ -624,7 +669,7 @@ export const aiRoutes = new Hono<IEnv>()
 						current.quantity += quantity;
 						current.revenue += Number(tx.sum || 0) * sign;
 						current.cost += Number(tx.costPrice || 0) * Number(tx.quantity || 0) * sign;
-						acc.set(tx.commodityUuid, current);
+						acc.set(commodityUuid, current);
 					}
 				}
 				return acc;
@@ -747,10 +792,13 @@ export const aiRoutes = new Hono<IEnv>()
 			const payload = validate(EmployeeShiftKpiSchema, await c.req.json());
 			const evo = c.var.evotor;
 			const periodDays = daysInRangeInclusive(payload.startDate, payload.endDate);
-			const docs = await evo.getDocumentsBySellPayback(
+			const docs = await getDocumentsFromIndexFirst(
+				c.get("db"),
+				evo,
 				payload.shopUuid,
 				formatDateWithTime(new Date(payload.startDate), false),
 				formatDateWithTime(new Date(payload.endDate), true),
+				{ types: ["SELL", "PAYBACK"] },
 			);
 
 			const employeeAgg = new Map<

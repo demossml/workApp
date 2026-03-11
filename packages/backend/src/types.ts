@@ -14,6 +14,7 @@ export type IEnv = {
 		ALERT_TZ_OFFSET_MINUTES?: string;
 		ALERT_REFUND_THRESHOLD_PCT?: string;
 		ALERT_REVENUE_DROP_THRESHOLD_PCT?: string;
+		ONEC_API_KEY?: string;
 	};
 	Variables: {
 		userId: string;

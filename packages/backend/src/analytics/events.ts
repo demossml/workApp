@@ -13,6 +13,7 @@ export const APP_EVENT_NAMES = [
 	"api_request_failed",
 	"telegram_digest_sent",
 	"telegram_digest_failed",
+	"onec_prices_imported",
 	"auth_guest_login",
 	"auth_webapp_verified",
 ] as const;

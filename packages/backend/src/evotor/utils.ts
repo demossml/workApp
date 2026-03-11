@@ -185,6 +185,15 @@ export async function getTopProductsData(
 	until: string,
 ) {
 	try {
+		const endDate = new Date(until);
+		const dayKeys: string[] = [];
+		for (let i = 6; i >= 0; i--) {
+			const d = new Date(endDate);
+			d.setDate(endDate.getDate() - i);
+			dayKeys.push(d.toISOString().slice(0, 10));
+		}
+		const dayIndex = new Map(dayKeys.map((key, idx) => [key, idx]));
+
 		const productStats = new Map<
 			string,
 			{
@@ -192,6 +201,9 @@ export async function getTopProductsData(
 				quantity: number;
 				refundRevenue: number;
 				refundQuantity: number;
+				cost: number;
+				refundCost: number;
+				dailyNetRevenue7: number[];
 			}
 		>();
 
@@ -217,14 +229,29 @@ export async function getTopProductsData(
 						quantity: 0,
 						refundRevenue: 0,
 						refundQuantity: 0,
+						cost: 0,
+						refundCost: 0,
+						dailyNetRevenue7: [0, 0, 0, 0, 0, 0, 0],
 					};
+					const lineCost =
+						Number(trans.costPrice || 0) * Number(trans.quantity || 0);
+					const dayKey = new Date(doc.closeDate).toISOString().slice(0, 10);
+					const idx = dayIndex.get(dayKey);
 
 					if (isRefund) {
 						existing.refundRevenue += trans.sum || 0;
 						existing.refundQuantity += trans.quantity || 0;
+						existing.refundCost += lineCost;
+						if (typeof idx === "number") {
+							existing.dailyNetRevenue7[idx] -= Number(trans.sum || 0);
+						}
 					} else {
 						existing.revenue += trans.sum || 0;
 						existing.quantity += trans.quantity || 0;
+						existing.cost += lineCost;
+						if (typeof idx === "number") {
+							existing.dailyNetRevenue7[idx] += Number(trans.sum || 0);
+						}
 					}
 
 					productStats.set(productName, existing);
@@ -234,18 +261,25 @@ export async function getTopProductsData(
 
 		// Конвертируем в массив и сортируем по чистой выручке
 		const topProducts = Array.from(productStats.entries())
-			.map(([productName, stats]) => ({
-				productName,
-				revenue: stats.revenue,
-				quantity: stats.quantity,
-				refundRevenue: stats.refundRevenue,
-				refundQuantity: stats.refundQuantity,
-				netRevenue: stats.revenue - stats.refundRevenue,
-				netQuantity: stats.quantity - stats.refundQuantity,
-				averagePrice: stats.quantity > 0 ? stats.revenue / stats.quantity : 0,
-				refundRate:
-					stats.revenue > 0 ? (stats.refundRevenue / stats.revenue) * 100 : 0,
-			}))
+			.map(([productName, stats]) => {
+				const netRevenue = stats.revenue - stats.refundRevenue;
+				const grossProfit = netRevenue - (stats.cost - stats.refundCost);
+				return {
+					productName,
+					revenue: stats.revenue,
+					quantity: stats.quantity,
+					refundRevenue: stats.refundRevenue,
+					refundQuantity: stats.refundQuantity,
+					netRevenue,
+					netQuantity: stats.quantity - stats.refundQuantity,
+					grossProfit,
+					marginPct: netRevenue > 0 ? (grossProfit / netRevenue) * 100 : 0,
+					averagePrice: stats.quantity > 0 ? stats.revenue / stats.quantity : 0,
+					refundRate:
+						stats.revenue > 0 ? (stats.refundRevenue / stats.revenue) * 100 : 0,
+					dailyNetRevenue7: stats.dailyNetRevenue7,
+				};
+			})
 			.filter((p) => p.netRevenue > 0) // Только товары с положительной выручкой
 			.sort((a, b) => b.netRevenue - a.netRevenue);
 

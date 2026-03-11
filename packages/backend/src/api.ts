@@ -9,6 +9,7 @@ import { evotorRoutes } from "./routes/evotor";
 import { deadStocksRoutes } from "./routes/deadStocksRoutes";
 import { analyticsRoutes } from "./routes/analytics";
 import { telegramRoutes } from "./routes/telegram";
+import { onecRoutes } from "./routes/onec";
 
 export const api = new Hono<IEnv>()
 	.route("/api/employees", employeesRoutes)
@@ -19,6 +20,7 @@ export const api = new Hono<IEnv>()
 	.route("/api/evotor", evotorRoutes)
 	.route("/api/deadStocks", deadStocksRoutes)
 	.route("/api/analytics", analyticsRoutes)
-	.route("/api/telegram", telegramRoutes);
+	.route("/api/telegram", telegramRoutes)
+	.route("/api/1c", onecRoutes);
 
 export type IAPI = typeof api;

@@ -11,6 +11,7 @@ import {
 import { getPlan } from "../db/repositories/plan";
 import { getOpeningsByDate } from "../db/repositories/openStores";
 import { saveAppEvent } from "../db/repositories/appEvents";
+import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
 
 interface ShopDayMetrics {
 	shopUuid: string;
@@ -44,6 +45,7 @@ function nowWithOffset(offsetMinutes: number) {
 }
 
 async function getShopDayMetrics(
+	db: IEnv["Bindings"]["DB"],
 	evotor: Evotor,
 	dateIso: string,
 ): Promise<ShopDayMetrics[]> {
@@ -54,10 +56,13 @@ async function getShopDayMetrics(
 
 	return Promise.all(
 		shopUuids.map(async (shopUuid) => {
-			const documents = await evotor.getDocumentsBySellPayback(
+			const documents = await getDocumentsFromIndexFirst(
+				db,
+				evotor,
 				shopUuid,
 				since,
 				until,
+				{ types: ["SELL", "PAYBACK"] },
 			);
 			let revenue = 0;
 			let refunds = 0;
@@ -121,8 +126,8 @@ export async function runDailyTelegramDigestAndAlerts(bindings: IEnv["Bindings"]
 
 	const [yesterdayMetrics, prevMetrics, shops, openingsToday, planYesterday] =
 		await Promise.all([
-			getShopDayMetrics(evotor, yesterdayISO),
-			getShopDayMetrics(evotor, prevISO),
+			getShopDayMetrics(bindings.DB, evotor, yesterdayISO),
+			getShopDayMetrics(bindings.DB, evotor, prevISO),
 			evotor.getShopNameUuids(),
 			getOpeningsByDate(bindings.DB, todayDDMM),
 			getPlan(yesterdayDDMM, bindings.DB),

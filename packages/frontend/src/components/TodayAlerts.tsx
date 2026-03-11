@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, TrendingDown, Clock } from "lucide-react";
 import { client } from "../helpers/api";
+import { FinancialMetricsResponseSchema } from "@work-appt/backend/src/contracts/financialMetrics";
 
 // Интерфейс для структуры данных о продажах
 interface SalesData {
@@ -26,32 +27,28 @@ export default function TodayAlerts() {
     // Функция для загрузки данных и формирования оповещений
     const fetchData = async () => {
       try {
-        const today = new Date().toISOString().split("T")[0]; // Сегодняшняя дата YYYY-MM-DD
-
-        const response = await client.api.evotor.financial.$get({
-          query: {
-            since: today,
-            until: today,
-          },
-        });
+        const response = await client.api.evotor.financial.today.$get();
 
         // Если сервер вернул ошибку (например 400), пробрасываем её в catch
         if (!response.ok) {
-          const errorData = await response.json().catch(() => null);
+          const errorData = await response
+            .json()
+            .catch(async () => ({ message: await response.text().catch(() => "") }));
           console.error("[TodayAlerts] Ошибка ответа API:", errorData);
-          throw new Error("Ошибка запроса финансового отчёта");
+          throw new Error(
+            (errorData &&
+              typeof errorData === "object" &&
+              ("error" in errorData || "message" in errorData) &&
+              String((errorData as { error?: string; message?: string }).error || (errorData as { message?: string }).message)) ||
+              "Ошибка запроса финансового отчёта"
+          );
         }
 
-        const data = await response.json();
+        const rawData = await response.json();
+        const parsed = FinancialMetricsResponseSchema.safeParse(rawData);
 
-        // Проверяем, что это действительно SalesData
-        if (
-          !data ||
-          typeof data !== "object" ||
-          !("salesDataByShopName" in data) ||
-          !("grandTotalSell" in data)
-        ) {
-          console.warn("[TodayAlerts] Некорректные данные о продажах:", data);
+        if (!parsed.success) {
+          console.warn("[TodayAlerts] Некорректные данные о продажах:", rawData);
           setAlerts([
             {
               type: "danger",
@@ -62,6 +59,7 @@ export default function TodayAlerts() {
           ]);
           return;
         }
+        const data = parsed.data;
 
         // Приводим salesDataByShopName к нужному виду (sell/refund — суммы)
         const normalizedSalesDataByShopName: Record<

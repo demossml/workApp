@@ -1,19 +1,32 @@
-// components/cards/BestShopCard.tsx
 import { motion } from "framer-motion";
-import { formatCurrency } from "../../../utils/formatCurrency";
 import { Award } from "lucide-react";
+import { formatCurrency } from "../../../utils/formatCurrency";
 
-interface BestShop {
+export type LeaderMode = "day" | "week";
+export type LeaderReason = "чек" | "трафик" | "конверсия";
+
+export interface ShopLeaderCardData {
   name: string;
-  sales: number;
+  netRevenue: number;
+  gapToSecond: number;
+  reason: LeaderReason;
 }
 
 interface BestShopCardProps {
-  shop: BestShop;
+  dayLeader: ShopLeaderCardData | null;
+  weekLeader: ShopLeaderCardData | null;
+  mode: LeaderMode;
   onClick?: () => void;
 }
 
-export function BestShopCard({ shop, onClick }: BestShopCardProps) {
+export function BestShopCard({
+  dayLeader,
+  weekLeader,
+  mode,
+  onClick,
+}: BestShopCardProps) {
+  const current = mode === "week" ? weekLeader : dayLeader;
+
   return (
     <motion.div
       whileHover={{ scale: 1.03, y: -2 }}
@@ -25,10 +38,17 @@ export function BestShopCard({ shop, onClick }: BestShopCardProps) {
         <span className="text-xs font-medium opacity-90">Топ магазин</span>
         <Award className="w-5 h-5 opacity-80" />
       </div>
-      <div className="text-lg font-bold truncate">{shop.name}</div>
-      <div className="text-xs opacity-75 mt-1">
-        {formatCurrency(shop.sales)} ₽
-      </div>
+
+      {current ? (
+        <>
+          <div className="text-lg font-bold truncate">{current.name}</div>
+          <div className="text-sm opacity-90 mt-1">
+            {formatCurrency(current.netRevenue)} ₽
+          </div>
+        </>
+      ) : (
+        <div className="text-sm opacity-90">Нет данных</div>
+      )}
     </motion.div>
   );
 }

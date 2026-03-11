@@ -1,28 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { DateRange } from "react-day-picker";
+import { motion } from "framer-motion";
 import { PeriodSelector } from "../../components/Period";
-import { ShopSelector } from "../../components/ShopSelector"; // Импортируем компонент "Назад"
+import { ShopSelector } from "../../components/ShopSelector";
 import { useMe } from "../../hooks/useApi";
-
-import React from "react";
 import { DynamicTable } from "../../components/DynamicTable";
 import { ErrorDisplay } from "../../components/ErrorDisplay";
 import { GroupSelector } from "../../components/GroupSelector";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
+import { Button, Calendar, Popover, PopoverContent, PopoverTrigger } from "../../components/ui";
 
-// Интерфейсы для типов данных
 interface GroupOption {
   name: string;
   uuid: string;
 }
-
-// interface ProductData {
-//   orderQuantity: number;
-//   smaQuantity: number;
-//   quantity: number;
-//   sum: number;
-// }
 
 interface ReportData {
   order: Record<string, { [key: string]: number }>;
@@ -31,215 +24,184 @@ interface ReportData {
   shopName: string;
 }
 
-export default function Order() {
+export default function Orders() {
   const [shopOptions, setShopOptions] = useState<Record<string, string>>({});
-  const [selectedShop, setSelectedShop] = useState<string | null>(null); // Добавляем состояние для выбранного магазина
-
+  const [selectedShop, setSelectedShop] = useState<string | null>(null);
   const [groupOptions, setGroupOptions] = useState<GroupOption[]>([]);
-  const [isLoadingGroups, setIsLoadingGroups] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
+  const [isLoadingShops, setIsLoadingShops] = useState(false);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
-  // Состояния для отображения всех магазинов
-  const [startDate, setStartDate] = useState<Date | null>(null);
-  const [endDate, setEndDate] = useState<Date | null>(null);
-  const [showInstructions, setShowInstructions] = useState(false);
-  const [daysFromStart, setDaysFromStart] = useState<Date[]>([]);
-
-  const [isLoadingReport, setIsLoadingReport] = useState<boolean>(false);
-  const [reportData, setReportData] = useState<ReportData | null>(null);
-
   const [selectedPeriod, setSelectedPeriod] = useState<number | null>(null);
-  const [isLoadingShops, setIsLoadingShops] = useState<boolean>(false);
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showInstructions, setShowInstructions] = useState(false);
 
-  useTelegramBackButton({
-    show: true,
-  });
+  const [dateMode, setDateMode] = useState<"lastWeek" | "period">("lastWeek");
+  const [period, setPeriod] = useState<DateRange | undefined>(undefined);
+  const [tempPeriod, setTempPeriod] = useState<DateRange | undefined>(undefined);
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState<string | null>(null);
 
-  const toggleInstructions = () => {
-    setShowInstructions(!showInstructions);
+  useTelegramBackButton({ show: true });
+
+  const { data } = useMe();
+  const userId = data?.id?.toString() || "";
+
+  const formatLocalDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   };
 
-  const { data } = useMe(); // Получаем данные из хука useAuthCheck
-  const userId = data?.id.toString() || " ";
+  const formatDate = (date: Date) =>
+    date.toLocaleDateString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+
+  const formatCompactDate = (date: string) =>
+    new Date(date).toLocaleDateString("ru-RU", {
+      day: "2-digit",
+      month: "short",
+    });
+
+  const getLastWeekRange = () => {
+    const today = new Date();
+    const day = today.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const thisWeekMonday = new Date(today);
+    thisWeekMonday.setDate(today.getDate() + mondayOffset);
+
+    const start = new Date(thisWeekMonday);
+    start.setDate(thisWeekMonday.getDate() - 7);
+
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+
+    return {
+      startDate: formatLocalDate(start),
+      endDate: formatLocalDate(end),
+    };
+  };
+
+  useEffect(() => {
+    if (dateMode === "lastWeek") {
+      const range = getLastWeekRange();
+      setStartDate(range.startDate);
+      setEndDate(range.endDate);
+      setPeriod(undefined);
+      setTempPeriod(undefined);
+      setShowPeriodPicker(false);
+    }
+  }, [dateMode]);
+
+  useEffect(() => {
+    if (dateMode !== "period" || !period?.from || !period?.to) return;
+    setStartDate(formatLocalDate(period.from));
+    setEndDate(formatLocalDate(period.to));
+  }, [dateMode, period]);
 
   useEffect(() => {
     const fetchSalesData = async () => {
-      setIsLoadingShops(true); // Начало загрузки групп
-
+      setIsLoadingShops(true);
+      setError(null);
       try {
         const response = await client.api.evotor.shops.$post({
           json: { userId },
         });
 
-        if (!response.ok) {
-          throw new Error(`Ошибка: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
 
-        const data = await response.json();
-        setShopOptions(data.shopOptions);
+        const result = await response.json();
+        setShopOptions(result.shopOptions);
 
-        // Если магазины есть, устанавливаем первый магазин как выбранный
-        if (Object.keys(data.shopOptions).length > 0) {
-          const defaultShopUuid = Object.keys(data.shopOptions)[0];
-          setSelectedShop(defaultShopUuid); // Устанавливаем первый магазин как выбранный
-          await fetchGroups(defaultShopUuid); // Получаем группы для первого магазина
+        if (Object.keys(result.shopOptions).length > 0) {
+          const defaultShopUuid = Object.keys(result.shopOptions)[0];
+          setSelectedShop(defaultShopUuid);
+          await fetchGroups(defaultShopUuid);
         }
       } catch (err) {
         console.error(err);
+        setError("Не удалось загрузить список магазинов");
       } finally {
-        setIsLoadingShops(false); // Завершение загрузки групп
+        setIsLoadingShops(false);
       }
     };
 
     if (userId) {
-      fetchSalesData();
+      void fetchSalesData();
     }
   }, [userId]);
 
   const fetchGroups = async (shopUuid: string) => {
-    setIsLoadingGroups(true); // Начало загрузки групп
+    setIsLoadingGroups(true);
+    setError(null);
     try {
       const response = await client.api.evotor["groups-by-shop"].$post({
-        json: {
-          shopUuid,
-        },
+        json: { shopUuid },
       });
 
       if (!response.ok) {
         throw new Error(`Ошибка загрузки групп: ${response.status}`);
       }
 
-      const data = (await response.json()) as
+      const result = (await response.json()) as
         | { groups: GroupOption[] }
         | { code: string; message: string; details?: unknown };
-      if (!("groups" in data)) {
-        throw new Error(data.message || "Не удалось загрузить группы");
+
+      if (!("groups" in result)) {
+        throw new Error(result.message || "Не удалось загрузить группы");
       }
-      setGroupOptions(data.groups || []);
+      setGroupOptions(result.groups || []);
       setSelectedGroups([]);
     } catch (err) {
       console.error(err);
       setError("Не удалось загрузить группы для выбранного магазина");
     } finally {
-      setIsLoadingGroups(false); // Завершение загрузки групп
+      setIsLoadingGroups(false);
     }
   };
 
-  // const toggleGroups = () => {
-  //   setShowGroups((prev) => !prev);
-  // };
+  const isFormValid =
+    !!startDate &&
+    !!endDate &&
+    !!selectedShop &&
+    !!selectedPeriod &&
+    selectedGroups.length > 0;
 
-  // Функция для вычисления начала дня
-  const getStartOfToday = (date: Date) => {
-    const today = new Date(date);
-    today.setHours(0, 0, 0, 0);
-    return today;
-  };
-
-  // Функция для генерации массива из 7 дней начиная с указанной даты
-  const getDaysFrom = (start: Date) => {
-    return Array.from({ length: 7 }, (_, i) => {
-      const day = new Date(start);
-      day.setDate(start.getDate() + i);
-      return day;
-    });
-  };
-
-  // Функция для выбора начальной даты
-  const selectDate = (date: Date) => {
-    if (!startDate || (startDate && endDate)) {
-      // Устанавливаем новую дату начала
-      setStartDate(date);
-      setEndDate(null);
-
-      // Обновляем список отображаемых дней
-      const updatedDays = getDaysFrom(date);
-      setDaysFromStart(updatedDays);
-    } else if (startDate && !endDate) {
-      // Устанавливаем дату конца
-      setEndDate(date);
-    }
-  };
-
-  // Сброс выбора
-  const resetSelection = () => {
-    setStartDate(null);
-    setEndDate(null);
-    setDaysFromStart(getDaysFrom(getStartOfToday(new Date())));
-  };
-
-  // Форматирование даты
-  const formatDate = (date: Date) =>
-    `${date.getDate().toString().padStart(2, "0")} ${date.toLocaleString(
-      "default",
-      {
-        month: "short",
-      }
-    )}`;
-
-  // При первой загрузке задаем дни начиная с сегодняшнего дня
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
-  React.useEffect(() => {
-    const today = getStartOfToday(new Date());
-    setDaysFromStart(getDaysFrom(today));
-  }, []);
-
-  const formatPeriod = (
-    shopName: string,
-    startDate: string,
-    endDate: string
-  ): string => {
-    const formattedStartDate = formatDate(new Date(startDate));
-    const formattedEndDate = formatDate(new Date(endDate));
-    return `${shopName}, ${formattedStartDate} → ${formattedEndDate}`;
-  };
-  // Функция для отправки данных на сервер
   const submitForecast = async () => {
-    // Проверяем, что все необходимые данные выбраны
-    if (
-      !startDate ||
-      !endDate ||
-      !selectedShop ||
-      !selectedPeriod ||
-      selectedGroups.length === 0
-    ) {
-      alert("Пожалуйста, выберите все параметры для формирования прогноза.");
+    if (!isFormValid) {
+      setError("Выберите период, магазин, группы и количество периодов SMA.");
       return;
     }
 
-    // Форматируем даты в YYYY-MM-DD
-    const formatDateToYYYYMMDD = (date: Date) => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      const day = String(date.getDate()).padStart(2, "0");
-      return `${year}-${month}-${day}`;
-    };
-
-    const data = {
-      startDate: formatDateToYYYYMMDD(startDate),
-      endDate: formatDateToYYYYMMDD(endDate),
-      shopUuid: selectedShop,
-      groups: selectedGroups,
-      period: selectedPeriod,
-      userId: userId,
-    };
     setIsLoadingReport(true);
-
+    setError(null);
     try {
       const response = await client.api.evotor.order.$post({
-        json: data,
+        json: {
+          startDate,
+          endDate,
+          shopUuid: selectedShop,
+          groups: selectedGroups,
+          period: selectedPeriod,
+          userId,
+        },
       });
 
       if (!response.ok) {
         const err = (await response.json().catch(() => null)) as
           | Record<string, unknown>
           | null;
-        const msg =
+        const message =
           (typeof err?.error === "string" ? err.error : undefined) ||
           (typeof err?.message === "string" ? err.message : undefined) ||
           `Ошибка: ${response.status}`;
-        throw new Error(msg);
+        throw new Error(message);
       }
 
       const report = (await response.json()) as
@@ -251,313 +213,289 @@ export default function Order() {
       setReportData(report);
     } catch (err) {
       console.error(err);
-      setError("Не удалось получить отчёт");
+      setError("Не удалось получить прогноз закупки");
     } finally {
-      setIsLoadingReport(false); // Завершаем загрузку
+      setIsLoadingReport(false);
     }
   };
 
-  if (isLoadingReport) {
-    return <LoadingSpinner />;
-  }
+  const normalizedProducts = useMemo(
+    () =>
+      reportData
+        ? Object.values(reportData.order).filter(
+            (product): product is {
+              orderQuantity: number;
+              smaQuantity: number;
+              quantity: number;
+              sum: number;
+            } =>
+              !!product &&
+              typeof product === "object" &&
+              typeof product.orderQuantity === "number" &&
+              typeof product.smaQuantity === "number" &&
+              typeof product.quantity === "number" &&
+              typeof product.sum === "number"
+          )
+        : [],
+    [reportData]
+  );
 
-  if (error) {
-    return <ErrorDisplay error={error} />;
-  }
+  const totalSum = useMemo(
+    () => normalizedProducts.reduce((sum, product) => sum + product.sum, 0),
+    [normalizedProducts]
+  );
 
-  if (!Object.keys(shopOptions).length) {
+  const tableData = useMemo(
+    () =>
+      reportData
+        ? Object.entries(reportData.order)
+            .filter(
+              (
+                entry
+              ): entry is [
+                string,
+                {
+                  orderQuantity: number;
+                  smaQuantity: number;
+                  quantity: number;
+                  sum: number;
+                },
+              ] => {
+                const product = entry[1];
+                return (
+                  !!product &&
+                  typeof product === "object" &&
+                  typeof product.orderQuantity === "number" &&
+                  typeof product.smaQuantity === "number" &&
+                  typeof product.quantity === "number" &&
+                  typeof product.sum === "number"
+                );
+              }
+            )
+            .map(([productName, product]) => ({
+              productName,
+              smaQuantity: product.smaQuantity,
+              quantity: product.quantity,
+              orderQuantity: product.orderQuantity,
+              sum: product.sum,
+            }))
+        : [],
+    [reportData]
+  );
+
+  if (isLoadingReport) return <LoadingSpinner />;
+  if (error && !reportData) return <ErrorDisplay error={error} />;
+
+  if (!Object.keys(shopOptions).length && isLoadingShops) {
     return (
-      <div className="app-page flex flex-col items-center justify-center bg-custom-gray p-4">
-        <div className="flex items-center mb-4">
-          {/* Loading spinner */}
-          <div className="w-24 h-24 border-8 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
-          <h1 className="ml-4 text-xl sm:text-2xl text-gray-900 font-bold" />
-        </div>
+      <div className="app-page flex min-h-[60vh] items-center justify-center">
+        <div className="w-16 h-16 border-4 border-t-transparent border-blue-500 border-solid rounded-full animate-spin" />
       </div>
     );
   }
 
   if (reportData) {
-    const normalizedProducts = Object.values(reportData.order).filter(
-      (product): product is {
-        orderQuantity: number;
-        smaQuantity: number;
-        quantity: number;
-        sum: number;
-      } =>
-        !!product &&
-        typeof product === "object" &&
-        typeof product.orderQuantity === "number" &&
-        typeof product.smaQuantity === "number" &&
-        typeof product.quantity === "number" &&
-        typeof product.sum === "number"
-    );
-
-    // Вычисляем общую сумму заказа
-    const totalSum = normalizedProducts.reduce(
-      (sum, product) => sum + product.sum,
-      0
-    );
-
-    // Преобразуем данные в нужный формат для DynamicTable
-    const tableData = Object.entries(reportData.order)
-      .filter(
-        (
-          entry
-        ): entry is [
-          string,
-          {
-            orderQuantity: number;
-            smaQuantity: number;
-            quantity: number;
-            sum: number;
-          },
-        ] => {
-          const product = entry[1];
-          return (
-            !!product &&
-            typeof product === "object" &&
-            typeof product.orderQuantity === "number" &&
-            typeof product.smaQuantity === "number" &&
-            typeof product.quantity === "number" &&
-            typeof product.sum === "number"
-          );
-        }
-      )
-      .map(([productKey, product]) => {
-      return {
-        productName: productKey,
-        smaQuantity: product.smaQuantity,
-        quantity: product.quantity,
-        orderQuantity: product.orderQuantity,
-        sum: product.sum,
-      };
-      });
-
     return (
-      <div className="p-4 flex flex-col items-start bg-custom-gray dark:bg-gray-900 gap-4 max-w-md mx-auto">
-        {/* Заголовок с информацией */}
-        <div className="text-sm text-gray-700 dark:text-gray-400">
-          {/* Формат: Имя магазина, 31 янв → 4 фев */}
-          <p className="font-semibold">
-            {formatPeriod(
-              reportData.shopName,
-              reportData.startDate,
-              reportData.endDate
-            )}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="app-page w-full px-4 sm:px-6 py-6 flex flex-col gap-4"
+        style={{
+          paddingTop: "calc(var(--app-top-clearance) + 0.5rem)",
+          paddingBottom: "calc(var(--app-bottom-clearance) + 0.75rem)",
+        }}
+      >
+        <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4">
+          <p className="text-sm text-slate-300">
+            {reportData.shopName}, {formatCompactDate(reportData.startDate)} -{" "}
+            {formatCompactDate(reportData.endDate)}
           </p>
-          <p className="font-semibold text-xl">
-            Общая сумма заказа:{" "}
-            <span className="font-semibold text-xl text-gray-900 dark:text-gray-400">
-              {totalSum.toLocaleString("ru-RU")} ₽
-            </span>
+          <p className="mt-1 text-xl font-semibold text-white">
+            {totalSum.toLocaleString("ru-RU")} ₽
           </p>
+          <p className="text-xs text-slate-400">
+            Позиций в прогнозе: {tableData.length}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setReportData(null);
+              setError(null);
+            }}
+            className="mt-3 text-sm text-blue-400 hover:text-blue-300"
+          >
+            Сформировать новый прогноз
+          </button>
         </div>
 
-        {/* Вставка компонента DynamicTable */}
         <DynamicTable data={tableData} />
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="p-4 flex  w-screen h-screen flex-col items-start gap-4 max-w-md  dark:bg-gray-900 mx-auto">
-      <div className="flex items-center justify-between w-full">
-        {/* Кнопка "Назад" */}
-
-        {/* Кнопка "Инструкция" */}
-        <button
-          type="button"
-          onClick={toggleInstructions}
-          className="text-blue-500 dark:text-blue-400 text-sm"
-        >
-          {showInstructions ? "Свернуть" : "Инструкция"}
-        </button>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      className="app-page w-full px-4 sm:px-6 py-6 flex flex-col gap-4"
+      style={{
+        paddingTop: "calc(var(--app-top-clearance) + 0.5rem)",
+        paddingBottom: "calc(var(--app-bottom-clearance) + 0.75rem)",
+      }}
+    >
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-100">
+          Прогноз закупки
+        </h1>
+        <p className="mt-1 text-sm text-slate-400">
+          Выберите период, магазин и группы для расчёта заказа
+        </p>
       </div>
 
-      <h1 className="text-xl dark:text-gray-400 font-bold">Прогноз закупки</h1>
-
-      {/* Блок для отображения выбранного периода */}
-      <div className="flex items-center justify-between w-full">
-        <span className="font-semibold dark:text-gray-400 text-lg">
-          {startDate && endDate
-            ? `${formatDate(startDate)} → ${formatDate(endDate)}`
-            : "Выберите период"}
-        </span>
-        {/* Кнопка для сброса выбора */}
-        {(startDate || endDate) && (
+      <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4 flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={resetSelection}
-            className="text-sm text-blue-500 dark:text-blue-400"
+            type="button"
+            onClick={() => setDateMode("lastWeek")}
+            className={`h-11 rounded-xl border text-sm font-semibold transition ${
+              dateMode === "lastWeek"
+                ? "border-blue-500 bg-blue-600 text-white"
+                : "border-slate-700 text-slate-200 hover:border-blue-500/60"
+            }`}
           >
-            Сбросить выбор даты
+            Прошлая неделя
           </button>
-        )}
-      </div>
-
-      {/* Календарь с кнопками для выбора даты */}
-      <div className="flex items-center w-full justify-between">
-        <div className="grid grid-cols-7 gap-2 flex-1">
-          {daysFromStart.map((day) => (
-            <button
-              key={day.toString()}
-              onClick={() => selectDate(day)} // Выбор даты
-              className={`p-2 rounded-md border ${
-                startDate && endDate && day >= startDate && day <= endDate
-                  ? "bg-blue-500 text-white dark:bg-blue-400 dark:text-white" // Подсветка для выбранного периода
-                  : startDate && day.getTime() === startDate.getTime()
-                    ? "bg-blue-300 text-white dark:bg-blue-300 dark:text-white" // Подсветка для начала периода
-                    : "bg-gray-100 dark:bg-gray-700 dark:text-gray-400"
-              }`}
-            >
-              <span className="text-sm">{day.getDate()}</span>
-              <span className="block text-xs">
-                {day.toLocaleString("default", { weekday: "short" })}
-              </span>
-            </button>
-          ))}
+          <button
+            type="button"
+            onClick={() => {
+              setDateMode("period");
+              setShowPeriodPicker(true);
+            }}
+            className={`h-11 rounded-xl border text-sm font-semibold transition ${
+              dateMode === "period"
+                ? "border-blue-500 bg-blue-600 text-white"
+                : "border-slate-700 text-slate-200 hover:border-blue-500/60"
+            }`}
+          >
+            Период
+          </button>
         </div>
-      </div>
 
-      <div className="w-full">
-        {/* Передаем функцию обновления периода */}
+        {dateMode === "period" && (
+          <Popover open={showPeriodPicker} onOpenChange={setShowPeriodPicker}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className="w-full justify-start border-slate-700 bg-slate-900/70 text-slate-200 hover:bg-slate-800"
+              >
+                {period?.from && period?.to
+                  ? `${formatDate(period.from)} - ${formatDate(period.to)}`
+                  : "Выберите диапазон дат"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="w-auto p-0 bg-slate-950/95 border border-white/10"
+            >
+              <Calendar
+                mode="range"
+                selected={tempPeriod ?? period}
+                onSelect={setTempPeriod}
+                numberOfMonths={1}
+                className="text-slate-100"
+              />
+              <div className="flex gap-2 p-3 border-t border-white/10">
+                <Button
+                  variant="outline"
+                  className="flex-1 border-slate-700 bg-slate-900/80 text-slate-200 hover:bg-slate-800"
+                  onClick={() => {
+                    setTempPeriod(period);
+                    setShowPeriodPicker(false);
+                  }}
+                >
+                  Отмена
+                </Button>
+                <Button
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white"
+                  onClick={() => {
+                    if (tempPeriod?.from && tempPeriod?.to) {
+                      setPeriod(tempPeriod);
+                    }
+                    setShowPeriodPicker(false);
+                  }}
+                >
+                  Применить
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+
+        <div className="text-xs text-slate-300">
+          Выбранный диапазон:{" "}
+          {startDate && endDate
+            ? `${formatCompactDate(startDate)} - ${formatCompactDate(endDate)}`
+            : "не выбран"}
+        </div>
+
         <PeriodSelector onPeriodChange={setSelectedPeriod} />
-        {/* Отображение данных */}
-      </div>
 
-      <div className="w-full">
-        {/* Передаем userId как строку, даже если он пустой */}
         <ShopSelector
           shopOptions={shopOptions}
           isLoadingShops={isLoadingShops}
           fetchGroups={fetchGroups}
-          selectedShop={selectedShop} // Передаем текущее состояние выбранного магазина
-          setSelectedShop={setSelectedShop} // Передаем функцию для обновления выбранного магазина
+          selectedShop={selectedShop}
+          setSelectedShop={setSelectedShop}
         />
-      </div>
 
-      {/* Выбор группы */}
-      <div className="w-full">
         <GroupSelector
-          groupOptions={groupOptions} // Передаем данные групп
-          selectedGroups={selectedGroups} // Передаем выбранные группы
-          setSelectedGroups={setSelectedGroups} // Функция для обновления выбранных групп
-          isLoadingGroups={isLoadingGroups} // Флаг загрузки
+          groupOptions={groupOptions}
+          selectedGroups={selectedGroups}
+          setSelectedGroups={setSelectedGroups}
+          isLoadingGroups={isLoadingGroups}
         />
+
+        <button
+          type="button"
+          onClick={submitForecast}
+          className={`h-11 rounded-xl text-sm font-semibold transition ${
+            isFormValid
+              ? "bg-blue-600 hover:bg-blue-500 text-white"
+              : "bg-slate-700 text-slate-400 cursor-not-allowed"
+          }`}
+          disabled={!isFormValid}
+        >
+          Сгенерировать прогноз
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowInstructions((prev) => !prev)}
+          className="text-sm text-blue-400 hover:text-blue-300"
+        >
+          {showInstructions ? "Скрыть инструкцию" : "Инструкция"}
+        </button>
       </div>
 
-      {/* Кнопка "Сформировать прогноз" */}
-      <button
-        onClick={submitForecast} // Вызываем функцию отправки данных
-        className={`w-full p-2 rounded-md text-white ${
-          startDate &&
-          endDate &&
-          selectedShop &&
-          selectedGroups.length &&
-          selectedPeriod !== null
-            ? "bg-blue-500 hover:bg-blue-600 dark:bg-blue-400 dark:hover:bg-blue-500"
-            : "bg-gray-300 dark:bg-gray-700"
-        }`}
-        disabled={
-          !(
-            startDate &&
-            endDate &&
-            selectedShop &&
-            selectedGroups.length &&
-            selectedPeriod !== null
-          ) // Блокируем кнопку, если не выбраны все параметры
-        }
-      >
-        Сгенерировать прогноз
-      </button>
-
-      {showInstructions && (
-        <div className="fixed top-0 left-0 w-full h-full bg-gray-100 bg-opacity-90 p-4 mt-2 rounded shadow z-50 dark:bg-gray-900 dark:bg-opacity-80">
-          <div className="max-w-screen-md mx-auto overflow-y-auto h-full flex flex-col">
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold dark:text-gray-100">
-                Инструкция: Как создать прогноз закупки
-              </h2>
-              <p className="mt-2 dark:text-gray-400">
-                Чтобы получить точный прогноз для ваших закупок, выполните
-                следующие шаги:
-              </p>
-              <ol className="mt-2 list-decimal pl-6 dark:text-gray-400">
-                <li>
-                  <strong>Выберите даты:</strong> Укажите начальную и конечную
-                  дату периода, за который вы хотите получить прогноз. Например,
-                  если вам нужен отчет за неделю, выберите соответствующие дни.
-                </li>
-                <li>
-                  <strong>Выберите магазин:</strong> Укажите конкретный магазин,
-                  для которого нужен прогноз.
-                </li>
-                <li>
-                  <strong>Укажите группы товаров:</strong> Выберите, для каких
-                  категорий товаров (например, “Сигареты”, “Вода”, “Газеты”)
-                  хотите рассчитать прогноз. Если нужны данные по всем товарам,
-                  выберите “Все”.
-                </li>
-                <li>
-                  <strong>Выберите количество периодов:</strong> Укажите, за
-                  сколько временных интервалов система должна рассчитать прогноз
-                  (например, 1 неделя, 2 недели, 3 месяца). Это поможет учесть
-                  изменения в продажах за разные периоды.
-                </li>
-                <li>
-                  <strong>Нажмите “Сгенерировать прогноз”:</strong> После выбора
-                  всех параметров нажмите эту кнопку, и система автоматически
-                  создаст прогноз, отображая оптимальные объемы заказов для
-                  каждого товара.
-                </li>
-              </ol>
-
-              <h3 className="mt-4 text-lg font-semibold dark:text-gray-100">
-                Как работает прогноз?
-              </h3>
-              <p className="mt-2 dark:text-gray-400">
-                1. <strong>Анализ продаж:</strong> Система делит указанный вами
-                период на части (например, недели или дни) и анализирует,
-                сколько товаров продано в каждый интервал.
-              </p>
-              <p className="mt-2 dark:text-gray-400">
-                2. <strong>Скользящее среднее (SMA):</strong> На основе продаж
-                за периоды система вычисляет среднее количество проданных
-                товаров. Это позволяет учесть общие тенденции.
-              </p>
-              <p className="mt-2 dark:text-gray-400">
-                3. <strong>Расчет заказа:</strong> Система определяет
-                оптимальный объем заказа, вычитая остаток товара на складе из
-                рассчитанного среднего.
-              </p>
-
-              <h4 className="mt-4 text-lg font-semibold dark:text-gray-100">
-                Пример: Как это выглядит на практике
-              </h4>
-              <p className="mt-2 dark:text-gray-400">
-                <strong>Товар:</strong> Сигареты “Marlboro Red” <br />
-                <strong>Продажи за последние 4 недели:</strong> 10, 12, 15, 13
-                пачек <br />
-                <strong>Среднее количество продаж:</strong> (10 + 12 + 15 + 13)
-                / 4 = 12.5 пачек <br />
-                <strong>Остаток на складе:</strong> 8 пачек <br />
-                <strong>Рекомендуемый объем заказа:</strong> 12.5 (среднее) - 8
-                (остаток) = 4.5, округляется до 5 пачек. <br />
-                <strong>Результат:</strong> Рекомендуется заказать 5 пачек
-                Marlboro Red, чтобы оптимально пополнить запас.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={toggleInstructions}
-              className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-400 transition duration-300 mt-4 dark:bg-red-400 dark:hover:bg-red-700"
-            >
-              Свернуть
-            </button>
-          </div>
+      {error && (
+        <div className="text-sm text-red-400 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2">
+          {error}
         </div>
       )}
-    </div>
+
+      {showInstructions && (
+        <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4 text-sm text-slate-300 space-y-2">
+          <p className="font-semibold text-slate-100">Как работает прогноз</p>
+          <p>1. Выберите период истории продаж, магазин и группы товаров.</p>
+          <p>2. Укажите количество периодов SMA (скользящее среднее).</p>
+          <p>
+            3. Система рассчитает рекомендуемый заказ: спрос по SMA минус
+            текущий остаток.
+          </p>
+        </div>
+      )}
+    </motion.div>
   );
 }
