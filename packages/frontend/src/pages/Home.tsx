@@ -50,7 +50,9 @@ export default function Home() {
         {/* {(isCashier || isAdmin) && <PlanSalesFinancialReport />} */}
 
         {/* Сводка за день - для всех ролей */}
-        {(isSuperAdmin || isAdmin || isCashier) && <DashboardSummary2 />}
+        {(isSuperAdmin || isAdmin || isCashier) && (
+          <DashboardSummary2 showAiDirector={false} />
+        )}
 
         {/* {isSuperAdmin && <DashboardSummary2 />} */}
 

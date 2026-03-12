@@ -6,6 +6,7 @@ import {
   TrendingUp,
   Store,
   Calculator,
+  Sparkles,
 } from "lucide-react";
 
 interface QuickAction {
@@ -71,6 +72,14 @@ export default function QuickActions({ employeeRole }: QuickActionsProps) {
       icon: <Calculator className="w-6 h-6" />,
       path: "/evotor/profit",
       color: "from-emerald-500 to-teal-600",
+      roles: ["ADMIN", "SUPERADMIN"],
+    },
+    {
+      title: "AI Директор",
+      description: "Сводка и рекомендации",
+      icon: <Sparkles className="w-6 h-6" />,
+      path: "/ai/director",
+      color: "from-slate-700 to-slate-900",
       roles: ["ADMIN", "SUPERADMIN"],
     },
   ];

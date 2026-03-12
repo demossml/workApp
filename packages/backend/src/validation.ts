@@ -64,6 +64,71 @@ export const OpeningPhotoDigestRequestSchema = z.object({
 });
 
 /**
+ * POST /api/ai/director/summary
+ */
+export const AiDirectorSummaryRequestSchema = z.object({
+	date: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+	avgDays: z.coerce.number().int().min(1).max(31).optional(),
+});
+
+/**
+ * POST /api/ai/director/alerts
+ */
+export const AiDirectorAlertsRequestSchema = z.object({
+	date: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+	salesDropThresholdPct: z.coerce.number().min(1).max(100).optional(),
+	categoryDropThresholdPct: z.coerce.number().min(1).max(100).optional(),
+	minCategoryRevenue: z.coerce.number().min(0).max(1000000000).optional(),
+});
+
+/**
+ * POST /api/ai/director/forecast
+ */
+export const AiDirectorForecastRequestSchema = z.object({
+	date: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+	openHour: z.coerce.number().int().min(0).max(23).optional(),
+	workingHoursWeekday: z.coerce.number().int().min(1).max(24).optional(),
+	workingHoursWeekend: z.coerce.number().int().min(1).max(24).optional(),
+});
+
+/**
+ * POST /api/ai/director/velocity
+ */
+export const AiDirectorVelocityRequestSchema = z.object({
+	since: DateStringSchema,
+	until: DateStringSchema,
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+	workingHoursWeekday: z.coerce.number().int().min(1).max(24).optional(),
+	workingHoursWeekend: z.coerce.number().int().min(1).max(24).optional(),
+	limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+/**
+ * POST /api/ai/director/recommendations
+ */
+export const AiDirectorRecommendationsRequestSchema = z.object({
+	since: DateStringSchema,
+	until: DateStringSchema,
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+	planningDays: z.coerce.number().int().min(1).max(60).optional(),
+	deadStockDays: z.coerce.number().int().min(7).max(180).optional(),
+	lookbackDays: z.coerce.number().int().min(7).max(365).optional(),
+	limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+/**
+ * POST /api/ai/director/report
+ */
+export const AiDirectorReportRequestSchema = z.object({
+	date: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+	sendTelegram: z.boolean().optional(),
+});
+
+/**
  * POST /api/ai/dashboard-summary2-insights
  */
 const DashboardSummary2RiskShopSchema = z.object({

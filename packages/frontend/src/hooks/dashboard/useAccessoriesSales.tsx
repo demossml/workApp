@@ -6,6 +6,7 @@ interface AccessoriesSalesParams {
   userId: string;
   since?: string;
   until?: string;
+  enabled?: boolean;
 }
 
 export interface AccessoriesSalesData {
@@ -46,6 +47,7 @@ export function useAccessoriesSales(params: AccessoriesSalesParams) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (params.enabled === false) return;
     if (!params.role || !params.userId) return;
     setLoading(true);
     setError(null);

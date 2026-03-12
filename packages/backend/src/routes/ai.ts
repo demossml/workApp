@@ -3,6 +3,12 @@ import type { IEnv } from "../types";
 import { logger } from "../logger";
 import {
 	AiInsightsRequestSchema,
+	AiDirectorAlertsRequestSchema,
+	AiDirectorForecastRequestSchema,
+	AiDirectorReportRequestSchema,
+	AiDirectorRecommendationsRequestSchema,
+	AiDirectorSummaryRequestSchema,
+	AiDirectorVelocityRequestSchema,
 	DashboardSummary2InsightsRequestSchema,
 	EmployeeShiftKpiSchema,
 	OpeningPhotoDigestRequestSchema,
@@ -26,6 +32,10 @@ import {
 	getOpeningsByDate,
 } from "../db/repositories/openStores";
 import {
+	listActiveTgSubscriptions,
+	touchTgSubscriptionLastSentAt,
+} from "../db/repositories/tgSubscriptions";
+import {
 	getOpeningPhotoDigestCache,
 	saveOpeningPhotoDigestCache,
 } from "../db/repositories/openingPhotoDigestCache";
@@ -36,10 +46,517 @@ import {
 	analyzeDocsAnomaliesTask,
 	analyzeDocsPatternsTask,
 } from "../ai";
-import type { Product } from "../evotor/types";
+import type { IndexDocument, Product } from "../evotor/types";
 import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
+import { sendTelegramMessage } from "../../utils/sendTelegramMessage";
 
 const toIsoDate = (date: Date) => date.toISOString().split("T")[0];
+
+const buildEvotorDayRange = (dateKey: string): [string, string] => [
+	`${dateKey}T03:00:00.000+0000`,
+	`${dateKey}T21:00:00.000+0000`,
+];
+
+const formatEvotorTimestamp = (date: Date) => {
+	const pad = (num: number, size = 2) => String(num).padStart(size, "0");
+	const year = date.getUTCFullYear();
+	const month = pad(date.getUTCMonth() + 1);
+	const day = pad(date.getUTCDate());
+	const hours = pad(date.getUTCHours());
+	const minutes = pad(date.getUTCMinutes());
+	const seconds = pad(date.getUTCSeconds());
+	const ms = pad(date.getUTCMilliseconds(), 3);
+	const fractional = `${ms}000`.slice(0, 6);
+	return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${fractional}+0000`;
+};
+
+const shiftDateKey = (dateKey: string, deltaDays: number) => {
+	const date = new Date(`${dateKey}T00:00:00Z`);
+	date.setUTCDate(date.getUTCDate() + deltaDays);
+	return toIsoDate(date);
+};
+
+type DirectorMetrics = {
+	revenue: number;
+	checks: number;
+	averageCheck: number;
+	costOfGoods: number;
+	profit: number;
+	refunds: number;
+	refundChecks: number;
+};
+
+type DirectorPeriodResult = {
+	since: string;
+	until: string;
+	metrics: DirectorMetrics;
+};
+
+type DirectorAlert = {
+	code: string;
+	severity: "high" | "medium" | "low";
+	title: string;
+	details: string;
+	shopUuid?: string;
+	shopName?: string;
+	category?: string;
+	meta?: Record<string, unknown>;
+};
+
+type VelocityEntry = {
+	id: string;
+	name: string;
+	quantity: number;
+	revenue: number;
+	velocityPerDay: number;
+	velocityPerHour: number;
+};
+
+type RecommendationItem = {
+	type: "procurement" | "dead_stock" | "abc";
+	id: string;
+	name: string;
+	category?: string;
+	priorityScore: number;
+	priority: "high" | "medium" | "low";
+	details: string;
+	metrics?: Record<string, number | string | null>;
+};
+
+const aggregateDirectorMetrics = (docs: IndexDocument[]): DirectorMetrics => {
+	let sellRevenue = 0;
+	let refundRevenue = 0;
+	let sellCost = 0;
+	let refundCost = 0;
+	let sellChecks = 0;
+	let refundChecks = 0;
+
+	for (const doc of docs) {
+		if (doc.type === "SELL") sellChecks += 1;
+		if (doc.type === "PAYBACK") refundChecks += 1;
+
+		for (const trans of doc.transactions || []) {
+			if (trans.type === "PAYMENT") {
+				const rawSum = Number(trans.sum || 0);
+				if (!Number.isFinite(rawSum) || rawSum === 0) continue;
+				if (doc.type === "PAYBACK") {
+					refundRevenue += Math.abs(rawSum);
+				} else if (doc.type === "SELL") {
+					sellRevenue += rawSum;
+				}
+			}
+
+			if (trans.type === "REGISTER_POSITION") {
+				const lineCost =
+					Number(trans.costPrice || 0) * Number(trans.quantity || 0);
+				if (!Number.isFinite(lineCost) || lineCost === 0) continue;
+				if (doc.type === "PAYBACK") {
+					refundCost += lineCost;
+				} else if (doc.type === "SELL") {
+					sellCost += lineCost;
+				}
+			}
+		}
+	}
+
+	const revenue = sellRevenue - refundRevenue;
+	const costOfGoods = sellCost - refundCost;
+	const profit = revenue - costOfGoods;
+	const averageCheck = sellChecks > 0 ? revenue / sellChecks : 0;
+
+	return {
+		revenue,
+		checks: sellChecks,
+		averageCheck,
+		costOfGoods,
+		profit,
+		refunds: refundRevenue,
+		refundChecks,
+	};
+};
+
+const averageDirectorMetrics = (metrics: DirectorMetrics[]): DirectorMetrics => {
+	if (metrics.length === 0) {
+		return {
+			revenue: 0,
+			checks: 0,
+			averageCheck: 0,
+			costOfGoods: 0,
+			profit: 0,
+			refunds: 0,
+			refundChecks: 0,
+		};
+	}
+
+	const totals = metrics.reduce(
+		(acc, item) => ({
+			revenue: acc.revenue + item.revenue,
+			checks: acc.checks + item.checks,
+			averageCheck: acc.averageCheck + item.averageCheck,
+			costOfGoods: acc.costOfGoods + item.costOfGoods,
+			profit: acc.profit + item.profit,
+			refunds: acc.refunds + item.refunds,
+			refundChecks: acc.refundChecks + item.refundChecks,
+		}),
+		{
+			revenue: 0,
+			checks: 0,
+			averageCheck: 0,
+			costOfGoods: 0,
+			profit: 0,
+			refunds: 0,
+			refundChecks: 0,
+		},
+	);
+
+	const denom = metrics.length;
+
+	return {
+		revenue: totals.revenue / denom,
+		checks: totals.checks / denom,
+		averageCheck: totals.averageCheck / denom,
+		costOfGoods: totals.costOfGoods / denom,
+		profit: totals.profit / denom,
+		refunds: totals.refunds / denom,
+		refundChecks: totals.refundChecks / denom,
+	};
+};
+
+const calcChangePct = (current: number, previous: number) => {
+	if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) {
+		return null;
+	}
+	return (current - previous) / previous;
+};
+
+const getMskHour = (date: Date) => {
+	const shifted = new Date(date.getTime() + 3 * 60 * 60 * 1000);
+	return shifted.getUTCHours();
+};
+
+const isWeekend = (dateKey: string) => {
+	const date = new Date(`${dateKey}T00:00:00Z`);
+	const day = date.getUTCDay();
+	return day === 0 || day === 6;
+};
+
+const listDateKeysInclusive = (since: string, until: string) => {
+	const keys: string[] = [];
+	const start = new Date(`${since}T00:00:00Z`);
+	const end = new Date(`${until}T00:00:00Z`);
+	if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return keys;
+	const cursor = new Date(start);
+	while (cursor <= end) {
+		keys.push(toIsoDate(cursor));
+		cursor.setUTCDate(cursor.getUTCDate() + 1);
+	}
+	return keys;
+};
+
+const percentileValue = (values: number[], pct: number) => {
+	if (values.length === 0) return 0;
+	const sorted = [...values].sort((a, b) => a - b);
+	const idx = Math.min(
+		sorted.length - 1,
+		Math.max(0, Math.floor((pct / 100) * sorted.length)),
+	);
+	return sorted[idx];
+};
+
+const applyPriorityByScore = (items: RecommendationItem[]): RecommendationItem[] => {
+	if (items.length === 0) return items;
+	const scores = items.map((item) => item.priorityScore);
+	const highThreshold = percentileValue(scores, 80);
+	const mediumThreshold = percentileValue(scores, 50);
+	return items.map((item) => ({
+		...item,
+		priority:
+			item.priorityScore >= highThreshold
+				? "high"
+				: item.priorityScore >= mediumThreshold
+					? "medium"
+					: "low",
+	})) as RecommendationItem[];
+};
+
+const collectCommodityUuids = (docs: IndexDocument[]) => {
+	const uuids = new Set<string>();
+	for (const doc of docs) {
+		for (const tx of doc.transactions || []) {
+			if (tx.type !== "REGISTER_POSITION") continue;
+			if (tx.commodityUuid) uuids.add(tx.commodityUuid);
+		}
+	}
+	return Array.from(uuids);
+};
+
+const fetchCategoryMapForShop = async (
+	db: IEnv["Bindings"]["DB"],
+	shopId: string,
+	productUuids: string[],
+) => {
+	if (productUuids.length === 0) return new Map<string, string>();
+
+	const placeholders = productUuids.map(() => "?").join(", ");
+	const productQuery = `
+		SELECT uuid, parentUuid
+		FROM shopProduct
+		WHERE shopId = ? AND uuid IN (${placeholders})
+	`;
+
+	const productRows = await db
+		.prepare(productQuery)
+		.bind(shopId, ...productUuids)
+		.all();
+
+	const productParent = new Map<string, string>();
+	const parentUuids = new Set<string>();
+
+	for (const row of productRows.results || []) {
+		const uuid = String((row as { uuid?: unknown }).uuid || "");
+		const parentUuid = String((row as { parentUuid?: unknown }).parentUuid || "");
+		if (!uuid) continue;
+		productParent.set(uuid, parentUuid);
+		if (parentUuid) parentUuids.add(parentUuid);
+	}
+
+	if (parentUuids.size === 0) return new Map<string, string>();
+
+	const parentList = Array.from(parentUuids);
+	const parentPlaceholders = parentList.map(() => "?").join(", ");
+	const parentQuery = `
+		SELECT uuid, name
+		FROM shopProduct
+		WHERE shopId = ? AND product_group = 1 AND uuid IN (${parentPlaceholders})
+	`;
+
+	const parentRows = await db
+		.prepare(parentQuery)
+		.bind(shopId, ...parentList)
+		.all();
+
+	const parentName = new Map<string, string>();
+	for (const row of parentRows.results || []) {
+		const uuid = String((row as { uuid?: unknown }).uuid || "");
+		const name = String((row as { name?: unknown }).name || "");
+		if (!uuid || !name) continue;
+		parentName.set(uuid, name);
+	}
+
+	const categoryMap = new Map<string, string>();
+	for (const [productUuid, parentUuid] of productParent.entries()) {
+		const name = parentUuid ? parentName.get(parentUuid) : undefined;
+		if (name) categoryMap.set(productUuid, name);
+	}
+
+	return categoryMap;
+};
+
+const buildCategoryRevenueByShop = async (
+	db: IEnv["Bindings"]["DB"],
+	shopId: string,
+	docs: IndexDocument[],
+) => {
+	const warnings: string[] = [];
+	const commodityUuids = collectCommodityUuids(docs);
+	if (commodityUuids.length === 0) {
+		return { revenueByCategory: new Map<string, number>(), warnings };
+	}
+
+	let categoryMap = new Map<string, string>();
+	try {
+		categoryMap = await fetchCategoryMapForShop(db, shopId, commodityUuids);
+	} catch (error) {
+		warnings.push("category_map_unavailable");
+	}
+
+	const revenueByCategory = new Map<string, number>();
+
+	for (const doc of docs) {
+		const isRefund = doc.type === "PAYBACK";
+		for (const tx of doc.transactions || []) {
+			if (tx.type !== "REGISTER_POSITION") continue;
+			const amount = Number(tx.sum || 0);
+			if (!Number.isFinite(amount) || amount === 0) continue;
+			const key = tx.commodityUuid
+				? categoryMap.get(tx.commodityUuid) || "Без категории"
+				: "Без категории";
+			const prev = revenueByCategory.get(key) || 0;
+			revenueByCategory.set(
+				key,
+				prev + (isRefund ? -Math.abs(amount) : amount),
+			);
+		}
+	}
+
+	return { revenueByCategory, warnings };
+};
+
+const buildCategoryStatsByShop = async (
+	db: IEnv["Bindings"]["DB"],
+	shopId: string,
+	docs: IndexDocument[],
+) => {
+	const warnings: string[] = [];
+	const commodityUuids = collectCommodityUuids(docs);
+	if (commodityUuids.length === 0) {
+		return {
+			quantityByCategory: new Map<string, number>(),
+			revenueByCategory: new Map<string, number>(),
+			warnings,
+		};
+	}
+
+	let categoryMap = new Map<string, string>();
+	try {
+		categoryMap = await fetchCategoryMapForShop(db, shopId, commodityUuids);
+	} catch (error) {
+		warnings.push("category_map_unavailable");
+	}
+
+	const quantityByCategory = new Map<string, number>();
+	const revenueByCategory = new Map<string, number>();
+
+	for (const doc of docs) {
+		const isRefund = doc.type === "PAYBACK";
+		for (const tx of doc.transactions || []) {
+			if (tx.type !== "REGISTER_POSITION") continue;
+			const qty = Number(tx.quantity || 0);
+			const sum = Number(tx.sum || 0);
+			if (!Number.isFinite(qty) && !Number.isFinite(sum)) continue;
+			const key = tx.commodityUuid
+				? categoryMap.get(tx.commodityUuid) || "Без категории"
+				: "Без категории";
+			if (Number.isFinite(qty) && qty !== 0) {
+				const prevQty = quantityByCategory.get(key) || 0;
+				quantityByCategory.set(
+					key,
+					prevQty + (isRefund ? -Math.abs(qty) : qty),
+				);
+			}
+			if (Number.isFinite(sum) && sum !== 0) {
+				const prevSum = revenueByCategory.get(key) || 0;
+				revenueByCategory.set(
+					key,
+					prevSum + (isRefund ? -Math.abs(sum) : sum),
+				);
+			}
+		}
+	}
+
+	return { quantityByCategory, revenueByCategory, warnings };
+};
+
+const buildSkuStats = (
+	docs: IndexDocument[],
+	categoryMap: Map<string, string>,
+) => {
+	const skuMap = new Map<
+		string,
+		{
+			name: string;
+			category: string | null;
+			quantity: number;
+			revenue: number;
+			lastSaleAt: string | null;
+		}
+	>();
+
+	for (const doc of docs) {
+		const isRefund = doc.type === "PAYBACK";
+		for (const tx of doc.transactions || []) {
+			if (tx.type !== "REGISTER_POSITION") continue;
+			const skuKey = tx.commodityUuid || tx.commodityName || "UNKNOWN";
+			const entry = skuMap.get(skuKey) || {
+				name: tx.commodityName || skuKey,
+				category: tx.commodityUuid
+					? categoryMap.get(tx.commodityUuid) || "Без категории"
+					: "Без категории",
+				quantity: 0,
+				revenue: 0,
+				lastSaleAt: null,
+			};
+
+			const qty = Number(tx.quantity || 0);
+			if (Number.isFinite(qty) && qty !== 0) {
+				entry.quantity += isRefund ? -Math.abs(qty) : qty;
+			}
+
+			const sum = Number(tx.sum || 0);
+			if (Number.isFinite(sum) && sum !== 0) {
+				entry.revenue += isRefund ? -Math.abs(sum) : sum;
+			}
+
+			if (doc.type === "SELL" && doc.closeDate) {
+				if (!entry.lastSaleAt || doc.closeDate > entry.lastSaleAt) {
+					entry.lastSaleAt = doc.closeDate;
+				}
+			}
+
+			skuMap.set(skuKey, entry);
+		}
+	}
+
+	return skuMap;
+};
+
+const buildDirectorReportFallback = (input: {
+	date: string;
+	today: DirectorMetrics;
+	yesterday: DirectorMetrics;
+	salesChange: number | null;
+	alerts: DirectorAlert[];
+	forecast: number;
+}) => {
+	const topAlert = input.alerts[0];
+	const happenedLines = [
+		`Выручка сегодня: ${compactMoney(input.today.revenue)} ₽, чеков: ${Math.round(input.today.checks)}.`,
+		`Изменение к вчера: ${formatPct(input.salesChange)}.`,
+	];
+	if (topAlert) {
+		happenedLines.push(`Главный сигнал: ${topAlert.title}.`);
+	}
+
+	const whyLines = [
+		`Если тренд сохранится, риск недовыполнения выручки высокий.`,
+		`Прогноз на день: ${compactMoney(input.forecast)} ₽.`,
+	];
+
+	const actions = [
+		"Проверьте топ-3 магазина по выручке и включите усиленные продажи в пиковые часы.",
+		"Проверьте наличие ключевых SKU и актуальность цен.",
+		"Сфокусируйтесь на причинах падения по категориям с наибольшей долей выручки.",
+	];
+
+	return {
+		happened: happenedLines.join(" "),
+		whyImportant: whyLines.join(" "),
+		whatToDo: actions,
+	};
+};
+
+const getDirectorPeriodMetrics = async (
+	db: IEnv["Bindings"]["DB"],
+	evo: IEnv["Variables"]["evotor"],
+	shopUuids: string[],
+	since: string,
+	until: string,
+): Promise<DirectorPeriodResult> => {
+	const docsByShop = await Promise.all(
+		shopUuids.map((shopUuid) =>
+			getDocumentsFromIndexFirst(db, evo, shopUuid, since, until, {
+				types: ["SELL", "PAYBACK"],
+				skipFetchIfStale: true,
+			}),
+		),
+	);
+	const docs = docsByShop.flat();
+	return {
+		since,
+		until,
+		metrics: aggregateDirectorMetrics(docs),
+	};
+};
 
 const daysInRangeInclusive = (startDate: string, endDate: string) => {
 	const start = new Date(startDate);
@@ -61,6 +578,7 @@ const PHOTO_DESCRIBE_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
 const PHOTO_SUMMARIZE_MODEL = "@cf/meta/llama-3.1-8b-instruct";
 const DASHBOARD_SUMMARY2_MODEL = "@cf/meta/llama-3.1-8b-instruct";
 const OPENING_DIGEST_TTL_MS = 6 * 60 * 60 * 1000;
+const DIRECTOR_REPORT_MODEL = "@cf/meta/llama-3.1-8b-instruct";
 
 const toDDMMYYYY = (isoDate: string) => {
 	const [yyyy, mm, dd] = isoDate.split("-");
@@ -140,6 +658,11 @@ const compactMoney = (value: number) =>
 	new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(
 		Math.round(value || 0),
 	);
+
+const formatPct = (value: number | null) => {
+	if (value == null || !Number.isFinite(value)) return "н/д";
+	return `${(value * 100).toFixed(1)}%`;
+};
 
 const normalizeLine = (value: unknown, fallback: string, maxLen = 220) => {
 	if (typeof value !== "string") return fallback;
@@ -347,6 +870,932 @@ const summarizeShopPhotos = async (
 };
 
 export const aiRoutes = new Hono<IEnv>()
+
+	.post("/director/alerts", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const {
+				date,
+				shopUuids,
+				salesDropThresholdPct,
+				categoryDropThresholdPct,
+				minCategoryRevenue,
+			} = validate(AiDirectorAlertsRequestSchema, payload);
+
+			const targetDate = date ?? toIsoDate(new Date());
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+
+			const shopNamesMap = (await evo.getShopNameUuidsDict()) || {};
+
+			const [todaySince, todayUntil] = buildEvotorDayRange(targetDate);
+			const yesterdayKey = shiftDateKey(targetDate, -1);
+			const [yesterdaySince, yesterdayUntil] =
+				buildEvotorDayRange(yesterdayKey);
+
+			const salesThreshold =
+				Math.max(1, Math.abs(salesDropThresholdPct ?? 30)) / 100;
+			const categoryThreshold =
+				Math.max(1, Math.abs(categoryDropThresholdPct ?? 30)) / 100;
+			const minCategoryBase = Math.max(0, minCategoryRevenue ?? 0);
+
+			const [todayDocsByShop, yesterdayDocsByShop] = await Promise.all([
+				Promise.all(
+					resolvedShopUuids.map((shopUuid) =>
+						getDocumentsFromIndexFirst(
+							db,
+							evo,
+							shopUuid,
+							todaySince,
+							todayUntil,
+							{
+								types: ["SELL", "PAYBACK", "CLOSE_SESSION", "Z_REPORT"],
+								skipFetchIfStale: true,
+							},
+						),
+					),
+				),
+				Promise.all(
+					resolvedShopUuids.map((shopUuid) =>
+						getDocumentsFromIndexFirst(
+							db,
+							evo,
+							shopUuid,
+							yesterdaySince,
+							yesterdayUntil,
+							{ types: ["SELL", "PAYBACK"], skipFetchIfStale: true },
+						),
+					),
+				),
+			]);
+
+			const alerts: DirectorAlert[] = [];
+			const warnings: string[] = [];
+
+			const todayAll = todayDocsByShop.flat().filter((doc) =>
+				["SELL", "PAYBACK"].includes(doc.type),
+			);
+			const yesterdayAll = yesterdayDocsByShop.flat();
+
+			const todayMetrics = aggregateDirectorMetrics(todayAll);
+			const yesterdayMetrics = aggregateDirectorMetrics(yesterdayAll);
+
+			const salesChange = calcChangePct(
+				todayMetrics.revenue,
+				yesterdayMetrics.revenue,
+			);
+
+			if (salesChange !== null && salesChange <= -salesThreshold) {
+				alerts.push({
+					code: "sales_drop",
+					severity: "high",
+					title: "Падение продаж",
+					details: `Выручка снизилась на ${(Math.abs(salesChange) * 100).toFixed(1)}% относительно вчера.`,
+					meta: {
+						today: todayMetrics.revenue,
+						yesterday: yesterdayMetrics.revenue,
+						thresholdPct: salesThreshold * 100,
+					},
+				});
+			}
+
+			if (todayMetrics.revenue <= 0) {
+				alerts.push({
+					code: "no_sales",
+					severity: "high",
+					title: "Нулевые продажи",
+					details: "За сегодня нет выручки по сети.",
+					meta: { revenue: todayMetrics.revenue },
+				});
+			}
+
+			if (todayMetrics.checks <= 0) {
+				alerts.push({
+					code: "no_checks",
+					severity: "high",
+					title: "Нулевые чеки",
+					details: "За сегодня нет чеков по сети.",
+					meta: { checks: todayMetrics.checks },
+				});
+			}
+
+			for (let i = 0; i < resolvedShopUuids.length; i += 1) {
+				const shopUuid = resolvedShopUuids[i];
+				const shopName = shopNamesMap[shopUuid] || shopUuid;
+				const todayDocs = todayDocsByShop[i] || [];
+				const yesterdayDocs = yesterdayDocsByShop[i] || [];
+
+				const todayShopMetrics = aggregateDirectorMetrics(
+					todayDocs.filter((doc) => ["SELL", "PAYBACK"].includes(doc.type)),
+				);
+				if (todayShopMetrics.revenue <= 0) {
+					alerts.push({
+						code: "shop_no_sales",
+						severity: "high",
+						title: "Нулевые продажи магазина",
+						details: `Магазин ${shopName} не имеет выручки сегодня.`,
+						shopUuid,
+						shopName,
+					});
+				}
+
+				if (todayShopMetrics.checks <= 0) {
+					alerts.push({
+						code: "shop_no_checks",
+						severity: "high",
+						title: "Нулевые чеки магазина",
+						details: `Магазин ${shopName} не имеет чеков сегодня.`,
+						shopUuid,
+						shopName,
+					});
+				}
+
+				const hasCloseSession = todayDocs.some((doc) =>
+					["CLOSE_SESSION", "Z_REPORT"].includes(doc.type),
+				);
+				if (!hasCloseSession) {
+					alerts.push({
+						code: "no_close_session",
+						severity: "medium",
+						title: "Нет закрытия смены",
+						details: `За сегодня нет закрытия смены в магазине ${shopName}.`,
+						shopUuid,
+						shopName,
+					});
+				}
+
+				const { revenueByCategory: todayCategories, warnings: todayWarnings } =
+					await buildCategoryRevenueByShop(db, shopUuid, todayDocs);
+				const {
+					revenueByCategory: yesterdayCategories,
+					warnings: yesterdayWarnings,
+				} = await buildCategoryRevenueByShop(db, shopUuid, yesterdayDocs);
+
+				warnings.push(...todayWarnings, ...yesterdayWarnings);
+
+				for (const [category, yesterdayValue] of yesterdayCategories.entries()) {
+					if (!Number.isFinite(yesterdayValue) || yesterdayValue <= minCategoryBase)
+						continue;
+					const todayValue = todayCategories.get(category) || 0;
+					const change = calcChangePct(todayValue, yesterdayValue);
+					if (change !== null && change <= -categoryThreshold) {
+						alerts.push({
+							code: "category_drop",
+							severity: "medium",
+							title: "Падение категории",
+							details: `Категория «${category}» снизилась на ${(Math.abs(change) * 100).toFixed(1)}% в ${shopName}.`,
+							shopUuid,
+							shopName,
+							category,
+							meta: {
+								today: todayValue,
+								yesterday: yesterdayValue,
+								thresholdPct: categoryThreshold * 100,
+							},
+						});
+					}
+				}
+			}
+
+			return c.json({
+				date: targetDate,
+				shopUuids: resolvedShopUuids,
+				thresholds: {
+					salesDropPct: salesThreshold * 100,
+					categoryDropPct: categoryThreshold * 100,
+					minCategoryRevenue: minCategoryBase,
+				},
+				alerts,
+				warnings: Array.from(new Set(warnings)),
+			});
+		} catch (error) {
+			logger.error("AI director alerts failed", { error });
+			return c.json({ error: "AI_DIRECTOR_ALERTS_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/summary", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { date, shopUuids, avgDays } = validate(
+				AiDirectorSummaryRequestSchema,
+				payload,
+			);
+
+			const targetDate = date ?? toIsoDate(new Date());
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+
+			const [todaySince, todayUntil] = buildEvotorDayRange(targetDate);
+			const yesterdayKey = shiftDateKey(targetDate, -1);
+			const weekAgoKey = shiftDateKey(targetDate, -7);
+			const [yesterdaySince, yesterdayUntil] =
+				buildEvotorDayRange(yesterdayKey);
+			const [weekAgoSince, weekAgoUntil] = buildEvotorDayRange(weekAgoKey);
+
+			const [today, yesterday, weekAgo] = await Promise.all([
+				getDirectorPeriodMetrics(db, evo, resolvedShopUuids, todaySince, todayUntil),
+				getDirectorPeriodMetrics(
+					db,
+					evo,
+					resolvedShopUuids,
+					yesterdaySince,
+					yesterdayUntil,
+				),
+				getDirectorPeriodMetrics(
+					db,
+					evo,
+					resolvedShopUuids,
+					weekAgoSince,
+					weekAgoUntil,
+				),
+			]);
+
+			const avgWindow = Math.min(Math.max(avgDays ?? 7, 1), 31);
+			const avgRanges = Array.from({ length: avgWindow }, (_, idx) => {
+				const dayKey = shiftDateKey(targetDate, -(idx + 1));
+				return buildEvotorDayRange(dayKey);
+			});
+
+			const avgMetricsList = await Promise.all(
+				avgRanges.map(([since, until]) =>
+					getDirectorPeriodMetrics(db, evo, resolvedShopUuids, since, until),
+				),
+			);
+
+			const avgMetrics = averageDirectorMetrics(
+				avgMetricsList.map((item) => item.metrics),
+			);
+
+			return c.json({
+				date: targetDate,
+				shopUuids: resolvedShopUuids,
+				periods: {
+					today,
+					yesterday,
+					weekAgo,
+					avg: {
+						days: avgWindow,
+						metrics: avgMetrics,
+					},
+				},
+			});
+		} catch (error) {
+			logger.error("AI director summary failed", { error });
+			return c.json(
+				{ error: "AI_DIRECTOR_SUMMARY_FAILED" },
+				500,
+			);
+		}
+	})
+
+	.post("/director/forecast", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const {
+				date,
+				shopUuids,
+				openHour,
+				workingHoursWeekday,
+				workingHoursWeekend,
+			} = validate(AiDirectorForecastRequestSchema, payload);
+
+			const targetDate = date ?? toIsoDate(new Date());
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+
+			const weekdayHours = workingHoursWeekday ?? 12;
+			const weekendHours = workingHoursWeekend ?? 10;
+			const workingHours = isWeekend(targetDate) ? weekendHours : weekdayHours;
+
+			let resolvedOpenHour = openHour ?? null;
+			const openingsDate = toDDMMYYYY(targetDate);
+			if (resolvedOpenHour == null) {
+				const openings = await getOpeningsByDate(db, openingsDate);
+				const hours = openings
+					.map((row) => {
+						const d = new Date(row.date);
+						if (Number.isNaN(d.getTime())) return null;
+						return getMskHour(d);
+					})
+					.filter((hour): hour is number => hour !== null);
+				if (hours.length > 0) {
+					resolvedOpenHour = Math.min(...hours);
+				}
+			}
+			if (resolvedOpenHour == null) resolvedOpenHour = 7;
+
+			const [daySince, dayUntil] = buildEvotorDayRange(targetDate);
+			const now = new Date();
+			const isToday = targetDate === toIsoDate(now);
+			const until = isToday ? formatEvotorTimestamp(now) : dayUntil;
+
+			const docsByShop = await Promise.all(
+				resolvedShopUuids.map((shopUuid) =>
+					getDocumentsFromIndexFirst(db, evo, shopUuid, daySince, until, {
+						types: ["SELL", "PAYBACK"],
+						skipFetchIfStale: true,
+					}),
+				),
+			);
+			const docs = docsByShop.flat();
+			const metrics = aggregateDirectorMetrics(docs);
+
+			const hoursPassed = isToday
+				? Math.max(0, Math.min(getMskHour(now) - resolvedOpenHour, workingHours))
+				: workingHours;
+
+			const forecast =
+				hoursPassed > 0
+					? (metrics.revenue / hoursPassed) * workingHours
+					: 0;
+
+			return c.json({
+				date: targetDate,
+				shopUuids: resolvedShopUuids,
+				openHour: resolvedOpenHour,
+				workingHours,
+				hoursPassed,
+				revenueToNow: metrics.revenue,
+				forecast,
+			});
+		} catch (error) {
+			logger.error("AI director forecast failed", { error });
+			return c.json({ error: "AI_DIRECTOR_FORECAST_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/velocity", async (c) => {
+		try {
+			const payload = await c.req.json();
+			const {
+				since,
+				until,
+				shopUuids,
+				workingHoursWeekday,
+				workingHoursWeekend,
+				limit,
+			} = validate(AiDirectorVelocityRequestSchema, payload);
+
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+
+			const weekdayHours = workingHoursWeekday ?? 12;
+			const weekendHours = workingHoursWeekend ?? 10;
+
+			const dateKeys = listDateKeysInclusive(since, until);
+			const effectiveHours = dateKeys.reduce(
+				(sum, key) => sum + (isWeekend(key) ? weekendHours : weekdayHours),
+				0,
+			);
+			const effectiveDays =
+				weekdayHours > 0 ? effectiveHours / weekdayHours : 0;
+
+			const [rangeSince, rangeUntil] = [
+				buildEvotorDayRange(since)[0],
+				buildEvotorDayRange(until)[1],
+			];
+
+			const docsByShop = await Promise.all(
+				resolvedShopUuids.map((shopUuid) =>
+					getDocumentsFromIndexFirst(db, evo, shopUuid, rangeSince, rangeUntil, {
+						types: ["SELL", "PAYBACK"],
+						skipFetchIfStale: true,
+					}),
+				),
+			);
+
+			const skuMap = new Map<
+				string,
+				{ name: string; quantity: number; revenue: number }
+			>();
+			const categoryMap = new Map<
+				string,
+				{ quantity: number; revenue: number }
+			>();
+			const warnings: string[] = [];
+
+			for (let i = 0; i < resolvedShopUuids.length; i += 1) {
+				const shopUuid = resolvedShopUuids[i];
+				const docs = docsByShop[i] || [];
+				const { quantityByCategory, revenueByCategory, warnings: categoryWarnings } =
+					await buildCategoryStatsByShop(db, shopUuid, docs);
+				warnings.push(...categoryWarnings);
+
+				for (const doc of docs) {
+					const isRefund = doc.type === "PAYBACK";
+					for (const tx of doc.transactions || []) {
+						if (tx.type !== "REGISTER_POSITION") continue;
+						const qty = Number(tx.quantity || 0);
+						const sum = Number(tx.sum || 0);
+						const skuKey = tx.commodityUuid || tx.commodityName || "UNKNOWN";
+						const sku = skuMap.get(skuKey) || {
+							name: tx.commodityName || skuKey,
+							quantity: 0,
+							revenue: 0,
+						};
+						if (Number.isFinite(qty) && qty !== 0) {
+							sku.quantity += isRefund ? -Math.abs(qty) : qty;
+						}
+						if (Number.isFinite(sum) && sum !== 0) {
+							sku.revenue += isRefund ? -Math.abs(sum) : sum;
+						}
+						skuMap.set(skuKey, sku);
+					}
+				}
+
+				for (const [category, qty] of quantityByCategory.entries()) {
+					const existing = categoryMap.get(category) || {
+						quantity: 0,
+						revenue: 0,
+					};
+					existing.quantity += qty;
+					existing.revenue += revenueByCategory.get(category) || 0;
+					categoryMap.set(category, existing);
+				}
+			}
+
+			const maxItems = limit ?? 100;
+			const skuVelocity: VelocityEntry[] = Array.from(skuMap.entries())
+				.map(([id, data]) => ({
+					id,
+					name: data.name,
+					quantity: data.quantity,
+					revenue: data.revenue,
+					velocityPerHour:
+						effectiveHours > 0 ? data.quantity / effectiveHours : 0,
+					velocityPerDay:
+						effectiveDays > 0 ? data.quantity / effectiveDays : 0,
+				}))
+				.sort((a, b) => b.velocityPerDay - a.velocityPerDay)
+				.slice(0, maxItems);
+
+			const categoryVelocity: VelocityEntry[] = Array.from(categoryMap.entries())
+				.map(([name, data]) => ({
+					id: name,
+					name,
+					quantity: data.quantity,
+					revenue: data.revenue,
+					velocityPerHour:
+						effectiveHours > 0 ? data.quantity / effectiveHours : 0,
+					velocityPerDay:
+						effectiveDays > 0 ? data.quantity / effectiveDays : 0,
+				}))
+				.sort((a, b) => b.velocityPerDay - a.velocityPerDay)
+				.slice(0, maxItems);
+
+			return c.json({
+				since,
+				until,
+				shopUuids: resolvedShopUuids,
+				effectiveHours,
+				weekdayHours,
+				weekendHours,
+				velocity: {
+					sku: skuVelocity,
+					categories: categoryVelocity,
+				},
+				warnings: Array.from(new Set(warnings)),
+			});
+		} catch (error) {
+			logger.error("AI director velocity failed", { error });
+			return c.json({ error: "AI_DIRECTOR_VELOCITY_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/recommendations", async (c) => {
+		try {
+			const payload = await c.req.json();
+			const {
+				since,
+				until,
+				shopUuids,
+				planningDays,
+				deadStockDays,
+				lookbackDays,
+				limit,
+			} = validate(AiDirectorRecommendationsRequestSchema, payload);
+
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+
+			const weekdayHours = 12;
+			const weekendHours = 10;
+			const dateKeys = listDateKeysInclusive(since, until);
+			const effectiveHours = dateKeys.reduce(
+				(sum, key) => sum + (isWeekend(key) ? weekendHours : weekdayHours),
+				0,
+			);
+			const effectiveDays =
+				weekdayHours > 0 ? effectiveHours / weekdayHours : 0;
+
+			const [rangeSince, rangeUntil] = [
+				buildEvotorDayRange(since)[0],
+				buildEvotorDayRange(until)[1],
+			];
+
+			const docsByShop = await Promise.all(
+				resolvedShopUuids.map((shopUuid) =>
+					getDocumentsFromIndexFirst(db, evo, shopUuid, rangeSince, rangeUntil, {
+						types: ["SELL", "PAYBACK"],
+						skipFetchIfStale: true,
+					}),
+				),
+			);
+
+			const warnings: string[] = [];
+			const skuStats = new Map<
+				string,
+				{
+					name: string;
+					category: string | null;
+					quantity: number;
+					revenue: number;
+					lastSaleAt: string | null;
+				}
+			>();
+
+			for (let i = 0; i < resolvedShopUuids.length; i += 1) {
+				const shopUuid = resolvedShopUuids[i];
+				const docs = docsByShop[i] || [];
+				const commodityUuids = collectCommodityUuids(docs);
+				let categoryMap = new Map<string, string>();
+				if (commodityUuids.length > 0) {
+					try {
+						categoryMap = await fetchCategoryMapForShop(
+							db,
+							shopUuid,
+							commodityUuids,
+						);
+					} catch (error) {
+						warnings.push("category_map_unavailable");
+					}
+				}
+
+				const shopSkuStats = buildSkuStats(docs, categoryMap);
+				for (const [sku, entry] of shopSkuStats.entries()) {
+					const existing = skuStats.get(sku) || {
+						name: entry.name,
+						category: entry.category,
+						quantity: 0,
+						revenue: 0,
+						lastSaleAt: null,
+					};
+					existing.quantity += entry.quantity;
+					existing.revenue += entry.revenue;
+					if (!existing.category && entry.category) {
+						existing.category = entry.category;
+					}
+					if (!existing.lastSaleAt || (entry.lastSaleAt && entry.lastSaleAt > existing.lastSaleAt)) {
+						existing.lastSaleAt = entry.lastSaleAt;
+					}
+					skuStats.set(sku, existing);
+				}
+			}
+
+			const lookbackWindow = Math.max(
+				deadStockDays ?? 30,
+				lookbackDays ?? 60,
+			);
+			const lookbackSinceKey = shiftDateKey(until, -(lookbackWindow - 1));
+			if (lookbackSinceKey !== since) {
+				const lookbackSince = buildEvotorDayRange(lookbackSinceKey)[0];
+				const lookbackUntil = buildEvotorDayRange(until)[1];
+				const lookbackDocsByShop = await Promise.all(
+					resolvedShopUuids.map((shopUuid) =>
+						getDocumentsFromIndexFirst(
+							db,
+							evo,
+							shopUuid,
+							lookbackSince,
+							lookbackUntil,
+							{ types: ["SELL"], skipFetchIfStale: true },
+						),
+					),
+				);
+
+				for (const docs of lookbackDocsByShop) {
+					for (const doc of docs) {
+						for (const tx of doc.transactions || []) {
+							if (tx.type !== "REGISTER_POSITION") continue;
+							const sku = tx.commodityUuid || tx.commodityName || "UNKNOWN";
+							const entry = skuStats.get(sku);
+							if (!entry) continue;
+							if (!entry.lastSaleAt || doc.closeDate > entry.lastSaleAt) {
+								entry.lastSaleAt = doc.closeDate;
+							}
+							skuStats.set(sku, entry);
+						}
+					}
+				}
+			}
+
+			const planning = planningDays ?? 7;
+			const deadDays = deadStockDays ?? 30;
+			const maxItems = limit ?? 100;
+			const endDate = new Date(`${until}T23:59:59Z`);
+
+			const procurement: RecommendationItem[] = [];
+			const deadStock: RecommendationItem[] = [];
+			const abc: RecommendationItem[] = [];
+
+			const revenueList = Array.from(skuStats.entries())
+				.map(([id, entry]) => ({
+					id,
+					entry,
+					revenue: Math.max(0, entry.revenue),
+				}))
+				.sort((a, b) => b.revenue - a.revenue);
+
+			const totalRevenue = revenueList.reduce(
+				(sum, item) => sum + item.revenue,
+				0,
+			);
+
+			let cumulative = 0;
+			const abcMap = new Map<string, "A" | "B" | "C">();
+			for (const item of revenueList) {
+				cumulative += item.revenue;
+				const share = totalRevenue > 0 ? cumulative / totalRevenue : 0;
+				const group: "A" | "B" | "C" =
+					share <= 0.8 ? "A" : share <= 0.95 ? "B" : "C";
+				abcMap.set(item.id, group);
+			}
+
+			for (const [id, entry] of skuStats.entries()) {
+				const velocityPerDay =
+					effectiveDays > 0 ? entry.quantity / effectiveDays : 0;
+				const recommendedStock = velocityPerDay * planning;
+
+				if (velocityPerDay > 0) {
+					procurement.push({
+						type: "procurement",
+						id,
+						name: entry.name,
+						category: entry.category ?? undefined,
+						priorityScore: recommendedStock,
+						priority: "low",
+						details: `Рекомендованный запас: ${recommendedStock.toFixed(2)}`,
+						metrics: {
+							velocity_per_day: velocityPerDay,
+							planning_days: planning,
+						},
+					});
+				}
+
+				const lastSaleAt = entry.lastSaleAt
+					? new Date(entry.lastSaleAt)
+					: null;
+				const daysSinceSale = lastSaleAt
+					? Math.floor(
+							(endDate.getTime() - lastSaleAt.getTime()) /
+								(1000 * 60 * 60 * 24),
+						)
+					: lookbackWindow;
+
+				if (daysSinceSale >= deadDays) {
+					deadStock.push({
+						type: "dead_stock",
+						id,
+						name: entry.name,
+						category: entry.category ?? undefined,
+						priorityScore: daysSinceSale,
+						priority: "low",
+						details: `Нет продаж ${daysSinceSale} дней`,
+						metrics: {
+							days_since_last_sale: daysSinceSale,
+							dead_stock_days: deadDays,
+						},
+					});
+				}
+
+				const abcGroup = abcMap.get(id);
+				if (abcGroup && entry.revenue > 0) {
+					abc.push({
+						type: "abc",
+						id,
+						name: entry.name,
+						category: entry.category ?? undefined,
+						priorityScore:
+							entry.revenue * (abcGroup === "A" ? 3 : abcGroup === "B" ? 2 : 1),
+						priority: "low",
+						details: `ABC категория ${abcGroup}`,
+						metrics: {
+							revenue: entry.revenue,
+							abc: abcGroup,
+						},
+					});
+				}
+			}
+
+			const procurementSorted = applyPriorityByScore(
+				procurement.sort((a, b) => b.priorityScore - a.priorityScore).slice(0, maxItems),
+			);
+			const deadStockSorted = applyPriorityByScore(
+				deadStock.sort((a, b) => b.priorityScore - a.priorityScore).slice(0, maxItems),
+			);
+			const abcSorted = applyPriorityByScore(
+				abc.sort((a, b) => b.priorityScore - a.priorityScore).slice(0, maxItems),
+			);
+
+			const recommendations = applyPriorityByScore(
+				[
+					...procurementSorted,
+					...deadStockSorted,
+					...abcSorted,
+				].sort((a, b) => b.priorityScore - a.priorityScore),
+			);
+
+			return c.json({
+				since,
+				until,
+				shopUuids: resolvedShopUuids,
+				planningDays: planning,
+				deadStockDays: deadDays,
+				lookbackDays: lookbackWindow,
+				recommendations,
+				procurement: procurementSorted,
+				dead_stock: deadStockSorted,
+				abc: abcSorted,
+				warnings: Array.from(new Set(warnings)),
+			});
+		} catch (error) {
+			logger.error("AI director recommendations failed", { error });
+			return c.json({ error: "AI_DIRECTOR_RECOMMENDATIONS_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/report", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { date, shopUuids, sendTelegram } = validate(
+				AiDirectorReportRequestSchema,
+				payload,
+			);
+
+			const targetDate = date ?? toIsoDate(new Date());
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+
+			const [todaySince, todayUntil] = buildEvotorDayRange(targetDate);
+			const yesterdayKey = shiftDateKey(targetDate, -1);
+			const [yesterdaySince, yesterdayUntil] =
+				buildEvotorDayRange(yesterdayKey);
+
+			const [todayResult, yesterdayResult] = await Promise.all([
+				getDirectorPeriodMetrics(db, evo, resolvedShopUuids, todaySince, todayUntil),
+				getDirectorPeriodMetrics(
+					db,
+					evo,
+					resolvedShopUuids,
+					yesterdaySince,
+					yesterdayUntil,
+				),
+			]);
+
+			const salesChange = calcChangePct(
+				todayResult.metrics.revenue,
+				yesterdayResult.metrics.revenue,
+			);
+
+			const alerts: DirectorAlert[] = [];
+
+			const now = new Date();
+			const workingHours = isWeekend(targetDate) ? 10 : 12;
+			const hoursPassed = Math.max(1, Math.min(getMskHour(now) - 7, workingHours));
+			const forecast = (todayResult.metrics.revenue / hoursPassed) * workingHours;
+
+			let report = buildDirectorReportFallback({
+				date: targetDate,
+				today: todayResult.metrics,
+				yesterday: yesterdayResult.metrics,
+				salesChange,
+				alerts,
+				forecast,
+			});
+
+			try {
+				const aiResult = await c.env.AI.run(DIRECTOR_REPORT_MODEL as any, {
+					max_tokens: 700,
+					temperature: 0.2,
+					messages: [
+						{
+							role: "system",
+							content:
+								"Ты операционный директор розничной сети. Верни только валидный JSON без markdown и комментариев. Формат ответа строго: {\"happened\":\"...\",\"whyImportant\":\"...\",\"whatToDo\":[\"...\",\"...\",\"...\"]}. Требования: 1) Используй только входные данные. 2) happened и whyImportant по 1-3 предложения. 3) whatToDo — ровно 3 пункта, императив, конкретные действия.",
+						},
+						{
+							role: "user",
+							content: JSON.stringify({
+								date: targetDate,
+								metrics: {
+									today: todayResult.metrics,
+									yesterday: yesterdayResult.metrics,
+									salesChange,
+									forecast,
+								},
+								alerts,
+							}),
+						},
+					],
+				});
+
+				const text = extractAiText(aiResult);
+				const parsed = extractJsonObject(text);
+				if (parsed && typeof parsed === "object") {
+					const normalized = parsed as {
+						happened?: string;
+						whyImportant?: string;
+						whatToDo?: string[];
+					};
+					if (
+						typeof normalized.happened === "string" &&
+						typeof normalized.whyImportant === "string" &&
+						Array.isArray(normalized.whatToDo) &&
+						normalized.whatToDo.length === 3
+					) {
+						report = {
+							happened: normalizeLine(normalized.happened, report.happened),
+							whyImportant: normalizeLine(
+								normalized.whyImportant,
+								report.whyImportant,
+							),
+							whatToDo: normalized.whatToDo.map((line) =>
+								normalizeLine(line, line),
+							),
+						};
+					}
+				}
+			} catch (error) {
+				logger.warn("AI director report fallback used", { error });
+			}
+
+			const textBlocks = [
+				`Что случилось: ${report.happened}`,
+				`Почему важно: ${report.whyImportant}`,
+				`Что делать:`,
+				...report.whatToDo.map((line, idx) => `${idx + 1}. ${line}`),
+			];
+			const fullText = textBlocks.join("\n");
+
+			let telegramSent = 0;
+			if (sendTelegram) {
+				const subs = await listActiveTgSubscriptions(c.get("drizzle"));
+				for (const sub of subs) {
+					try {
+						await sendTelegramMessage(sub.chatId, fullText, c.env.BOT_TOKEN);
+						await touchTgSubscriptionLastSentAt(
+							c.get("drizzle"),
+							sub.userId,
+							sub.chatId,
+						);
+						telegramSent += 1;
+					} catch (error) {
+						logger.warn("Failed to send director report to Telegram", {
+							chatId: sub.chatId,
+						});
+					}
+				}
+			}
+
+			return c.json({
+				date: targetDate,
+				shopUuids: resolvedShopUuids,
+				blocks: report,
+				text: fullText,
+				telegram: {
+					sent: telegramSent,
+				},
+			});
+		} catch (error) {
+			logger.error("AI director report failed", { error });
+			return c.json({ error: "AI_DIRECTOR_REPORT_FAILED" }, 500);
+		}
+	})
 
 	.get("/documents", async (c) => {
 		logger.debug("Fetching documents");

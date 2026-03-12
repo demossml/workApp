@@ -61,11 +61,13 @@ import {
 import { jsonError, toApiErrorPayload } from "../errors";
 import { FinancialMetricsResponseSchema } from "../contracts/financialMetrics";
 import { aggregateShopFinancialFromDocuments } from "../contracts/financialAggregation";
+import { runEvotorDocumentsIndexingJob } from "../jobs/indexEvotorDocuments";
 import { computeRevenueSummary } from "../contracts/revenueMath";
 import { PlanForTodayResponseSchema } from "../contracts/planMetrics";
 import { WorkingByShopsResponseSchema } from "../contracts/workingByShops";
 import { CurrentWorkShopResponseSchema } from "../contracts/currentWorkShop";
 import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
+import { saveNewIndexDocuments } from "../db/repositories/indexDocuments";
 
 const paymentTypeLabels: Record<string, string> = {
 	CARD: "Банковской картой:",
@@ -314,6 +316,7 @@ async function getFinancialDataFromIndexWithFallback(
 				shopUuid,
 				since,
 				until,
+				{ skipFetchIfStale: true },
 			),
 		})),
 	);
@@ -1564,6 +1567,130 @@ export const evotorRoutes = new Hono<IEnv>()
 		} catch (error) {
 			logger.error("Ошибка при обработке запроса:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
+		}
+	})
+	.post("/financial/today/direct", async (c) => {
+		try {
+			const userId = c.var.userId || "";
+			const roleFromEvotor = userId
+				? await c.var.evotor.getEmployeeRole(userId)
+				: null;
+			const employeeRole =
+				userId === "5700958253" || userId === "475039971"
+					? "SUPERADMIN"
+					: roleFromEvotor;
+
+			if (employeeRole !== "SUPERADMIN") {
+				return c.json({ error: "Доступ только для SUPERADMIN" }, 403);
+			}
+
+			const evo = c.var.evotor;
+			const now = new Date();
+			const since = formatDateWithTime(now, false);
+			const until = formatDateWithTime(now, true);
+			const shopUuids = await evo.getShopUuids();
+			const financialData = await getFinancialDataDirectFromEvotor(
+				evo,
+				shopUuids,
+				since,
+				until,
+			);
+
+			return c.json(financialData);
+		} catch (error) {
+			logger.error("Ошибка при прямом запросе финансовых данных:", error);
+			return c.json({ message: "Ошибка обработки данных" }, 400);
+		}
+	})
+	.post("/index/warm", async (c) => {
+		try {
+			const userId = c.var.userId || "";
+			const roleFromEvotor = userId
+				? await c.var.evotor.getEmployeeRole(userId)
+				: null;
+			const employeeRole =
+				userId === "5700958253" || userId === "475039971"
+					? "SUPERADMIN"
+					: roleFromEvotor;
+
+			if (employeeRole !== "SUPERADMIN") {
+				return c.json({ error: "Доступ только для SUPERADMIN" }, 403);
+			}
+
+			const start = Date.now();
+			const beforeRow = await c.env.DB
+				.prepare("SELECT COUNT(*) as count FROM index_documents")
+				.first<{ count: number }>();
+			const before = Number(beforeRow?.count || 0);
+
+			await runEvotorDocumentsIndexingJob(c.env);
+
+			const afterRow = await c.env.DB
+				.prepare("SELECT COUNT(*) as count FROM index_documents")
+				.first<{ count: number }>();
+			const after = Number(afterRow?.count || 0);
+
+			return c.json({
+				ok: true,
+				before,
+				after,
+				added: Math.max(0, after - before),
+				durationMs: Date.now() - start,
+			});
+		} catch (error) {
+			logger.error("Index warm failed", { error });
+			return c.json({ error: "INDEX_WARM_FAILED" }, 500);
+		}
+	})
+	.post("/index/pull-today", async (c) => {
+		try {
+			const userId = c.var.userId || "";
+			const roleFromEvotor = userId
+				? await c.var.evotor.getEmployeeRole(userId)
+				: null;
+			const employeeRole =
+				userId === "5700958253" || userId === "475039971"
+					? "SUPERADMIN"
+					: roleFromEvotor;
+
+			if (employeeRole !== "SUPERADMIN") {
+				return c.json({ error: "Доступ только для SUPERADMIN" }, 403);
+			}
+
+			const evotor = c.var.evotor;
+			const now = new Date();
+			const since = formatDateWithTime(now, false);
+			const until = formatDateWithTime(now, true);
+			const shopUuids = await evotor.getShopUuids();
+			const queries = shopUuids.map((shopId) => ({
+				shopId,
+				since,
+				until,
+			}));
+
+			const beforeRow = await c.env.DB
+				.prepare("SELECT COUNT(*) as count FROM index_documents")
+				.first<{ count: number }>();
+			const before = Number(beforeRow?.count || 0);
+
+			const docs = await evotor.getDocumentsIndexForShops(queries);
+			await saveNewIndexDocuments(c.env.DB, docs);
+
+			const afterRow = await c.env.DB
+				.prepare("SELECT COUNT(*) as count FROM index_documents")
+				.first<{ count: number }>();
+			const after = Number(afterRow?.count || 0);
+
+			return c.json({
+				ok: true,
+				fetched: docs.length,
+				before,
+				after,
+				added: Math.max(0, after - before),
+			});
+		} catch (error) {
+			logger.error("Index pull-today failed", { error });
+			return c.json({ error: "INDEX_PULL_TODAY_FAILED" }, 500);
 		}
 	})
 	.post("/order", async (c) => {

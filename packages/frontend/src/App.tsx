@@ -37,6 +37,7 @@ const DeadStocks = lazy(() => import("./pages/deadstock/DeadStock"));
 const StoreOpeningsAdminReport = lazy(
   () => import("./pages/reports/StoreOpeningsAdminReport")
 );
+const AiDirectorPage = lazy(() => import("./pages/ai/AiDirector"));
 
 function App() {
   const { data } = useEmployeeRole();
@@ -174,6 +175,7 @@ function App() {
             <Route path="/evotor/schedules" element={<SchedulesReport />} />
             <Route path="/evotor/open-store" element={<StoreOpeningPage />} />
             <Route path="evotor/dead-stock" element={<DeadStocks />} />
+            <Route path="/ai/director" element={<AiDirectorPage />} />
           </Routes>
         </Suspense>
       </main>

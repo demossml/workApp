@@ -67,6 +67,86 @@ type OpeningPhotoDigestResponse = {
   }>;
 };
 
+type DirectorSummaryResponse = {
+  date: string;
+  shopUuids: string[];
+  periods: {
+    today: { metrics: DirectorMetrics };
+    yesterday: { metrics: DirectorMetrics };
+    weekAgo: { metrics: DirectorMetrics };
+    avg: { days: number; metrics: DirectorMetrics };
+  };
+};
+
+type DirectorMetrics = {
+  revenue: number;
+  checks: number;
+  averageCheck: number;
+  costOfGoods: number;
+  profit: number;
+  refunds: number;
+  refundChecks: number;
+};
+
+type DirectorAlert = {
+  code: string;
+  severity: "high" | "medium" | "low";
+  title: string;
+  details: string;
+  shopName?: string;
+  category?: string;
+};
+
+type DirectorAlertsResponse = {
+  date: string;
+  alerts: DirectorAlert[];
+};
+
+type DirectorForecastResponse = {
+  date: string;
+  revenueToNow: number;
+  forecast: number;
+  hoursPassed: number;
+  workingHours: number;
+};
+
+type DirectorVelocityEntry = {
+  id: string;
+  name: string;
+  quantity: number;
+  revenue: number;
+  velocityPerDay: number;
+  velocityPerHour: number;
+};
+
+type DirectorVelocityResponse = {
+  since: string;
+  until: string;
+  velocity: {
+    sku: DirectorVelocityEntry[];
+    categories: DirectorVelocityEntry[];
+  };
+};
+
+type DirectorRecommendationsResponse = {
+  recommendations: Array<{
+    type: "procurement" | "dead_stock" | "abc";
+    id: string;
+    name: string;
+    category?: string;
+    priority: "high" | "medium" | "low";
+    details: string;
+  }>;
+};
+
+type DirectorReportResponse = {
+  blocks: {
+    happened: string;
+    whyImportant: string;
+    whatToDo: string[];
+  };
+};
+
 type PlanInfo = {
   datePlan: number;
   dataSales: number;
@@ -75,12 +155,19 @@ type PlanInfo = {
 
 type DashboardSummaryProps = {
   onAiSectionDataChange?: (data: DashboardSummaryAiSectionProps) => void;
+  showAiDirector?: boolean;
+  showMainDashboard?: boolean;
 };
 
 const formatMoney = (value: number) =>
   new Intl.NumberFormat("ru-RU", {
     maximumFractionDigits: 0,
   }).format(Math.round(value));
+
+const formatPct = (value: number | null) => {
+  if (value == null || !Number.isFinite(value)) return "н/д";
+  return `${(value * 100).toFixed(1)}%`;
+};
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -502,6 +589,8 @@ function OpeningPhotoDigestDetails({
 
 export default function DashboardSummary2({
   onAiSectionDataChange,
+  showAiDirector = false,
+  showMainDashboard = true,
 }: DashboardSummaryProps = {}) {
   const [dateMode, setDateMode] = useState<"today" | "yesterday" | "period">(
     "today"
@@ -549,13 +638,15 @@ export default function DashboardSummary2({
   const safeSince = since || todaySince;
   const safeUntil = until || safeSince;
 
+  const salesEnabled = showMainDashboard;
   const { data, loading, lastUpdate } = useSalesData({
     since: safeSince,
     until: safeUntil,
+    enabled: salesEnabled,
   });
   const { data: roleData } = useEmployeeRole();
   const { data: currentWorkShop } = useCurrentWorkShop();
-  const reportAndPlan = useGetReportAndPlan(true);
+  const reportAndPlan = useGetReportAndPlan(showMainDashboard);
 
   const isSuperAdmin = roleData?.employeeRole === "SUPERADMIN";
   const isAdmin = roleData?.employeeRole === "ADMIN";
@@ -587,6 +678,7 @@ export default function DashboardSummary2({
     userId: me.data?.id ?? "",
     since: safeSince,
     until: safeUntil,
+    enabled: showMainDashboard,
   });
   const comparisonRange = React.useMemo(() => {
     const periodDays = getDiffDaysInclusive(safeSince, safeUntil);
@@ -598,6 +690,7 @@ export default function DashboardSummary2({
   const previousPeriodData = useSalesData({
     since: comparisonRange.prevSince,
     until: comparisonRange.prevUntil,
+    enabled: salesEnabled,
   });
   const previousFilteredData = useFilteredSalesData(
     previousPeriodData.data,
@@ -614,6 +707,7 @@ export default function DashboardSummary2({
   const weekSalesData = useSalesData({
     since: weekRange.since,
     until: weekRange.until,
+    enabled: salesEnabled,
   });
   const weekFilteredData = useFilteredSalesData(
     weekSalesData.data,
@@ -639,10 +733,99 @@ export default function DashboardSummary2({
   const activeBestShopRows = bestShopMode === "week" ? weekShopKpiRows : dayShopKpiRows;
   const digestDate = since || new Date().toISOString().slice(0, 10);
 
+  const [directorLoading, setDirectorLoading] = React.useState(false);
+  const [directorError, setDirectorError] = React.useState<string | null>(null);
+  const [directorSummary, setDirectorSummary] =
+    React.useState<DirectorSummaryResponse | null>(null);
+  const [directorAlerts, setDirectorAlerts] =
+    React.useState<DirectorAlertsResponse | null>(null);
+  const [directorForecast, setDirectorForecast] =
+    React.useState<DirectorForecastResponse | null>(null);
+  const [directorVelocity, setDirectorVelocity] =
+    React.useState<DirectorVelocityResponse | null>(null);
+  const [directorRecommendations, setDirectorRecommendations] =
+    React.useState<DirectorRecommendationsResponse | null>(null);
+  const [directorReport, setDirectorReport] =
+    React.useState<DirectorReportResponse | null>(null);
+
+  const directorDate = safeUntil;
+
   React.useEffect(() => {
     setDigestError(null);
     setDigestData(null);
   }, [digestDate, roleData?.employeeRole]);
+
+  React.useEffect(() => {
+    if (!showAiDirector) return;
+    let cancelled = false;
+
+    const loadDirectorData = async () => {
+      setDirectorLoading(true);
+      setDirectorError(null);
+      try {
+        const aiDirector = client.api.ai as any;
+        const [summaryRes, alertsRes, forecastRes, velocityRes, recommendationsRes, reportRes] =
+          await Promise.all([
+            aiDirector["director/summary"].$post({
+              json: { date: directorDate },
+            }),
+            aiDirector["director/alerts"].$post({
+              json: { date: directorDate },
+            }),
+            aiDirector["director/forecast"].$post({
+              json: { date: directorDate },
+            }),
+            aiDirector["director/velocity"].$post({
+              json: { since: safeSince, until: safeUntil, limit: 50 },
+            }),
+            aiDirector["director/recommendations"].$post({
+              json: { since: safeSince, until: safeUntil, limit: 50 },
+            }),
+            aiDirector["director/report"].$post({
+              json: { date: directorDate, sendTelegram: false },
+            }),
+          ]);
+
+        if (!summaryRes.ok) throw new Error("Не удалось загрузить summary");
+        if (!alertsRes.ok) throw new Error("Не удалось загрузить alerts");
+        if (!forecastRes.ok) throw new Error("Не удалось загрузить forecast");
+        if (!velocityRes.ok) throw new Error("Не удалось загрузить velocity");
+        if (!recommendationsRes.ok)
+          throw new Error("Не удалось загрузить recommendations");
+        if (!reportRes.ok) throw new Error("Не удалось загрузить report");
+
+        const [summary, alerts, forecast, velocity, recommendations, report] =
+          await Promise.all([
+            summaryRes.json() as Promise<DirectorSummaryResponse>,
+            alertsRes.json() as Promise<DirectorAlertsResponse>,
+            forecastRes.json() as Promise<DirectorForecastResponse>,
+            velocityRes.json() as Promise<DirectorVelocityResponse>,
+            recommendationsRes.json() as Promise<DirectorRecommendationsResponse>,
+            reportRes.json() as Promise<DirectorReportResponse>,
+          ]);
+
+        if (cancelled) return;
+        setDirectorSummary(summary);
+        setDirectorAlerts(alerts);
+        setDirectorForecast(forecast);
+        setDirectorVelocity(velocity);
+        setDirectorRecommendations(recommendations);
+        setDirectorReport(report);
+      } catch (error) {
+        if (cancelled) return;
+        setDirectorError(
+          error instanceof Error ? error.message : "Ошибка AI директора"
+        );
+      } finally {
+        if (!cancelled) setDirectorLoading(false);
+      }
+    };
+
+    void loadDirectorData();
+    return () => {
+      cancelled = true;
+    };
+  }, [directorDate, safeSince, safeUntil, showAiDirector]);
 
   const accessoryShopOptions = React.useMemo(
     () => (accessoriesSales.data?.byShop || []).map((shop) => shop.shopName),
@@ -1163,7 +1346,34 @@ export default function DashboardSummary2({
     setExpandedCard(expandedCard === cardId ? null : cardId);
   };
 
-  if (!loading && !filteredData) return <EmptyWorkDay />;
+  const directorToday = directorSummary?.periods.today.metrics;
+  const directorYesterday = directorSummary?.periods.yesterday.metrics;
+  const directorWeekAgo = directorSummary?.periods.weekAgo.metrics;
+  const directorAvg = directorSummary?.periods.avg.metrics;
+
+  const pctChange = (current?: number, previous?: number) => {
+    if (!previous || !Number.isFinite(previous)) return null;
+    if (!Number.isFinite(current ?? 0)) return null;
+    return ((current ?? 0) - previous) / previous;
+  };
+
+  const directorSalesChange = pctChange(
+    directorToday?.revenue,
+    directorYesterday?.revenue
+  );
+  const directorChecksChange = pctChange(
+    directorToday?.checks,
+    directorYesterday?.checks
+  );
+  const directorAvgCheckChange = pctChange(
+    directorToday?.averageCheck,
+    directorYesterday?.averageCheck
+  );
+
+  const topAlerts = (directorAlerts?.alerts || []).slice(0, 5);
+  const topRecommendations = (directorRecommendations?.recommendations || []).slice(0, 5);
+
+  if (showMainDashboard && !loading && !filteredData) return <EmptyWorkDay />;
 
   return (
     <>
@@ -1247,7 +1457,8 @@ export default function DashboardSummary2({
           )}
         </Popover>
       </div>
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      {showMainDashboard && (
+        <div className="grid grid-cols-2 gap-4 mb-6">
         <div className={expandedCard === "revenue" ? "col-span-2" : ""}>
           <div
             className={`rounded-xl transform-gpu transition-all duration-300 ${
@@ -1479,7 +1690,221 @@ export default function DashboardSummary2({
             </div>
           )}
         </div>
-      </div>
+        </div>
+      )}
+
+      {showAiDirector && (
+        <section className="mt-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+            AI Директор
+          </h2>
+          {directorLoading && (
+            <span className="text-xs text-gray-500">Обновление…</span>
+          )}
+        </div>
+
+        {directorError && (
+          <div className="rounded-lg bg-red-100 p-3 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-200">
+            {directorError}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
+            <div className="text-xs text-gray-500">Выручка</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">
+              {directorToday ? `${formatMoney(directorToday.revenue)} ₽` : "—"}
+            </div>
+            <div className="text-xs text-gray-500">
+              к вчера: {formatPct(directorSalesChange)}
+            </div>
+          </div>
+          <div className="rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
+            <div className="text-xs text-gray-500">Прибыль</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">
+              {directorToday ? `${formatMoney(directorToday.profit)} ₽` : "—"}
+            </div>
+            <div className="text-xs text-gray-500">
+              к вчера: {formatPct(pctChange(directorToday?.profit, directorYesterday?.profit))}
+            </div>
+          </div>
+          <div className="rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
+            <div className="text-xs text-gray-500">Чеки</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">
+              {directorToday ? Math.round(directorToday.checks).toLocaleString("ru-RU") : "—"}
+            </div>
+            <div className="text-xs text-gray-500">
+              к вчера: {formatPct(directorChecksChange)}
+            </div>
+          </div>
+          <div className="rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
+            <div className="text-xs text-gray-500">Средний чек</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">
+              {directorToday ? `${formatMoney(directorToday.averageCheck)} ₽` : "—"}
+            </div>
+            <div className="text-xs text-gray-500">
+              к вчера: {formatPct(directorAvgCheckChange)}
+            </div>
+          </div>
+          <div className="rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
+            <div className="text-xs text-gray-500">Себестоимость</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">
+              {directorToday ? `${formatMoney(directorToday.costOfGoods)} ₽` : "—"}
+            </div>
+            <div className="text-xs text-gray-500">
+              к вчера: {formatPct(pctChange(directorToday?.costOfGoods, directorYesterday?.costOfGoods))}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+              Проблемы
+            </h3>
+            {!topAlerts.length ? (
+              <div className="text-sm text-gray-500">Критичных проблем нет.</div>
+            ) : (
+              <ul className="space-y-2">
+                {topAlerts.map((alert, idx) => (
+                  <li key={`${alert.code}-${idx}`} className="text-sm">
+                    <div className="font-semibold text-gray-900 dark:text-white">
+                      {alert.title}
+                    </div>
+                    <div className="text-xs text-gray-600 dark:text-gray-300">
+                      {alert.details}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+              Рекомендации
+            </h3>
+            {!topRecommendations.length ? (
+              <div className="text-sm text-gray-500">Пока нет рекомендаций.</div>
+            ) : (
+              <ul className="space-y-2">
+                {topRecommendations.map((item, idx) => (
+                  <li key={`${item.id}-${idx}`} className="text-sm">
+                    <div className="font-semibold text-gray-900 dark:text-white">
+                      {item.name}
+                    </div>
+                    <div className="text-xs text-gray-600 dark:text-gray-300">
+                      {item.details}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+            История и тренды
+          </h3>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="text-gray-500">Сегодня</div>
+            <div className="text-gray-900 dark:text-white">
+              {directorToday ? `${formatMoney(directorToday.revenue)} ₽` : "—"}
+            </div>
+            <div className="text-gray-500">Вчера</div>
+            <div className="text-gray-900 dark:text-white">
+              {directorYesterday ? `${formatMoney(directorYesterday.revenue)} ₽` : "—"}
+            </div>
+            <div className="text-gray-500">Неделя назад</div>
+            <div className="text-gray-900 dark:text-white">
+              {directorWeekAgo ? `${formatMoney(directorWeekAgo.revenue)} ₽` : "—"}
+            </div>
+            <div className="text-gray-500">Среднее</div>
+            <div className="text-gray-900 dark:text-white">
+              {directorAvg ? `${formatMoney(directorAvg.revenue)} ₽` : "—"}
+            </div>
+          </div>
+          {directorForecast && (
+            <div className="mt-3 text-xs text-gray-500">
+              Прогноз на день: {formatMoney(directorForecast.forecast)} ₽
+              {" • "}
+              Прошло {directorForecast.hoursPassed} из {directorForecast.workingHours} ч
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+            Скорость продаж
+          </h3>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div>
+              <div className="text-xs text-gray-500 mb-2">Топ SKU</div>
+              <ul className="space-y-2">
+                {(directorVelocity?.velocity.sku || []).slice(0, 5).map((item) => (
+                  <li key={item.id} className="text-sm">
+                    <div className="font-semibold text-gray-900 dark:text-white">
+                      {item.name}
+                    </div>
+                    <div className="text-xs text-gray-600 dark:text-gray-300">
+                      {item.velocityPerDay.toFixed(2)} / день • {item.velocityPerHour.toFixed(2)} / час
+                    </div>
+                  </li>
+                ))}
+                {!directorVelocity?.velocity.sku?.length && (
+                  <li className="text-xs text-gray-500">Нет данных</li>
+                )}
+              </ul>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-2">Топ категории</div>
+              <ul className="space-y-2">
+                {(directorVelocity?.velocity.categories || []).slice(0, 5).map((item) => (
+                  <li key={item.id} className="text-sm">
+                    <div className="font-semibold text-gray-900 dark:text-white">
+                      {item.name}
+                    </div>
+                    <div className="text-xs text-gray-600 dark:text-gray-300">
+                      {item.velocityPerDay.toFixed(2)} / день • {item.velocityPerHour.toFixed(2)} / час
+                    </div>
+                  </li>
+                ))}
+                {!directorVelocity?.velocity.categories?.length && (
+                  <li className="text-xs text-gray-500">Нет данных</li>
+                )}
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {directorReport && (
+          <div className="rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+              AI‑отчёт
+            </h3>
+            <div className="text-sm text-gray-800 dark:text-gray-200 space-y-2">
+              <div>
+                <span className="font-semibold">Что случилось:</span>{" "}
+                {directorReport.blocks.happened}
+              </div>
+              <div>
+                <span className="font-semibold">Почему важно:</span>{" "}
+                {directorReport.blocks.whyImportant}
+              </div>
+              <div>
+                <span className="font-semibold">Что делать:</span>
+                <ol className="list-decimal pl-5">
+                  {directorReport.blocks.whatToDo.map((line, idx) => (
+                    <li key={idx}>{line}</li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+          </div>
+        )}
+        </section>
+      )}
     </>
   );
 }

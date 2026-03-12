@@ -48,13 +48,16 @@ export async function getDocumentsFromIndexFirst(
 	shopUuid: string,
 	since: string,
 	until: string,
-	options?: { types?: IndexDocument["type"][] },
+	options?: {
+		types?: IndexDocument["type"][];
+		skipFetchIfStale?: boolean;
+	},
 ): Promise<IndexDocument[]> {
 	await ensureIndexSchema(db);
 
 	let indexedDocs = await getDocumentsByPeriod(db, shopUuid, since, until);
 
-	if (!isIndexFreshEnough(indexedDocs, until)) {
+	if (!isIndexFreshEnough(indexedDocs, until) && !options?.skipFetchIfStale) {
 		const fetchSince =
 			indexedDocs.length > 0
 				? indexedDocs[indexedDocs.length - 1].closeDate

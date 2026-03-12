@@ -6,6 +6,7 @@ import { FinancialMetricsResponseSchema } from "@work-appt/backend/src/contracts
 interface UseSalesDataParams {
   since?: string;
   until?: string;
+  enabled?: boolean;
 }
 
 interface UseSalesDataReturn {
@@ -34,6 +35,11 @@ export function useSalesData(params?: UseSalesDataParams): UseSalesDataReturn {
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    if (params?.enabled === false) {
+      setLoading(false);
+      setIsUpdating(false);
+      return;
+    }
     let isMounted = true;
 
     const fetchData = async () => {
@@ -102,7 +108,7 @@ export function useSalesData(params?: UseSalesDataParams): UseSalesDataReturn {
       abortRef.current?.abort();
       clearInterval(interval);
     };
-  }, [params?.since, params?.until]);
+  }, [params?.since, params?.until, params?.enabled]);
 
   return { data, loading, error, lastUpdate, isUpdating };
 }

@@ -1,5 +1,5 @@
 #:schema node_modules/wrangler/config-schema.json
-name = "work-app"
+name = "work-appt"
 main = "src/index.ts"
 compatibility_date = "2024-10-22"
 compatibility_flags = ["nodejs_compat"]
@@ -7,9 +7,7 @@ assets = { directory = "dist"}
 upload_source_maps = true
 
 
-routes = [
-{ pattern = "demossml.cc", custom_domain = true }
-]
+
 
 
 [[d1_databases]]
