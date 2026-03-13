@@ -1,4 +1,5 @@
 import type { Ai, D1Database, R2Bucket } from "@cloudflare/workers-types";
+import type { KVNamespace } from "@cloudflare/workers-types";
 import type { Context } from "hono";
 import type { Evotor } from "./evotor";
 
@@ -10,6 +11,10 @@ export type IEnv = {
 		AI: Ai;
 		R2: R2Bucket;
 		R2_PUBLIC_URL: string;
+		KV?: KVNamespace;
+		WEATHER_DEFAULT_LAT?: string;
+		WEATHER_DEFAULT_LON?: string;
+		WEATHER_DEFAULT_NAME?: string;
 		R2_ACCOUNT_ID?: string;
 		ALERT_TZ_OFFSET_MINUTES?: string;
 		ALERT_REFUND_THRESHOLD_PCT?: string;

@@ -8,6 +8,17 @@ import {
 	getLatestCloseDates,
 	saveNewIndexDocuments,
 } from "../db/repositories/indexDocuments";
+import {
+	buildSalesHourlyRows,
+	upsertSalesHourlyRows,
+} from "../db/repositories/salesHourly";
+import {
+	buildAiReportKey,
+	buildSalesDayKey,
+	buildSalesHourKey,
+	buildTopProductsKey,
+	getDateKey,
+} from "../utils/kvCache";
 
 export async function runEvotorDocumentsIndexingJob(
 	bindings: IEnv["Bindings"],
@@ -55,6 +66,24 @@ export async function runEvotorDocumentsIndexingJob(
 
 	const documents = await evotor.getDocumentsIndexForShops(queries);
 	await saveNewIndexDocuments(db, documents);
+	await upsertSalesHourlyRows(db, buildSalesHourlyRows(documents));
+
+	if (bindings.KV) {
+		const todayKey = getDateKey(new Date());
+		const deleteKeys = shopUuids.flatMap((shopId) => [
+			buildSalesDayKey(shopId, todayKey),
+			buildSalesHourKey(shopId, todayKey),
+			buildTopProductsKey(shopId, "today"),
+			buildAiReportKey(shopId, todayKey),
+		]);
+		deleteKeys.push(
+			buildSalesDayKey("all", todayKey),
+			buildSalesHourKey("all", todayKey),
+			buildTopProductsKey("all", "today"),
+			buildAiReportKey("all", todayKey),
+		);
+		await Promise.all(deleteKeys.map((key) => bindings.KV!.delete(key)));
+	}
 
 	logger.info("Evotor documents indexing completed", {
 		shops: shopUuids.length,

@@ -68,6 +68,12 @@ import { WorkingByShopsResponseSchema } from "../contracts/workingByShops";
 import { CurrentWorkShopResponseSchema } from "../contracts/currentWorkShop";
 import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
 import { saveNewIndexDocuments } from "../db/repositories/indexDocuments";
+import {
+	buildSalesDayKey,
+	buildTopProductsKey,
+	getCachedJson,
+	getTodayAndYesterdayKeys,
+} from "../utils/kvCache";
 
 const paymentTypeLabels: Record<string, string> = {
 	CARD: "Банковской картой:",
@@ -1484,6 +1490,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			const db = c.get("db");
 			const startDate = c.req.query("since");
 			const endDate = c.req.query("until");
+			const kv = c.env.KV;
 
 			if (!startDate || !endDate) {
 				return c.json({ error: "since и until обязательны" }, 400);
@@ -1493,31 +1500,72 @@ export const evotorRoutes = new Hono<IEnv>()
 			const since = formatDateWithTime(new Date(startDate), false);
 			const until = formatDateWithTime(new Date(endDate), true);
 			const shopUuids = await evo.getShopUuids();
-			let financialData;
-			try {
-				financialData = await getFinancialDataFromIndexWithFallback(
-					db,
-					evo,
-					shopUuids,
-					since,
-					until,
-				);
-			} catch (indexedError) {
-				logger.warn(
-					"Financial: indexed source failed, fallback to Evotor direct",
-					{
-						error:
-							indexedError instanceof Error
-								? indexedError.message
-								: String(indexedError),
-					},
-				);
-				financialData = await getFinancialDataDirectFromEvotor(
-					evo,
-					shopUuids,
-					since,
-					until,
-				);
+
+			const { todayKey, yesterdayKey } = getTodayAndYesterdayKeys();
+			const isSingleDay = startDate === endDate;
+			const cacheKey = isSingleDay
+				? buildSalesDayKey("all", startDate)
+				: `sales:store:all:day:${startDate}-${endDate}`;
+			const ttlSeconds = isSingleDay
+				? startDate === todayKey
+					? 300
+					: startDate === yesterdayKey
+						? 86400
+						: 1800
+				: 1800;
+
+			const { data: financialData, cacheHit } = await getCachedJson(
+				kv,
+				cacheKey,
+				ttlSeconds,
+				async () => {
+					try {
+						return await getFinancialDataFromIndexWithFallback(
+							db,
+							evo,
+							shopUuids,
+							since,
+							until,
+						);
+					} catch (indexedError) {
+						logger.warn(
+							"Financial: indexed source failed, fallback to Evotor direct",
+							{
+								error:
+									indexedError instanceof Error
+										? indexedError.message
+										: String(indexedError),
+							},
+						);
+						return await getFinancialDataDirectFromEvotor(
+							evo,
+							shopUuids,
+							since,
+							until,
+						);
+					}
+				},
+			);
+
+			if (cacheHit) {
+				c.header("x-cache", "hit");
+			}
+
+			if (isSingleDay && kv) {
+				const period =
+					startDate === todayKey
+						? "today"
+						: startDate === yesterdayKey
+							? "yesterday"
+							: "custom";
+				const topKey = buildTopProductsKey("all", period);
+				const topProducts = (financialData as { topProducts?: unknown })
+					.topProducts;
+				if (topProducts) {
+					await kv.put(topKey, JSON.stringify(topProducts), {
+						expirationTtl: 1800,
+					});
+				}
 			}
 
 			return c.json(financialData);
@@ -1530,6 +1578,7 @@ export const evotorRoutes = new Hono<IEnv>()
 		try {
 			const evo = c.var.evotor;
 			const db = c.get("db");
+			const kv = c.env.KV;
 			const now = new Date();
 
 			const since = formatDateWithTime(now, false);
@@ -1537,31 +1586,50 @@ export const evotorRoutes = new Hono<IEnv>()
 
 			const shopUuids = await evo.getShopUuids();
 
-			let financialData;
-			try {
-				financialData = await getFinancialDataFromIndexWithFallback(
-					db,
-					evo,
-					shopUuids,
-					since,
-					until,
-				);
-			} catch (indexedError) {
-				logger.warn(
-					"Financial/today: indexed source failed, fallback to Evotor direct",
-					{
-						error:
-							indexedError instanceof Error
-								? indexedError.message
-								: String(indexedError),
-					},
-				);
-				financialData = await getFinancialDataDirectFromEvotor(
-					evo,
-					shopUuids,
-					since,
-					until,
-				);
+			const todayKey = getTodayAndYesterdayKeys().todayKey;
+			const { data: financialData, cacheHit } = await getCachedJson(
+				kv,
+				buildSalesDayKey("all", todayKey),
+				300,
+				async () => {
+					try {
+						return await getFinancialDataFromIndexWithFallback(
+							db,
+							evo,
+							shopUuids,
+							since,
+							until,
+						);
+					} catch (indexedError) {
+						logger.warn(
+							"Financial/today: indexed source failed, fallback to Evotor direct",
+							{
+								error:
+									indexedError instanceof Error
+										? indexedError.message
+										: String(indexedError),
+							},
+						);
+						return await getFinancialDataDirectFromEvotor(
+							evo,
+							shopUuids,
+							since,
+							until,
+						);
+					}
+				},
+			);
+			if (cacheHit) {
+				c.header("x-cache", "hit");
+			}
+			if (kv) {
+				const topProducts = (financialData as { topProducts?: unknown })
+					.topProducts;
+				if (topProducts) {
+					await kv.put(buildTopProductsKey("all", "today"), JSON.stringify(topProducts), {
+						expirationTtl: 1800,
+					});
+				}
 			}
 			return c.json(financialData);
 		} catch (error) {

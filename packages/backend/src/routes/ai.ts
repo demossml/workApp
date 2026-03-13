@@ -5,9 +5,16 @@ import {
 	AiInsightsRequestSchema,
 	AiDirectorAlertsRequestSchema,
 	AiDirectorForecastRequestSchema,
+	AiDirectorChatRequestSchema,
+	AiDirectorStoreRatingRequestSchema,
+	AiDirectorEmployeeAnalysisRequestSchema,
+	AiDirectorDemandForecastRequestSchema,
+	AiDirectorExplainSalesRequestSchema,
+	AiDirectorHeatmapRequestSchema,
 	AiDirectorReportRequestSchema,
 	AiDirectorRecommendationsRequestSchema,
 	AiDirectorSummaryRequestSchema,
+	AiDirectorStockMonitorRequestSchema,
 	AiDirectorVelocityRequestSchema,
 	DashboardSummary2InsightsRequestSchema,
 	EmployeeShiftKpiSchema,
@@ -49,6 +56,9 @@ import {
 import type { IndexDocument, Product } from "../evotor/types";
 import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
 import { sendTelegramMessage } from "../../utils/sendTelegramMessage";
+import { buildAiReportKey } from "../utils/kvCache";
+import { getSalesHourly } from "../db/repositories/salesHourly";
+import { getWeatherSummary, weatherDemandFactor } from "../utils/weather";
 
 const toIsoDate = (date: Date) => date.toISOString().split("T")[0];
 
@@ -612,6 +622,22 @@ const extractAiText = (result: unknown): string => {
 	return "";
 };
 
+const calcRevenueFromDocs = (docs: IndexDocument[]): { revenue: number; checks: number } => {
+	let revenue = 0;
+	let checks = 0;
+	for (const doc of docs) {
+		if (doc.type === "SELL") checks += 1;
+		if (doc.type === "PAYBACK") checks += 1;
+		for (const trans of doc.transactions || []) {
+			if (trans.type !== "PAYMENT") continue;
+			const raw = Number(trans.sum || 0);
+			if (!Number.isFinite(raw) || raw === 0) continue;
+			revenue += doc.type === "PAYBACK" ? -Math.abs(raw) : raw;
+		}
+	}
+	return { revenue, checks };
+};
+
 type DashboardSummary2Metrics = {
 	networkRisk: number;
 	redShops: Array<{
@@ -889,7 +915,6 @@ export const aiRoutes = new Hono<IEnv>()
 				shopUuids && shopUuids.length > 0
 					? shopUuids
 					: await evo.getShopUuids();
-
 			const shopNamesMap = (await evo.getShopNameUuidsDict()) || {};
 
 			const [todaySince, todayUntil] = buildEvotorDayRange(targetDate);
@@ -935,6 +960,8 @@ export const aiRoutes = new Hono<IEnv>()
 
 			const alerts: DirectorAlert[] = [];
 			const warnings: string[] = [];
+			const todayCategoryTotals = new Map<string, number>();
+			const yesterdayCategoryTotals = new Map<string, number>();
 
 			const todayAll = todayDocsByShop.flat().filter((doc) =>
 				["SELL", "PAYBACK"].includes(doc.type),
@@ -948,20 +975,6 @@ export const aiRoutes = new Hono<IEnv>()
 				todayMetrics.revenue,
 				yesterdayMetrics.revenue,
 			);
-
-			if (salesChange !== null && salesChange <= -salesThreshold) {
-				alerts.push({
-					code: "sales_drop",
-					severity: "high",
-					title: "Падение продаж",
-					details: `Выручка снизилась на ${(Math.abs(salesChange) * 100).toFixed(1)}% относительно вчера.`,
-					meta: {
-						today: todayMetrics.revenue,
-						yesterday: yesterdayMetrics.revenue,
-						thresholdPct: salesThreshold * 100,
-					},
-				});
-			}
 
 			if (todayMetrics.revenue <= 0) {
 				alerts.push({
@@ -983,11 +996,11 @@ export const aiRoutes = new Hono<IEnv>()
 				});
 			}
 
-			for (let i = 0; i < resolvedShopUuids.length; i += 1) {
-				const shopUuid = resolvedShopUuids[i];
-				const shopName = shopNamesMap[shopUuid] || shopUuid;
-				const todayDocs = todayDocsByShop[i] || [];
-				const yesterdayDocs = yesterdayDocsByShop[i] || [];
+				for (let i = 0; i < resolvedShopUuids.length; i += 1) {
+					const shopUuid = resolvedShopUuids[i];
+					const shopName = shopNamesMap[shopUuid] || shopUuid;
+					const todayDocs = todayDocsByShop[i] || [];
+					const yesterdayDocs = yesterdayDocsByShop[i] || [];
 
 				const todayShopMetrics = aggregateDirectorMetrics(
 					todayDocs.filter((doc) => ["SELL", "PAYBACK"].includes(doc.type)),
@@ -1037,6 +1050,19 @@ export const aiRoutes = new Hono<IEnv>()
 
 				warnings.push(...todayWarnings, ...yesterdayWarnings);
 
+				for (const [category, value] of todayCategories.entries()) {
+					todayCategoryTotals.set(
+						category,
+						(todayCategoryTotals.get(category) || 0) + value,
+					);
+				}
+				for (const [category, value] of yesterdayCategories.entries()) {
+					yesterdayCategoryTotals.set(
+						category,
+						(yesterdayCategoryTotals.get(category) || 0) + value,
+					);
+				}
+
 				for (const [category, yesterdayValue] of yesterdayCategories.entries()) {
 					if (!Number.isFinite(yesterdayValue) || yesterdayValue <= minCategoryBase)
 						continue;
@@ -1059,6 +1085,76 @@ export const aiRoutes = new Hono<IEnv>()
 						});
 					}
 				}
+
+				// Детектор нулевых продаж за последние 60 минут
+				const nowTs = Date.now();
+				const cutoff = nowTs - 60 * 60 * 1000;
+				const lastHourDocs = todayDocs.filter((doc) => {
+					const ts = new Date(doc.closeDate).getTime();
+					return Number.isFinite(ts) && ts >= cutoff;
+				});
+				const lastHourMetrics = aggregateDirectorMetrics(
+					lastHourDocs.filter((doc) =>
+						["SELL", "PAYBACK"].includes(doc.type),
+					),
+				);
+				if (lastHourMetrics.revenue <= 0) {
+					alerts.push({
+						code: "shop_no_sales_60m",
+						severity: "high",
+						title: "Нет продаж 60 минут",
+						details: `Магазин ${shopName} не имеет продаж за последний час.`,
+						shopUuid,
+						shopName,
+					});
+				}
+			}
+
+			if (salesChange !== null && salesChange <= -salesThreshold) {
+				let mainCategory: string | null = null;
+				let mainDrop = 0;
+				for (const [category, yesterdayValue] of yesterdayCategoryTotals.entries()) {
+					const todayValue = todayCategoryTotals.get(category) || 0;
+					const change = calcChangePct(todayValue, yesterdayValue);
+					if (change !== null && change < mainDrop) {
+						mainDrop = change;
+						mainCategory = category;
+					}
+				}
+
+				const reason =
+					mainCategory && mainDrop < 0
+						? ` Основная причина: категория «${mainCategory}».`
+						: "";
+
+				alerts.push({
+					code: "sales_drop",
+					severity: "high",
+					title: "Падение продаж",
+					details: `Выручка снизилась на ${(Math.abs(salesChange) * 100).toFixed(1)}% относительно вчера.${reason}`,
+					meta: {
+						today: todayMetrics.revenue,
+						yesterday: yesterdayMetrics.revenue,
+						thresholdPct: salesThreshold * 100,
+						mainCategory: mainCategory || undefined,
+					},
+				});
+			}
+
+			// Детектор нулевых продаж за последний час по сети
+			const networkCutoff = Date.now() - 60 * 60 * 1000;
+			const networkLastHourDocs = todayAll.filter((doc) => {
+				const ts = new Date(doc.closeDate).getTime();
+				return Number.isFinite(ts) && ts >= networkCutoff;
+			});
+			const networkLastHourMetrics = aggregateDirectorMetrics(networkLastHourDocs);
+			if (networkLastHourMetrics.revenue <= 0) {
+				alerts.push({
+					code: "network_no_sales_60m",
+					severity: "high",
+					title: "Нет продаж по сети 60 минут",
+					details: "По сети не было продаж за последний час.",
+				});
 			}
 
 			return c.json({
@@ -1654,6 +1750,15 @@ export const aiRoutes = new Hono<IEnv>()
 			);
 
 			const targetDate = date ?? toIsoDate(new Date());
+			const kv = c.env.KV;
+			const cacheKey = buildAiReportKey("all", targetDate);
+			if (!sendTelegram && kv) {
+				const cached = await kv.get(cacheKey);
+				if (cached) {
+					c.header("x-cache", "hit");
+					return c.json(JSON.parse(cached));
+				}
+			}
 			const evo = c.var.evotor;
 			const db = c.get("db");
 			const resolvedShopUuids =
@@ -1782,7 +1887,7 @@ export const aiRoutes = new Hono<IEnv>()
 				}
 			}
 
-			return c.json({
+			const responsePayload = {
 				date: targetDate,
 				shopUuids: resolvedShopUuids,
 				blocks: report,
@@ -1790,10 +1895,593 @@ export const aiRoutes = new Hono<IEnv>()
 				telegram: {
 					sent: telegramSent,
 				},
-			});
+			};
+
+			if (!sendTelegram && kv) {
+				await kv.put(cacheKey, JSON.stringify(responsePayload), {
+					expirationTtl: 12 * 60 * 60,
+				});
+			}
+
+			return c.json(responsePayload);
 		} catch (error) {
 			logger.error("AI director report failed", { error });
 			return c.json({ error: "AI_DIRECTOR_REPORT_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/explain-sales", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { date, shopUuids } = validate(
+				AiDirectorExplainSalesRequestSchema,
+				payload,
+			);
+
+			const targetDate = date ?? toIsoDate(new Date());
+			const kv = c.env.KV;
+			const cacheKey = `ai:explain:all:${targetDate}`;
+			if (kv) {
+				const cached = await kv.get(cacheKey);
+				if (cached) {
+					c.header("x-cache", "hit");
+					return c.json(JSON.parse(cached));
+				}
+			}
+
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+
+			const [todaySince, todayUntil] = buildEvotorDayRange(targetDate);
+			const yesterdayKey = shiftDateKey(targetDate, -1);
+			const [yesterdaySince, yesterdayUntil] =
+				buildEvotorDayRange(yesterdayKey);
+
+			const [todayDocsByShop, yesterdayDocsByShop] = await Promise.all([
+				Promise.all(
+					resolvedShopUuids.map((shopUuid) =>
+						getDocumentsFromIndexFirst(
+							db,
+							evo,
+							shopUuid,
+							todaySince,
+							todayUntil,
+							{ types: ["SELL", "PAYBACK"], skipFetchIfStale: true },
+						),
+					),
+				),
+				Promise.all(
+					resolvedShopUuids.map((shopUuid) =>
+						getDocumentsFromIndexFirst(
+							db,
+							evo,
+							shopUuid,
+							yesterdaySince,
+							yesterdayUntil,
+							{ types: ["SELL", "PAYBACK"], skipFetchIfStale: true },
+						),
+					),
+				),
+			]);
+
+			const todayAll = todayDocsByShop.flat();
+			const yesterdayAll = yesterdayDocsByShop.flat();
+			const todayMetrics = aggregateDirectorMetrics(todayAll);
+			const yesterdayMetrics = aggregateDirectorMetrics(yesterdayAll);
+
+			const todayCategoryTotals = new Map<string, number>();
+			const yesterdayCategoryTotals = new Map<string, number>();
+
+			for (let i = 0; i < resolvedShopUuids.length; i += 1) {
+				const shopUuid = resolvedShopUuids[i];
+				const todayDocs = todayDocsByShop[i] || [];
+				const yesterdayDocs = yesterdayDocsByShop[i] || [];
+
+				const { revenueByCategory: todayCategories } =
+					await buildCategoryRevenueByShop(db, shopUuid, todayDocs);
+				const { revenueByCategory: yesterdayCategories } =
+					await buildCategoryRevenueByShop(db, shopUuid, yesterdayDocs);
+
+				for (const [category, value] of todayCategories.entries()) {
+					todayCategoryTotals.set(
+						category,
+						(todayCategoryTotals.get(category) || 0) + value,
+					);
+				}
+				for (const [category, value] of yesterdayCategories.entries()) {
+					yesterdayCategoryTotals.set(
+						category,
+						(yesterdayCategoryTotals.get(category) || 0) + value,
+					);
+				}
+			}
+
+			const categoryChanges = Array.from(yesterdayCategoryTotals.entries())
+				.map(([category, yesterdayValue]) => {
+					const todayValue = todayCategoryTotals.get(category) || 0;
+					const change = calcChangePct(todayValue, yesterdayValue) ?? 0;
+					return { category, today: todayValue, yesterday: yesterdayValue, change };
+				})
+				.sort((a, b) => a.change - b.change)
+				.slice(0, 3);
+
+			let explanation =
+				categoryChanges.length > 0
+					? `Падение продаж связано с категорией ${categoryChanges[0].category}.`
+					: "Недостаточно данных по категориям.";
+
+			try {
+				const aiResult = await c.env.AI.run(DIRECTOR_REPORT_MODEL as any, {
+					max_tokens: 200,
+					temperature: 0.2,
+					messages: [
+						{
+							role: "system",
+							content:
+								"Ты управляющий магазином. Объясни причины изменения продаж в 1-3 предложениях. Только текст, без markdown.",
+						},
+						{
+							role: "user",
+							content: JSON.stringify({
+								date: targetDate,
+								todaySales: todayMetrics.revenue,
+								yesterdaySales: yesterdayMetrics.revenue,
+								categories: categoryChanges,
+							}),
+						},
+					],
+				});
+				const text = extractAiText(aiResult);
+				if (text) explanation = text;
+			} catch (error) {
+				logger.warn("AI explain sales fallback used", { error });
+			}
+
+			const responsePayload = {
+				date: targetDate,
+				shopUuids: resolvedShopUuids,
+				categories: categoryChanges,
+				explanation,
+			};
+
+			if (kv) {
+				await kv.put(cacheKey, JSON.stringify(responsePayload), {
+					expirationTtl: 12 * 60 * 60,
+				});
+			}
+
+			return c.json(responsePayload);
+		} catch (error) {
+			logger.error("AI director explain sales failed", { error });
+			return c.json({ error: "AI_DIRECTOR_EXPLAIN_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/heatmap", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { shopUuids } = validate(AiDirectorHeatmapRequestSchema, payload);
+			const db = c.get("db");
+			const rows = await getSalesHourly(db, shopUuids);
+			return c.json({ rows });
+		} catch (error) {
+			logger.error("AI director heatmap failed", { error });
+			return c.json({ error: "AI_DIRECTOR_HEATMAP_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/stock-monitor", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { since, until, shopUuids, limit } = validate(
+				AiDirectorStockMonitorRequestSchema,
+				payload,
+			);
+
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+			const shopNamesMap = (await evo.getShopNameUuidsDict()) || {};
+
+			const todayKey = toIsoDate(new Date());
+			const resolvedUntil = until ?? todayKey;
+			const resolvedSince = since ?? shiftDateKey(resolvedUntil, -6);
+			const daysCount = daysInRangeInclusive(resolvedSince, resolvedUntil);
+
+			const [rangeSince, rangeUntil] = [
+				buildEvotorDayRange(resolvedSince)[0],
+				buildEvotorDayRange(resolvedUntil)[1],
+			];
+
+			const docsByShop = await Promise.all(
+				resolvedShopUuids.map((shopUuid) =>
+					getDocumentsFromIndexFirst(db, evo, shopUuid, rangeSince, rangeUntil, {
+						types: ["SELL", "PAYBACK"],
+						skipFetchIfStale: true,
+					}),
+				),
+			);
+
+			const stockAlerts: Array<{
+				shopUuid: string;
+				shopName: string;
+				sku: string;
+				name: string;
+				stock: number;
+				velocityPerDay: number;
+				recommendedMin: number;
+			}> = [];
+
+			for (let i = 0; i < resolvedShopUuids.length; i += 1) {
+				const shopUuid = resolvedShopUuids[i];
+				const shopName = shopNamesMap[shopUuid] || shopUuid;
+				const docs = docsByShop[i] || [];
+				const salesBySku = new Map<string, { name: string; qty: number }>();
+
+				for (const doc of docs) {
+					const isRefund = doc.type === "PAYBACK";
+					for (const tx of doc.transactions || []) {
+						if (tx.type !== "REGISTER_POSITION") continue;
+						const sku = tx.commodityUuid || tx.commodityName || "UNKNOWN";
+						const name = tx.commodityName || sku;
+						const qty = Number(tx.quantity || 0);
+						if (!Number.isFinite(qty) || qty === 0) continue;
+						const entry = salesBySku.get(sku) || { name, qty: 0 };
+						entry.qty += isRefund ? -Math.abs(qty) : qty;
+						salesBySku.set(sku, entry);
+					}
+				}
+
+				const productsResponse = await evo.getProducts(shopUuid);
+				const products = Array.isArray(productsResponse)
+					? productsResponse
+					: Array.isArray((productsResponse as any).items)
+						? (productsResponse as any).items
+						: [];
+
+				const stockMap = new Map<
+					string,
+					{ name: string; quantity: number }
+				>();
+				for (const prod of products as any[]) {
+					if (prod.group) continue;
+					const uuid = String(prod.uuid || prod.id || "");
+					if (!uuid) continue;
+					const quantity = Number(
+						prod.quantity ?? prod.quantityBalance ?? prod.quantity_balance ?? 0,
+					);
+					stockMap.set(uuid, {
+						name: String(prod.name || ""),
+						quantity: Number.isFinite(quantity) ? quantity : 0,
+					});
+				}
+
+				for (const [sku, entry] of salesBySku.entries()) {
+					const velocityPerDay = entry.qty / Math.max(1, daysCount);
+					if (velocityPerDay <= 0) continue;
+					const stock = stockMap.get(sku)?.quantity ?? 0;
+					const recommendedMin = velocityPerDay * 2;
+					if (stock < recommendedMin) {
+						stockAlerts.push({
+							shopUuid,
+							shopName,
+							sku,
+							name: entry.name,
+							stock,
+							velocityPerDay,
+							recommendedMin,
+						});
+					}
+				}
+			}
+
+			const limited = stockAlerts
+				.sort((a, b) => a.stock - b.stock)
+				.slice(0, limit ?? 200);
+
+			return c.json({
+				since: resolvedSince,
+				until: resolvedUntil,
+				shopUuids: resolvedShopUuids,
+				items: limited,
+			});
+		} catch (error) {
+			logger.error("AI director stock monitor failed", { error });
+			return c.json({ error: "AI_DIRECTOR_STOCK_MONITOR_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/store-rating", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { date, since, until, shopUuids } = validate(
+				AiDirectorStoreRatingRequestSchema,
+				payload,
+			);
+
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+			const shopNamesMap = (await evo.getShopNameUuidsDict()) || {};
+
+			const targetDate = date ?? toIsoDate(new Date());
+			const resolvedSince = since ?? targetDate;
+			const resolvedUntil = until ?? targetDate;
+			const [rangeSince, rangeUntil] = [
+				buildEvotorDayRange(resolvedSince)[0],
+				buildEvotorDayRange(resolvedUntil)[1],
+			];
+
+			const docsByShop = await Promise.all(
+				resolvedShopUuids.map((shopUuid) =>
+					getDocumentsFromIndexFirst(db, evo, shopUuid, rangeSince, rangeUntil, {
+						types: ["SELL", "PAYBACK"],
+						skipFetchIfStale: true,
+					}),
+				),
+			);
+
+			const rating = resolvedShopUuids
+				.map((shopUuid, idx) => {
+					const docs = docsByShop[idx] || [];
+					const metrics = aggregateDirectorMetrics(docs);
+					return {
+						shopUuid,
+						shopName: shopNamesMap[shopUuid] || shopUuid,
+						revenue: metrics.revenue,
+						checks: metrics.checks,
+						averageCheck: metrics.averageCheck,
+					};
+				})
+				.sort((a, b) => b.revenue - a.revenue);
+
+			return c.json({
+				since: resolvedSince,
+				until: resolvedUntil,
+				rating,
+			});
+		} catch (error) {
+			logger.error("AI director store rating failed", { error });
+			return c.json({ error: "AI_DIRECTOR_STORE_RATING_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/employee-analysis", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { since, until, shopUuids, limit } = validate(
+				AiDirectorEmployeeAnalysisRequestSchema,
+				payload,
+			);
+
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+			const employeeNames = await evo.getEmployeesLastNameAndUuidDict();
+
+			const todayKey = toIsoDate(new Date());
+			const resolvedSince = since ?? shiftDateKey(todayKey, -6);
+			const resolvedUntil = until ?? todayKey;
+			const [rangeSince, rangeUntil] = [
+				buildEvotorDayRange(resolvedSince)[0],
+				buildEvotorDayRange(resolvedUntil)[1],
+			];
+
+			const docsByShop = await Promise.all(
+				resolvedShopUuids.map((shopUuid) =>
+					getDocumentsFromIndexFirst(db, evo, shopUuid, rangeSince, rangeUntil, {
+						types: ["SELL", "PAYBACK"],
+						skipFetchIfStale: true,
+					}),
+				),
+			);
+
+			const stats = new Map<
+				string,
+				{
+					employeeUuid: string;
+					name: string;
+					revenue: number;
+					checks: number;
+				}
+			>();
+
+			for (const docs of docsByShop) {
+				for (const doc of docs) {
+					const employeeUuid = doc.openUserUuid || "unknown";
+					const name = employeeNames?.[employeeUuid] || employeeUuid;
+					const entry = stats.get(employeeUuid) || {
+						employeeUuid,
+						name,
+						revenue: 0,
+						checks: 0,
+					};
+					if (doc.type === "SELL" || doc.type === "PAYBACK") {
+						entry.checks += 1;
+					}
+					for (const tx of doc.transactions || []) {
+						if (tx.type !== "PAYMENT") continue;
+						const raw = Number(tx.sum || 0);
+						if (!Number.isFinite(raw) || raw === 0) continue;
+						entry.revenue += doc.type === "PAYBACK" ? -Math.abs(raw) : raw;
+					}
+					stats.set(employeeUuid, entry);
+				}
+			}
+
+			const rows = Array.from(stats.values())
+				.map((entry) => ({
+					...entry,
+					averageCheck: entry.checks > 0 ? entry.revenue / entry.checks : 0,
+				}))
+				.sort((a, b) => b.revenue - a.revenue)
+				.slice(0, limit ?? 200);
+
+			return c.json({
+				since: resolvedSince,
+				until: resolvedUntil,
+				employees: rows,
+			});
+		} catch (error) {
+			logger.error("AI director employee analysis failed", { error });
+			return c.json({ error: "AI_DIRECTOR_EMPLOYEE_ANALYSIS_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/demand-forecast", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { date, shopUuids } = validate(
+				AiDirectorDemandForecastRequestSchema,
+				payload,
+			);
+
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+
+			const targetDate = date ?? toIsoDate(new Date());
+			const targetDay = new Date(`${targetDate}T00:00:00Z`).getUTCDay();
+			const lat = Number(c.env.WEATHER_DEFAULT_LAT || "");
+			const lon = Number(c.env.WEATHER_DEFAULT_LON || "");
+			const weather =
+				Number.isFinite(lat) && Number.isFinite(lon)
+					? await getWeatherSummary(lat, lon, targetDate, c.env.KV)
+					: null;
+			const weatherFactor = weatherDemandFactor(weather);
+
+			const weekOffsets = [7, 14, 21, 28];
+			const ranges = weekOffsets.map((offset) => {
+				const dayKey = shiftDateKey(targetDate, -offset);
+				return buildEvotorDayRange(dayKey);
+			});
+
+			const historyMetrics = await Promise.all(
+				ranges.map(async ([since, until]) => {
+					const docsByShop = await Promise.all(
+						resolvedShopUuids.map((shopUuid) =>
+							getDocumentsFromIndexFirst(db, evo, shopUuid, since, until, {
+								types: ["SELL", "PAYBACK"],
+								skipFetchIfStale: true,
+							}),
+						),
+					);
+					const docs = docsByShop.flat();
+					return calcRevenueFromDocs(docs);
+				}),
+			);
+
+			const avgRevenue =
+				historyMetrics.reduce((sum, item) => sum + item.revenue, 0) /
+				Math.max(1, historyMetrics.length);
+
+			const forecast = avgRevenue * weatherFactor;
+			const responsePayload = {
+				date: targetDate,
+				weekday: targetDay,
+				forecast,
+				weather,
+				weatherFactor,
+				history: historyMetrics,
+			};
+
+			return c.json(responsePayload);
+		} catch (error) {
+			logger.error("AI director demand forecast failed", { error });
+			return c.json({ error: "AI_DIRECTOR_DEMAND_FORECAST_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/chat", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { message, date, since, until, shopUuids } = validate(
+				AiDirectorChatRequestSchema,
+				payload,
+			);
+
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids =
+				shopUuids && shopUuids.length > 0
+					? shopUuids
+					: await evo.getShopUuids();
+
+			const targetDate = date ?? toIsoDate(new Date());
+			const resolvedSince = since ?? targetDate;
+			const resolvedUntil = until ?? targetDate;
+			const [rangeSince, rangeUntil] = [
+				buildEvotorDayRange(resolvedSince)[0],
+				buildEvotorDayRange(resolvedUntil)[1],
+			];
+
+			const docsByShop = await Promise.all(
+				resolvedShopUuids.map((shopUuid) =>
+					getDocumentsFromIndexFirst(db, evo, shopUuid, rangeSince, rangeUntil, {
+						types: ["SELL", "PAYBACK"],
+						skipFetchIfStale: true,
+					}),
+				),
+			);
+			const docs = docsByShop.flat();
+			const metrics = aggregateDirectorMetrics(docs);
+
+			let reply = "Недостаточно данных для ответа.";
+			try {
+				const aiResult = await c.env.AI.run(DIRECTOR_REPORT_MODEL as any, {
+					max_tokens: 400,
+					temperature: 0.2,
+					messages: [
+						{
+							role: "system",
+							content:
+								"Ты AI директор магазина. Отвечай кратко и по делу, 2-6 предложений. Используй только предоставленные данные.",
+						},
+						{
+							role: "user",
+							content: JSON.stringify({
+								question: message,
+								period: { since: resolvedSince, until: resolvedUntil },
+								metrics,
+							}),
+						},
+					],
+				});
+				const text = extractAiText(aiResult);
+				if (text) reply = text;
+			} catch (error) {
+				logger.warn("AI director chat fallback used", { error });
+				reply = `Показатели за период: выручка ${metrics.revenue.toFixed(
+					0,
+				)} ₽, чеков ${metrics.checks}, средний чек ${metrics.averageCheck.toFixed(
+					0,
+				)} ₽.`;
+			}
+
+			return c.json({
+				message,
+				reply,
+				metrics,
+			});
+		} catch (error) {
+			logger.error("AI director chat failed", { error });
+			return c.json({ error: "AI_DIRECTOR_CHAT_FAILED" }, 500);
 		}
 	})
 

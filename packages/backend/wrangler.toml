@@ -1,5 +1,5 @@
 #:schema node_modules/wrangler/config-schema.json
-name = "work-appt"
+name = "work-app"
 main = "src/index.ts"
 compatibility_date = "2024-10-22"
 compatibility_flags = ["nodejs_compat"]
@@ -7,6 +7,9 @@ assets = { directory = "dist"}
 upload_source_maps = true
 
 
+routes = [
+{ pattern = "demossml.cc", custom_domain = true }
+]
 
 
 
@@ -27,6 +30,12 @@ binding = "R2"
 bucket_name = "evotor"
 preview_bucket_name = "evotor"
 
+# KV cache namespace (replace ids after creation)
+[[kv_namespaces]]
+binding = "KV"
+id = "8d62cde8fea340bdbe646b60c76a9cd5"
+preview_id = "043bde4a321349bea43c2c223c6fec4f"
+
 # Секретные переменные вынесены в .dev.vars (для разработки) и Cloudflare Secrets (для production)
 # Для локальной разработки создайте файл .dev.vars в этой директории
 # Для production используйте: wrangler secret put EVOTOR_API_TOKEN и wrangler secret put BOT_TOKEN
@@ -38,6 +47,9 @@ ALERT_TZ_OFFSET_MINUTES = "180"
 ALERT_REFUND_THRESHOLD_PCT = "15"
 ALERT_REVENUE_DROP_THRESHOLD_PCT = "20"
 ONEC_API_KEY = "секретный_ключ_минимум_32_символа"
+WEATHER_DEFAULT_LAT = "54.7826"
+WEATHER_DEFAULT_LON = "32.0453"
+WEATHER_DEFAULT_NAME = "Smolensk"
 
 [triggers]
 # Индексация каждые 3 минуты; ежедневный дайджест запускается в коде в 06:00 UTC.

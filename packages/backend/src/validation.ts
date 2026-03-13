@@ -129,6 +129,70 @@ export const AiDirectorReportRequestSchema = z.object({
 });
 
 /**
+ * POST /api/ai/director/chat
+ */
+export const AiDirectorChatRequestSchema = z.object({
+	message: z.string().min(1).max(2000),
+	date: DateStringSchema.optional(),
+	since: DateStringSchema.optional(),
+	until: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+});
+
+/**
+ * POST /api/ai/director/store-rating
+ */
+export const AiDirectorStoreRatingRequestSchema = z.object({
+	date: DateStringSchema.optional(),
+	since: DateStringSchema.optional(),
+	until: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+});
+
+/**
+ * POST /api/ai/director/employee-analysis
+ */
+export const AiDirectorEmployeeAnalysisRequestSchema = z.object({
+	since: DateStringSchema.optional(),
+	until: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+	limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+/**
+ * POST /api/ai/director/demand-forecast
+ */
+export const AiDirectorDemandForecastRequestSchema = z.object({
+	date: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+});
+
+/**
+ * POST /api/ai/director/explain-sales
+ */
+export const AiDirectorExplainSalesRequestSchema = z.object({
+	date: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+});
+
+/**
+ * POST /api/ai/director/heatmap
+ */
+export const AiDirectorHeatmapRequestSchema = z.object({
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+});
+
+/**
+ * POST /api/ai/director/stock-monitor
+ */
+export const AiDirectorStockMonitorRequestSchema = z.object({
+	since: DateStringSchema.optional(),
+	until: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+	limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+/**
  * POST /api/ai/dashboard-summary2-insights
  */
 const DashboardSummary2RiskShopSchema = z.object({
