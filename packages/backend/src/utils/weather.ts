@@ -30,8 +30,12 @@ export async function getWeatherSummary(
 ): Promise<WeatherSummary | null> {
 	const key = buildWeatherKey(lat, lon, date);
 	if (kv) {
-		const cached = await kv.get(key);
-		if (cached) return JSON.parse(cached) as WeatherSummary;
+		try {
+			const cached = await kv.get(key);
+			if (cached) return JSON.parse(cached) as WeatherSummary;
+		} catch {
+			// If KV fails (limits, transient), continue without cache.
+		}
 	}
 
 	const url = new URL("https://api.open-meteo.com/v1/forecast");
@@ -69,7 +73,11 @@ export async function getWeatherSummary(
 	};
 
 	if (kv) {
-		await kv.put(key, JSON.stringify(summary), { expirationTtl: 60 * 60 });
+		try {
+			await kv.put(key, JSON.stringify(summary), { expirationTtl: 60 * 60 });
+		} catch {
+			// Ignore KV write failures (limits, transient).
+		}
 	}
 
 	return summary;

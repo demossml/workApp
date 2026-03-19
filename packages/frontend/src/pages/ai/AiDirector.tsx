@@ -32,6 +32,8 @@ export default function AiDirectorPage() {
       timezone: string;
     } | null;
     weatherFactor?: number;
+    warning?: string | null;
+    historySource?: "receipts" | "index";
   } | null>(null);
   const [heatmapRows, setHeatmapRows] = useState<
     Array<{
@@ -94,6 +96,9 @@ export default function AiDirectorPage() {
             typeof forecastJson.weatherFactor === "number"
               ? forecastJson.weatherFactor
               : undefined,
+          warning: typeof forecastJson.warning === "string" ? forecastJson.warning : null,
+          historySource:
+            forecastJson.historySource === "index" ? "index" : "receipts",
         });
         setHeatmapRows(heatmapJson.rows || []);
       } catch (err) {
@@ -284,6 +289,20 @@ export default function AiDirectorPage() {
                 Погода: {forecast.weather.avgTemp}°C (мин {forecast.weather.minTemp}°C, макс{" "}
                 {forecast.weather.maxTemp}°C), осадки {forecast.weather.precipSum} мм.
                 Фактор спроса: {forecast.weatherFactor?.toFixed(2) ?? "1.00"}
+              </div>
+            )}
+            {forecast?.historySource === "index" && (
+              <div className="mt-1 text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
+                Источник истории: индекс документов.
+              </div>
+            )}
+            {forecast?.warning && (
+              <div className="mt-1 text-[10px] sm:text-xs text-amber-600 dark:text-amber-400">
+                {forecast.warning === "NO_HISTORY_REVENUE"
+                  ? "Недостаточно исторических продаж для расчёта прогноза."
+                  : forecast.warning === "SHOP_UUIDS_UNAVAILABLE"
+                      ? "Не удалось определить магазины для расчёта прогноза."
+                      : forecast.warning}
               </div>
             )}
           </section>

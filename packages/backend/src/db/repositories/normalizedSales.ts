@@ -23,7 +23,7 @@ export async function ensureNormalizedTables(db: D1Database): Promise<void> {
 			"CREATE INDEX IF NOT EXISTS idx_receipt_positions_commodity ON receipt_positions (commodity_uuid)",
 		),
 		db.prepare(
-			"CREATE TABLE IF NOT EXISTS products (commodity_uuid TEXT PRIMARY KEY, name TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')))",
+			"CREATE TABLE IF NOT EXISTS products_catalog (commodity_uuid TEXT PRIMARY KEY, name TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')))",
 		),
 		db.prepare(
 			"CREATE TABLE IF NOT EXISTS employees (employee_uuid TEXT PRIMARY KEY, updated_at TEXT NOT NULL DEFAULT (datetime('now')))",
@@ -88,7 +88,7 @@ export async function upsertReferenceSets(
 
 	if (sets.products.size > 0) {
 		const stmt = db.prepare(
-			"INSERT INTO products (commodity_uuid, name, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(commodity_uuid) DO UPDATE SET name = excluded.name, updated_at = datetime('now')",
+			"INSERT INTO products_catalog (commodity_uuid, name, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(commodity_uuid) DO UPDATE SET name = excluded.name, updated_at = datetime('now')",
 		);
 		for (const [uuid, name] of sets.products.entries()) {
 			statements.push(stmt.bind(uuid, name));
@@ -112,6 +112,23 @@ export async function upsertReferenceSets(
 			statements.push(stmt.bind(uuid));
 		}
 	}
+
+	if (statements.length > 0) {
+		await db.batch(statements);
+	}
+}
+
+export async function upsertStoresWithNames(
+	db: D1Database,
+	stores: Array<{ uuid: string; name?: string | null }>,
+): Promise<void> {
+	if (stores.length === 0) return;
+	const stmt = db.prepare(
+		"INSERT INTO stores (store_uuid, name, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(store_uuid) DO UPDATE SET name = excluded.name, updated_at = datetime('now')",
+	);
+	const statements = stores
+		.filter((store) => store.uuid && store.name)
+		.map((store) => stmt.bind(store.uuid, store.name));
 
 	if (statements.length > 0) {
 		await db.batch(statements);

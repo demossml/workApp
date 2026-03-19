@@ -89,7 +89,10 @@ export function normalizeDocuments(
 			if (!isPayment(tx)) continue;
 			const sum = safeNumber(tx.sum);
 			if (sum === 0) continue;
-			total += sign * Math.abs(sum);
+			// For SELL use signed payments (negative sums are change),
+			// for PAYBACK use absolute to subtract the refund amount.
+			const amount = sign === -1 ? Math.abs(sum) : sum;
+			total += sign * amount;
 		}
 
 		receipts.push({

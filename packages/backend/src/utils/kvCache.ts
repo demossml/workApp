@@ -1,4 +1,5 @@
 import type { KVNamespace } from "@cloudflare/workers-types";
+import { logger } from "../logger";
 
 export const buildSalesDayKey = (storeId: string, date: string) =>
 	`sales:store:${storeId}:day:${date}`;
@@ -25,13 +26,21 @@ export const getCachedJson = async <T>(
 		return { data: await fetchFunction(), cacheHit: false };
 	}
 
-	const cached = await kv.get(key);
-	if (cached) {
-		return { data: JSON.parse(cached) as T, cacheHit: true };
+	try {
+		const cached = await kv.get(key);
+		if (cached) {
+			return { data: JSON.parse(cached) as T, cacheHit: true };
+		}
+	} catch (error) {
+		logger.warn("KV get failed, bypassing cache", { key, error });
 	}
 
 	const data = await fetchFunction();
-	await kv.put(key, JSON.stringify(data), { expirationTtl: ttlSeconds });
+	try {
+		await kv.put(key, JSON.stringify(data), { expirationTtl: ttlSeconds });
+	} catch (error) {
+		logger.warn("KV put failed, bypassing cache write", { key, error });
+	}
 	return { data, cacheHit: false };
 };
 

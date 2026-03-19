@@ -568,6 +568,61 @@ const getDirectorPeriodMetrics = async (
 	};
 };
 
+const getStoreUuidsFromDb = async (db: IEnv["Bindings"]["DB"]): Promise<string[]> => {
+	try {
+		const rows = await db
+			.prepare("SELECT store_uuid FROM stores")
+			.all<{ store_uuid: string }>();
+		return (rows.results || []).map((row) => row.store_uuid).filter(Boolean);
+	} catch (error) {
+		logger.warn("AI director: stores DB lookup failed", { error });
+		return [];
+	}
+};
+
+const resolveDirectorShopUuids = async (
+	db: IEnv["Bindings"]["DB"],
+	evo: IEnv["Variables"]["evotor"],
+	shopUuids?: string[],
+): Promise<string[]> => {
+	if (shopUuids && shopUuids.length > 0) return shopUuids;
+	try {
+		return await evo.getShopUuids();
+	} catch (error) {
+		logger.warn("AI director: getShopUuids failed, using DB fallback", { error });
+		return await getStoreUuidsFromDb(db);
+	}
+};
+
+const resolveDirectorShopNamesMap = async (
+	db: IEnv["Bindings"]["DB"],
+	evo: IEnv["Variables"]["evotor"],
+): Promise<Record<string, string>> => {
+	try {
+		return (await evo.getShopNameUuidsDict()) || {};
+	} catch (error) {
+		logger.warn("AI director: getShopNameUuidsDict failed, using DB fallback", {
+			error,
+		});
+		try {
+			const rows = await db
+				.prepare("SELECT store_uuid, name FROM stores")
+				.all<{ store_uuid: string; name: string | null }>();
+			const map: Record<string, string> = {};
+			for (const row of rows.results || []) {
+				if (!row.store_uuid) continue;
+				map[row.store_uuid] = row.name || row.store_uuid;
+			}
+			return map;
+		} catch (dbError) {
+			logger.warn("AI director: stores names DB lookup failed", {
+				error: dbError,
+			});
+			return {};
+		}
+	}
+};
+
 const daysInRangeInclusive = (startDate: string, endDate: string) => {
 	const start = new Date(startDate);
 	const end = new Date(endDate);
@@ -620,22 +675,6 @@ const extractAiText = (result: unknown): string => {
 		return ((asAny.result as Record<string, unknown>).response as string).trim();
 	}
 	return "";
-};
-
-const calcRevenueFromDocs = (docs: IndexDocument[]): { revenue: number; checks: number } => {
-	let revenue = 0;
-	let checks = 0;
-	for (const doc of docs) {
-		if (doc.type === "SELL") checks += 1;
-		if (doc.type === "PAYBACK") checks += 1;
-		for (const trans of doc.transactions || []) {
-			if (trans.type !== "PAYMENT") continue;
-			const raw = Number(trans.sum || 0);
-			if (!Number.isFinite(raw) || raw === 0) continue;
-			revenue += doc.type === "PAYBACK" ? -Math.abs(raw) : raw;
-		}
-	}
-	return { revenue, checks };
 };
 
 type DashboardSummary2Metrics = {
@@ -911,11 +950,12 @@ export const aiRoutes = new Hono<IEnv>()
 			const targetDate = date ?? toIsoDate(new Date());
 			const evo = c.var.evotor;
 			const db = c.get("db");
-			const resolvedShopUuids =
-				shopUuids && shopUuids.length > 0
-					? shopUuids
-					: await evo.getShopUuids();
-			const shopNamesMap = (await evo.getShopNameUuidsDict()) || {};
+			const resolvedShopUuids = await resolveDirectorShopUuids(
+				db,
+				evo,
+				shopUuids,
+			);
+			const shopNamesMap = await resolveDirectorShopNamesMap(db, evo);
 
 			const [todaySince, todayUntil] = buildEvotorDayRange(targetDate);
 			const yesterdayKey = shiftDateKey(targetDate, -1);
@@ -1185,10 +1225,11 @@ export const aiRoutes = new Hono<IEnv>()
 			const targetDate = date ?? toIsoDate(new Date());
 			const evo = c.var.evotor;
 			const db = c.get("db");
-			const resolvedShopUuids =
-				shopUuids && shopUuids.length > 0
-					? shopUuids
-					: await evo.getShopUuids();
+			const resolvedShopUuids = await resolveDirectorShopUuids(
+				db,
+				evo,
+				shopUuids,
+			);
 
 			const [todaySince, todayUntil] = buildEvotorDayRange(targetDate);
 			const yesterdayKey = shiftDateKey(targetDate, -1);
@@ -1267,10 +1308,11 @@ export const aiRoutes = new Hono<IEnv>()
 			const targetDate = date ?? toIsoDate(new Date());
 			const evo = c.var.evotor;
 			const db = c.get("db");
-			const resolvedShopUuids =
-				shopUuids && shopUuids.length > 0
-					? shopUuids
-					: await evo.getShopUuids();
+			const resolvedShopUuids = await resolveDirectorShopUuids(
+				db,
+				evo,
+				shopUuids,
+			);
 
 			const weekdayHours = workingHoursWeekday ?? 12;
 			const weekendHours = workingHoursWeekend ?? 10;
@@ -1298,16 +1340,14 @@ export const aiRoutes = new Hono<IEnv>()
 			const isToday = targetDate === toIsoDate(now);
 			const until = isToday ? formatEvotorTimestamp(now) : dayUntil;
 
-			const docsByShop = await Promise.all(
-				resolvedShopUuids.map((shopUuid) =>
-					getDocumentsFromIndexFirst(db, evo, shopUuid, daySince, until, {
-						types: ["SELL", "PAYBACK"],
-						skipFetchIfStale: true,
-					}),
-				),
+			const period = await getDirectorPeriodMetrics(
+				db,
+				evo,
+				resolvedShopUuids,
+				daySince,
+				until,
 			);
-			const docs = docsByShop.flat();
-			const metrics = aggregateDirectorMetrics(docs);
+			const metrics = period.metrics;
 
 			const hoursPassed = isToday
 				? Math.max(0, Math.min(getMskHour(now) - resolvedOpenHour, workingHours))
@@ -1335,7 +1375,7 @@ export const aiRoutes = new Hono<IEnv>()
 
 	.post("/director/velocity", async (c) => {
 		try {
-			const payload = await c.req.json();
+			const payload = await c.req.json().catch(() => ({}));
 			const {
 				since,
 				until,
@@ -1347,10 +1387,11 @@ export const aiRoutes = new Hono<IEnv>()
 
 			const evo = c.var.evotor;
 			const db = c.get("db");
-			const resolvedShopUuids =
-				shopUuids && shopUuids.length > 0
-					? shopUuids
-					: await evo.getShopUuids();
+			const resolvedShopUuids = await resolveDirectorShopUuids(
+				db,
+				evo,
+				shopUuids,
+			);
 
 			const weekdayHours = workingHoursWeekday ?? 12;
 			const weekendHours = workingHoursWeekend ?? 10;
@@ -1369,12 +1410,29 @@ export const aiRoutes = new Hono<IEnv>()
 			];
 
 			const docsByShop = await Promise.all(
-				resolvedShopUuids.map((shopUuid) =>
-					getDocumentsFromIndexFirst(db, evo, shopUuid, rangeSince, rangeUntil, {
-						types: ["SELL", "PAYBACK"],
-						skipFetchIfStale: true,
-					}),
-				),
+				resolvedShopUuids.map(async (shopUuid) => {
+					try {
+						return await getDocumentsFromIndexFirst(
+							db,
+							evo,
+							shopUuid,
+							rangeSince,
+							rangeUntil,
+							{
+								types: ["SELL", "PAYBACK"],
+								skipFetchIfStale: true,
+							},
+						);
+					} catch (error) {
+						logger.warn("AI director velocity: docs fetch failed", {
+							shopUuid,
+							rangeSince,
+							rangeUntil,
+							error,
+						});
+						return [];
+					}
+				}),
 			);
 
 			const skuMap = new Map<
@@ -1477,7 +1535,7 @@ export const aiRoutes = new Hono<IEnv>()
 
 	.post("/director/recommendations", async (c) => {
 		try {
-			const payload = await c.req.json();
+			const payload = await c.req.json().catch(() => ({}));
 			const {
 				since,
 				until,
@@ -1490,10 +1548,11 @@ export const aiRoutes = new Hono<IEnv>()
 
 			const evo = c.var.evotor;
 			const db = c.get("db");
-			const resolvedShopUuids =
-				shopUuids && shopUuids.length > 0
-					? shopUuids
-					: await evo.getShopUuids();
+			const resolvedShopUuids = await resolveDirectorShopUuids(
+				db,
+				evo,
+				shopUuids,
+			);
 
 			const weekdayHours = 12;
 			const weekendHours = 10;
@@ -1511,12 +1570,29 @@ export const aiRoutes = new Hono<IEnv>()
 			];
 
 			const docsByShop = await Promise.all(
-				resolvedShopUuids.map((shopUuid) =>
-					getDocumentsFromIndexFirst(db, evo, shopUuid, rangeSince, rangeUntil, {
-						types: ["SELL", "PAYBACK"],
-						skipFetchIfStale: true,
-					}),
-				),
+				resolvedShopUuids.map(async (shopUuid) => {
+					try {
+						return await getDocumentsFromIndexFirst(
+							db,
+							evo,
+							shopUuid,
+							rangeSince,
+							rangeUntil,
+							{
+								types: ["SELL", "PAYBACK"],
+								skipFetchIfStale: true,
+							},
+						);
+					} catch (error) {
+						logger.warn("AI director recommendations: docs fetch failed", {
+							shopUuid,
+							rangeSince,
+							rangeUntil,
+							error,
+						});
+						return [];
+					}
+				}),
 			);
 
 			const warnings: string[] = [];
@@ -1578,16 +1654,29 @@ export const aiRoutes = new Hono<IEnv>()
 				const lookbackSince = buildEvotorDayRange(lookbackSinceKey)[0];
 				const lookbackUntil = buildEvotorDayRange(until)[1];
 				const lookbackDocsByShop = await Promise.all(
-					resolvedShopUuids.map((shopUuid) =>
-						getDocumentsFromIndexFirst(
-							db,
-							evo,
-							shopUuid,
-							lookbackSince,
-							lookbackUntil,
-							{ types: ["SELL"], skipFetchIfStale: true },
-						),
-					),
+					resolvedShopUuids.map(async (shopUuid) => {
+						try {
+							return await getDocumentsFromIndexFirst(
+								db,
+								evo,
+								shopUuid,
+								lookbackSince,
+								lookbackUntil,
+								{ types: ["SELL"], skipFetchIfStale: true },
+							);
+						} catch (error) {
+							logger.warn(
+								"AI director recommendations: lookback docs fetch failed",
+								{
+									shopUuid,
+									lookbackSince,
+									lookbackUntil,
+									error,
+								},
+							);
+							return [];
+						}
+					}),
 				);
 
 				for (const docs of lookbackDocsByShop) {
@@ -1751,20 +1840,54 @@ export const aiRoutes = new Hono<IEnv>()
 
 			const targetDate = date ?? toIsoDate(new Date());
 			const kv = c.env.KV;
-			const cacheKey = buildAiReportKey("all", targetDate);
+			const scopeKey =
+				shopUuids && shopUuids.length > 0
+					? [...shopUuids].sort((a, b) => a.localeCompare(b)).join(",")
+					: "all";
+			const cacheKey = buildAiReportKey(scopeKey, targetDate);
 			if (!sendTelegram && kv) {
 				const cached = await kv.get(cacheKey);
 				if (cached) {
-					c.header("x-cache", "hit");
-					return c.json(JSON.parse(cached));
+					try {
+						c.header("x-cache", "hit");
+						return c.json(JSON.parse(cached));
+					} catch (error) {
+						logger.warn("AI director report cache parse failed, ignoring cache", {
+							cacheKey,
+							error,
+						});
+						try {
+							await kv.delete(cacheKey);
+						} catch (deleteError) {
+							logger.warn("AI director report cache delete failed", {
+								cacheKey,
+								error: deleteError,
+							});
+						}
+					}
 				}
 			}
 			const evo = c.var.evotor;
 			const db = c.get("db");
-			const resolvedShopUuids =
-				shopUuids && shopUuids.length > 0
-					? shopUuids
-					: await evo.getShopUuids();
+			let resolvedShopUuids: string[] = [];
+			if (shopUuids && shopUuids.length > 0) {
+				resolvedShopUuids = shopUuids;
+			} else {
+				try {
+					resolvedShopUuids = await evo.getShopUuids();
+				} catch (error) {
+					logger.warn(
+						"AI director report: getShopUuids failed, using DB fallback",
+						{ error },
+					);
+					const rows = await db
+						.prepare("SELECT store_uuid FROM stores")
+						.all<{ store_uuid: string }>();
+					resolvedShopUuids = (rows.results || [])
+						.map((row) => row.store_uuid)
+						.filter(Boolean);
+				}
+			}
 
 			const [todaySince, todayUntil] = buildEvotorDayRange(targetDate);
 			const yesterdayKey = shiftDateKey(targetDate, -1);
@@ -1898,9 +2021,16 @@ export const aiRoutes = new Hono<IEnv>()
 			};
 
 			if (!sendTelegram && kv) {
-				await kv.put(cacheKey, JSON.stringify(responsePayload), {
-					expirationTtl: 12 * 60 * 60,
-				});
+				try {
+					await kv.put(cacheKey, JSON.stringify(responsePayload), {
+						expirationTtl: 12 * 60 * 60,
+					});
+				} catch (error) {
+					logger.warn("AI director report cache write failed", {
+						cacheKey,
+						error,
+					});
+				}
 			}
 
 			return c.json(responsePayload);
@@ -2211,8 +2341,40 @@ export const aiRoutes = new Hono<IEnv>()
 			const resolvedShopUuids =
 				shopUuids && shopUuids.length > 0
 					? shopUuids
-					: await evo.getShopUuids();
-			const shopNamesMap = (await evo.getShopNameUuidsDict()) || {};
+					: await (async () => {
+							try {
+								const rows = await db
+									.prepare("SELECT store_uuid FROM stores")
+									.all<{ store_uuid: string }>();
+								const fromDb = (rows.results || [])
+									.map((row) => row.store_uuid)
+									.filter(Boolean);
+								if (fromDb.length > 0) return fromDb;
+							} catch (err) {
+								logger.warn("AI director store rating: stores DB lookup failed", {
+									error: err,
+								});
+							}
+							return [];
+						})();
+			const shopNamesMap = await (async () => {
+				try {
+					const rows = await db
+						.prepare("SELECT store_uuid, name FROM stores")
+						.all<{ store_uuid: string; name: string | null }>();
+					const map: Record<string, string> = {};
+					for (const row of rows.results || []) {
+						if (!row.store_uuid) continue;
+						if (row.name) map[row.store_uuid] = row.name;
+					}
+					return map;
+				} catch (err) {
+					logger.warn("AI director store rating: stores names DB lookup failed", {
+						error: err,
+					});
+					return {};
+				}
+			})();
 
 			const targetDate = date ?? toIsoDate(new Date());
 			const resolvedSince = since ?? targetDate;
@@ -2221,6 +2383,15 @@ export const aiRoutes = new Hono<IEnv>()
 				buildEvotorDayRange(resolvedSince)[0],
 				buildEvotorDayRange(resolvedUntil)[1],
 			];
+
+			if (resolvedShopUuids.length === 0) {
+				return c.json({
+					since: resolvedSince,
+					until: resolvedUntil,
+					rating: [],
+					warning: "SHOP_UUIDS_UNAVAILABLE",
+				});
+			}
 
 			const docsByShop = await Promise.all(
 				resolvedShopUuids.map((shopUuid) =>
@@ -2269,8 +2440,97 @@ export const aiRoutes = new Hono<IEnv>()
 			const resolvedShopUuids =
 				shopUuids && shopUuids.length > 0
 					? shopUuids
-					: await evo.getShopUuids();
-			const employeeNames = await evo.getEmployeesLastNameAndUuidDict();
+					: await (async () => {
+							try {
+								const rows = await db
+									.prepare("SELECT store_uuid FROM stores")
+									.all<{ store_uuid: string }>();
+								const fromDb = (rows.results || [])
+									.map((row) => row.store_uuid)
+									.filter(Boolean);
+								if (fromDb.length > 0) return fromDb;
+							} catch (err) {
+								logger.warn(
+									"AI director employee analysis: stores DB lookup failed",
+									{ error: err },
+								);
+							}
+							try {
+								return await evo.getShopUuids();
+							} catch (err) {
+								logger.warn(
+									"AI director employee analysis: getShopUuids failed",
+									{ error: err },
+								);
+								return [];
+							}
+						})();
+			const employeeNames = await (async () => {
+				try {
+					const rows = await db
+						.prepare(
+							"SELECT uuid, id, user_id, name, last_name FROM employees_details",
+						)
+						.all<{
+							uuid: string | null;
+							id: string | null;
+							user_id: string | null;
+							name: string | null;
+							last_name: string | null;
+						}>();
+					const map: Record<string, string> = {};
+					const putName = (key: string | null | undefined, value: string) => {
+						if (!key) return;
+						const normalized = key.trim();
+						if (!normalized) return;
+						map[normalized] = value;
+						map[normalized.toLowerCase()] = value;
+					};
+					for (const row of rows.results || []) {
+						const resolvedName =
+							typeof row.name === "string" ? row.name.trim() : "";
+						if (!resolvedName) continue;
+						putName(row.uuid, resolvedName);
+						putName(row.id, resolvedName);
+						putName(row.user_id, resolvedName);
+					}
+					return map;
+				} catch (err) {
+					logger.warn(
+						"AI director employee analysis: employees_details DB lookup failed",
+						{ error: err },
+					);
+					return {};
+				}
+			})();
+			const employeeNamesFromApi = await (async () => {
+				try {
+					const employees = await evo.getEmployees();
+					const map: Record<string, string> = {};
+					const putName = (key: string | null | undefined, value: string) => {
+						if (!key) return;
+						const normalized = key.trim();
+						if (!normalized) return;
+						map[normalized] = value;
+						map[normalized.toLowerCase()] = value;
+					};
+					for (const employee of employees || []) {
+						const resolvedName =
+							typeof employee.name === "string" ? employee.name.trim() : "";
+						if (!resolvedName) continue;
+						putName(employee.uuid, resolvedName);
+						putName(employee.id, resolvedName);
+						putName(employee.user_id, resolvedName);
+					}
+					return map;
+				} catch (err) {
+					logger.warn(
+						"AI director employee analysis: getEmployees fallback failed",
+						{ error: err },
+					);
+					return {};
+				}
+			})();
 
 			const todayKey = toIsoDate(new Date());
 			const resolvedSince = since ?? shiftDateKey(todayKey, -6);
@@ -2280,13 +2540,39 @@ export const aiRoutes = new Hono<IEnv>()
 				buildEvotorDayRange(resolvedUntil)[1],
 			];
 
+			if (resolvedShopUuids.length === 0) {
+				return c.json({
+					since: resolvedSince,
+					until: resolvedUntil,
+					employees: [],
+					warning: "SHOP_UUIDS_UNAVAILABLE",
+				});
+			}
+
 			const docsByShop = await Promise.all(
-				resolvedShopUuids.map((shopUuid) =>
-					getDocumentsFromIndexFirst(db, evo, shopUuid, rangeSince, rangeUntil, {
-						types: ["SELL", "PAYBACK"],
-						skipFetchIfStale: true,
-					}),
-				),
+				resolvedShopUuids.map(async (shopUuid) => {
+					try {
+						return await getDocumentsFromIndexFirst(
+							db,
+							evo,
+							shopUuid,
+							rangeSince,
+							rangeUntil,
+							{
+								types: ["SELL", "PAYBACK"],
+								skipFetchIfStale: true,
+							},
+						);
+					} catch (err) {
+						logger.warn("AI director employee analysis: docs fetch failed", {
+							shopUuid,
+							rangeSince,
+							rangeUntil,
+							error: err,
+						});
+						return [];
+					}
+				}),
 			);
 
 			const stats = new Map<
@@ -2302,7 +2588,12 @@ export const aiRoutes = new Hono<IEnv>()
 			for (const docs of docsByShop) {
 				for (const doc of docs) {
 					const employeeUuid = doc.openUserUuid || "unknown";
-					const name = employeeNames?.[employeeUuid] || employeeUuid;
+					const name =
+						employeeNames?.[employeeUuid] ||
+						employeeNames?.[employeeUuid.toLowerCase()] ||
+						employeeNamesFromApi?.[employeeUuid] ||
+						employeeNamesFromApi?.[employeeUuid.toLowerCase()] ||
+						"Неизвестный сотрудник";
 					const entry = stats.get(employeeUuid) || {
 						employeeUuid,
 						name,
@@ -2354,16 +2645,37 @@ export const aiRoutes = new Hono<IEnv>()
 			const resolvedShopUuids =
 				shopUuids && shopUuids.length > 0
 					? shopUuids
-					: await evo.getShopUuids();
+					: await (async () => {
+							try {
+								return await evo.getShopUuids();
+							} catch (err) {
+								logger.warn(
+									"AI director demand forecast: getShopUuids failed, using DB fallback",
+									{ error: err },
+								);
+								const rows = await db
+									.prepare("SELECT store_uuid FROM stores")
+									.all<{ store_uuid: string }>();
+								return (rows.results || [])
+									.map((row) => row.store_uuid)
+									.filter(Boolean);
+							}
+						})();
 
 			const targetDate = date ?? toIsoDate(new Date());
 			const targetDay = new Date(`${targetDate}T00:00:00Z`).getUTCDay();
 			const lat = Number(c.env.WEATHER_DEFAULT_LAT || "");
 			const lon = Number(c.env.WEATHER_DEFAULT_LON || "");
-			const weather =
-				Number.isFinite(lat) && Number.isFinite(lon)
-					? await getWeatherSummary(lat, lon, targetDate, c.env.KV)
-					: null;
+			let weather = null;
+			if (Number.isFinite(lat) && Number.isFinite(lon)) {
+				try {
+					weather = await getWeatherSummary(lat, lon, targetDate, c.env.KV);
+				} catch (err) {
+					logger.warn("AI director demand forecast: weather lookup failed", {
+						error: err,
+					});
+				}
+			}
 			const weatherFactor = weatherDemandFactor(weather);
 
 			const weekOffsets = [7, 14, 21, 28];
@@ -2372,24 +2684,72 @@ export const aiRoutes = new Hono<IEnv>()
 				return buildEvotorDayRange(dayKey);
 			});
 
-			const historyMetrics = await Promise.all(
-				ranges.map(async ([since, until]) => {
-					const docsByShop = await Promise.all(
-						resolvedShopUuids.map((shopUuid) =>
-							getDocumentsFromIndexFirst(db, evo, shopUuid, since, until, {
-								types: ["SELL", "PAYBACK"],
-								skipFetchIfStale: true,
-							}),
-						),
-					);
-					const docs = docsByShop.flat();
-					return calcRevenueFromDocs(docs);
-				}),
-			);
+			const getRevenueFromReceipts = async (since: string, until: string) => {
+				if (resolvedShopUuids.length === 0) {
+					return { revenue: 0, checks: 0, refunds: 0 };
+				}
+				const placeholders = resolvedShopUuids.map(() => "?").join(", ");
+				const stmt = db.prepare(
+					`SELECT
+						SUM(CASE WHEN type = 'SELL' THEN total ELSE 0 END) as totalSell,
+						SUM(CASE WHEN type = 'PAYBACK' THEN ABS(total) ELSE 0 END) as totalRefund,
+						SUM(CASE WHEN type IN ('SELL','PAYBACK') THEN 1 ELSE 0 END) as checksCount
+					FROM receipts
+					WHERE close_date >= ? AND close_date <= ?
+						AND shop_id IN (${placeholders})`,
+				);
+				const row = await stmt
+					.bind(since, until, ...resolvedShopUuids)
+					.first<{
+						totalSell: number | null;
+						totalRefund: number | null;
+						checksCount: number | null;
+					}>();
+				const totalSell = Number(row?.totalSell || 0);
+				const totalRefund = Number(row?.totalRefund || 0);
+				const checks = Number(row?.checksCount || 0);
+				return {
+					revenue: totalSell - totalRefund,
+					checks,
+					refunds: totalRefund,
+				};
+			};
 
+			const historyMetrics = await Promise.all(
+				ranges.map(async ([since, until]) => getRevenueFromReceipts(since, until)),
+			);
+			let historySource: "receipts" | "index" = "receipts";
+			let effectiveHistory = historyMetrics;
+			const hasReceiptsHistory = historyMetrics.some(
+				(item) => Math.abs(item.revenue) > 0.01 || item.checks > 0,
+			);
+			if (!hasReceiptsHistory && resolvedShopUuids.length > 0) {
+				historySource = "index";
+				effectiveHistory = await Promise.all(
+					ranges.map(async ([since, until]) => {
+						const period = await getDirectorPeriodMetrics(
+							db,
+							evo,
+							resolvedShopUuids,
+							since,
+							until,
+						);
+						return {
+							revenue: period.metrics.revenue,
+							checks: period.metrics.checks,
+							refunds: period.metrics.refunds,
+						};
+					}),
+				);
+			}
+
+			const nonZeroHistory = effectiveHistory.filter((item) => item.revenue > 0);
 			const avgRevenue =
-				historyMetrics.reduce((sum, item) => sum + item.revenue, 0) /
-				Math.max(1, historyMetrics.length);
+				(nonZeroHistory.length > 0 ? nonZeroHistory : effectiveHistory).reduce(
+					(sum, item) => sum + item.revenue,
+					0,
+				) /
+				Math.max(1, (nonZeroHistory.length > 0 ? nonZeroHistory : effectiveHistory).length);
 
 			const forecast = avgRevenue * weatherFactor;
 			const responsePayload = {
@@ -2398,7 +2758,14 @@ export const aiRoutes = new Hono<IEnv>()
 				forecast,
 				weather,
 				weatherFactor,
-				history: historyMetrics,
+				history: effectiveHistory,
+				historySource,
+				warning:
+					resolvedShopUuids.length === 0
+						? "SHOP_UUIDS_UNAVAILABLE"
+						: effectiveHistory.every((item) => Math.abs(item.revenue) <= 0.01)
+							? "NO_HISTORY_REVENUE"
+							: null,
 			};
 
 			return c.json(responsePayload);

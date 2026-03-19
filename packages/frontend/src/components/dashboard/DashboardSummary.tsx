@@ -277,6 +277,40 @@ function LoadingTile({
   );
 }
 
+function EmptyTile({
+  title,
+  Icon,
+  tone = "blue",
+  message = "Нет данных",
+}: {
+  title: string;
+  Icon: LucideIcon;
+  tone?: "blue" | "orange" | "purple" | "pink" | "cyan" | "indigo";
+  message?: string;
+}) {
+  const toneClasses: Record<string, string> = {
+    blue: "bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300",
+    orange:
+      "bg-orange-100 dark:bg-orange-900/60 text-orange-600 dark:text-orange-300",
+    purple:
+      "bg-purple-100 dark:bg-purple-900/60 text-purple-600 dark:text-purple-300",
+    pink: "bg-pink-100 dark:bg-pink-900/60 text-pink-600 dark:text-pink-300",
+    cyan: "bg-cyan-100 dark:bg-cyan-900/60 text-cyan-600 dark:text-cyan-300",
+    indigo:
+      "bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300",
+  };
+
+  return (
+    <div
+      className={`rounded-lg p-4 h-[120px] border border-white/60 dark:border-white/10 shadow-sm flex flex-col items-center justify-center ${toneClasses[tone]}`}
+    >
+      <Icon className="w-10 h-10 opacity-70" />
+      <div className="text-sm font-semibold mt-2 text-center">{title}</div>
+      <div className="text-xs opacity-80">{message}</div>
+    </div>
+  );
+}
+
 function AccessoriesCard({
   value,
   onClick,
@@ -639,13 +673,18 @@ export default function DashboardSummary2({
   const safeUntil = until || safeSince;
 
   const salesEnabled = showMainDashboard;
+  const { data: roleData } = useEmployeeRole();
+  const { data: currentWorkShop } = useCurrentWorkShop();
+  const scopedShopUuid =
+    roleData?.employeeRole === "SUPERADMIN"
+      ? undefined
+      : currentWorkShop?.uuid || undefined;
   const { data, loading, lastUpdate } = useSalesData({
     since: safeSince,
     until: safeUntil,
+    shopUuid: scopedShopUuid,
     enabled: salesEnabled,
   });
-  const { data: roleData } = useEmployeeRole();
-  const { data: currentWorkShop } = useCurrentWorkShop();
   const reportAndPlan = useGetReportAndPlan(showMainDashboard);
 
   const isSuperAdmin = roleData?.employeeRole === "SUPERADMIN";
@@ -690,6 +729,7 @@ export default function DashboardSummary2({
   const previousPeriodData = useSalesData({
     since: comparisonRange.prevSince,
     until: comparisonRange.prevUntil,
+    shopUuid: scopedShopUuid,
     enabled: salesEnabled,
   });
   const previousFilteredData = useFilteredSalesData(
@@ -707,6 +747,7 @@ export default function DashboardSummary2({
   const weekSalesData = useSalesData({
     since: weekRange.since,
     until: weekRange.until,
+    shopUuid: scopedShopUuid,
     enabled: salesEnabled,
   });
   const weekFilteredData = useFilteredSalesData(
@@ -764,53 +805,86 @@ export default function DashboardSummary2({
       setDirectorError(null);
       try {
         const aiDirector = client.api.ai as any;
-        const [summaryRes, alertsRes, forecastRes, velocityRes, recommendationsRes, reportRes] =
-          await Promise.all([
-            aiDirector["director/summary"].$post({
-              json: { date: directorDate },
-            }),
-            aiDirector["director/alerts"].$post({
-              json: { date: directorDate },
-            }),
-            aiDirector["director/forecast"].$post({
-              json: { date: directorDate },
-            }),
-            aiDirector["director/velocity"].$post({
-              json: { since: safeSince, until: safeUntil, limit: 50 },
-            }),
-            aiDirector["director/recommendations"].$post({
-              json: { since: safeSince, until: safeUntil, limit: 50 },
-            }),
-            aiDirector["director/report"].$post({
-              json: { date: directorDate, sendTelegram: false },
-            }),
-          ]);
+        const settled = await Promise.allSettled([
+          aiDirector["director/summary"].$post({
+            json: { date: directorDate },
+          }),
+          aiDirector["director/alerts"].$post({
+            json: { date: directorDate },
+          }),
+          aiDirector["director/forecast"].$post({
+            json: { date: directorDate },
+          }),
+          aiDirector["director/velocity"].$post({
+            json: { since: safeSince, until: safeUntil, limit: 50 },
+          }),
+          aiDirector["director/recommendations"].$post({
+            json: { since: safeSince, until: safeUntil, limit: 50 },
+          }),
+          aiDirector["director/report"].$post({
+            json: { date: directorDate, sendTelegram: false },
+          }),
+        ]);
 
-        if (!summaryRes.ok) throw new Error("Не удалось загрузить summary");
-        if (!alertsRes.ok) throw new Error("Не удалось загрузить alerts");
-        if (!forecastRes.ok) throw new Error("Не удалось загрузить forecast");
-        if (!velocityRes.ok) throw new Error("Не удалось загрузить velocity");
-        if (!recommendationsRes.ok)
-          throw new Error("Не удалось загрузить recommendations");
-        if (!reportRes.ok) throw new Error("Не удалось загрузить report");
+        const labels = [
+          "summary",
+          "alerts",
+          "forecast",
+          "velocity",
+          "recommendations",
+          "report",
+        ] as const;
+
+        const errors: string[] = [];
+
+        const parseFailedResponse = async (res: Response, label: string) => {
+          try {
+            const body = await res.json();
+            const reason =
+              (body as { error?: string; message?: string })?.error ||
+              (body as { error?: string; message?: string })?.message;
+            return reason
+              ? `Не удалось загрузить ${label}: ${reason}`
+              : `Не удалось загрузить ${label}`;
+          } catch {
+            return `Не удалось загрузить ${label}`;
+          }
+        };
+
+        const parseData = async <T,>(index: number): Promise<T | null> => {
+          const entry = settled[index];
+          const label = labels[index];
+          if (entry.status === "rejected") {
+            errors.push(`Не удалось загрузить ${label}`);
+            return null;
+          }
+          const res = entry.value;
+          if (!res.ok) {
+            errors.push(await parseFailedResponse(res, label));
+            return null;
+          }
+          return (await res.json()) as T;
+        };
 
         const [summary, alerts, forecast, velocity, recommendations, report] =
           await Promise.all([
-            summaryRes.json() as Promise<DirectorSummaryResponse>,
-            alertsRes.json() as Promise<DirectorAlertsResponse>,
-            forecastRes.json() as Promise<DirectorForecastResponse>,
-            velocityRes.json() as Promise<DirectorVelocityResponse>,
-            recommendationsRes.json() as Promise<DirectorRecommendationsResponse>,
-            reportRes.json() as Promise<DirectorReportResponse>,
+            parseData<DirectorSummaryResponse>(0),
+            parseData<DirectorAlertsResponse>(1),
+            parseData<DirectorForecastResponse>(2),
+            parseData<DirectorVelocityResponse>(3),
+            parseData<DirectorRecommendationsResponse>(4),
+            parseData<DirectorReportResponse>(5),
           ]);
 
         if (cancelled) return;
-        setDirectorSummary(summary);
-        setDirectorAlerts(alerts);
-        setDirectorForecast(forecast);
-        setDirectorVelocity(velocity);
-        setDirectorRecommendations(recommendations);
-        setDirectorReport(report);
+        if (summary) setDirectorSummary(summary);
+        if (alerts) setDirectorAlerts(alerts);
+        if (forecast) setDirectorForecast(forecast);
+        if (velocity) setDirectorVelocity(velocity);
+        if (recommendations) setDirectorRecommendations(recommendations);
+        if (report) setDirectorReport(report);
+
+        setDirectorError(errors.length > 0 ? errors.join(" • ") : null);
       } catch (error) {
         if (cancelled) return;
         setDirectorError(
@@ -1538,6 +1612,7 @@ export default function DashboardSummary2({
                 onClick={() => toggleCard("expenses")}
                 label="Фин. отчет"
                 cashBalanceByShop={filteredData.cashBalanceByShop}
+                salesDataByShopName={filteredData.salesDataByShopName}
               />
             )}
           </div>
@@ -1607,7 +1682,7 @@ export default function DashboardSummary2({
                 onClick={() => toggleCard("products")}
               />
             ) : (
-              <LoadingTile title="Топ продукт" Icon={Package} tone="pink" />
+              <EmptyTile title="Топ продукт" Icon={Package} tone="pink" />
             )}
           </div>
           {expandedCard === "products" &&

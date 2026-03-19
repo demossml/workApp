@@ -105,7 +105,7 @@ async function logTelegramEvent(
 
 export async function runDailyTelegramDigestAndAlerts(bindings: IEnv["Bindings"]) {
 	const db = drizzle(bindings.DB);
-	const evotor = new Evotor(bindings.EVOTOR_API_TOKEN);
+	const evotor = new Evotor(bindings.EVOTOR_API_TOKEN, bindings.KV);
 	const subscriptions = await listActiveTgSubscriptions(db);
 	if (subscriptions.length === 0) return;
 

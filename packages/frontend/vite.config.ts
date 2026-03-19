@@ -56,4 +56,38 @@ export default defineConfig({
       "/api": "http://localhost:8787",
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            if (
+              id.includes("/chart.js") ||
+              id.includes("/react-chartjs-2") ||
+              id.includes("/recharts")
+            ) {
+              return "charts";
+            }
+            if (id.includes("/framer-motion") || id.includes("/motion")) {
+              return "motion";
+            }
+            if (id.includes("/@radix-ui")) return "radix";
+            if (
+              id.includes("/date-fns") ||
+              id.includes("/xlsx") ||
+              id.includes("/html-to-image")
+            ) {
+              return "utils";
+            }
+            return "vendor";
+          }
+          if (id.includes("/src/pages/reports/")) return "reports";
+          if (id.includes("/src/pages/ai/")) return "ai";
+          if (id.includes("/src/pages/opening/")) return "opening";
+          if (id.includes("/src/pages/deadstock/")) return "deadstock";
+          if (id.includes("/src/components/dashboard/")) return "dashboard";
+        },
+      },
+    },
+  },
 });

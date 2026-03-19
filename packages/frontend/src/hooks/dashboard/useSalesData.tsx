@@ -6,6 +6,7 @@ import { FinancialMetricsResponseSchema } from "@work-appt/backend/src/contracts
 interface UseSalesDataParams {
   since?: string;
   until?: string;
+  shopUuid?: string;
   enabled?: boolean;
 }
 
@@ -55,14 +56,17 @@ export function useSalesData(params?: UseSalesDataParams): UseSalesDataReturn {
         let res: Response;
 
         if (params?.since && params?.until) {
-          res = await client.api.evotor.financial.$get({
-            query: {
-              since: params.since,
-              until: params.until,
-            },
-          });
+          const query: { since: string; until: string; shopUuid?: string } = {
+            since: params.since,
+            until: params.until,
+          };
+          if (params.shopUuid) {
+            query.shopUuid = params.shopUuid;
+          }
+          res = await client.api.evotor.financial.$get({ query });
         } else {
-          res = await client.api.evotor.financial.today.$get();
+          const query = params?.shopUuid ? { shopUuid: params.shopUuid } : {};
+          res = await client.api.evotor.financial.today.$get({ query });
         }
 
         if (controller.signal.aborted) {
@@ -108,7 +112,7 @@ export function useSalesData(params?: UseSalesDataParams): UseSalesDataReturn {
       abortRef.current?.abort();
       clearInterval(interval);
     };
-  }, [params?.since, params?.until, params?.enabled]);
+  }, [params?.since, params?.until, params?.shopUuid, params?.enabled]);
 
   return { data, loading, error, lastUpdate, isUpdating };
 }

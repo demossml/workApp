@@ -25,13 +25,17 @@ import type {
 	// TransactionSale,
 } from "./types";
 
-import type { D1Database } from "@cloudflare/workers-types";
+import type { D1Database, KVNamespace } from "@cloudflare/workers-types";
 
 /**
  * Класс Evotor для работы с API Эвотор
  */
 export class Evotor {
 	private headers: { "X-Authorization": string }; // Заголовки для авторизации
+	private kv?: KVNamespace;
+	private shopUuidsCacheKey = "evotor:shopUuids";
+	private shopNamesCacheKey = "evotor:shopNames";
+	private cacheTtlSeconds = 900;
 	private urls: {
 		getEmployees: string; // URL для получения списка сотрудников
 		getShops: string; // URL для получения списка магазинов
@@ -48,8 +52,9 @@ export class Evotor {
 	 * Конструктор класса Evotor
 	 * @param token - Токен для авторизации
 	 */
-	constructor(token: string) {
+	constructor(token: string, kv?: KVNamespace) {
 		this.headers = { "X-Authorization": token }; // Инициализация заголовков
+		this.kv = kv;
 		this.urls = {
 			getEmployees: "https://api.evotor.ru/api/v1/inventories/employees/search",
 			getShops: "https://api.evotor.ru/api/v1/inventories/stores/search",
@@ -76,6 +81,89 @@ export class Evotor {
 		const data = await fetchFn();
 		this.cache.set(key, data);
 		return data;
+	}
+
+	private async getCachedShopUuids(): Promise<string[] | null> {
+		if (!this.kv) return null;
+		try {
+			const cached = await this.kv.get(this.shopUuidsCacheKey, {
+				type: "json",
+			});
+			if (!Array.isArray(cached)) return null;
+			const filtered = cached.filter((item) => typeof item === "string");
+			return filtered.length > 0 ? (filtered as string[]) : null;
+		} catch (error) {
+			logger.warn("KV get failed for shop UUIDs cache", { error });
+			return null;
+		}
+	}
+
+	private async saveShopUuidsToCache(shopUuids: string[]): Promise<void> {
+		if (!this.kv || shopUuids.length === 0) return;
+		try {
+			await this.kv.put(this.shopUuidsCacheKey, JSON.stringify(shopUuids), {
+				expirationTtl: this.cacheTtlSeconds,
+			});
+		} catch (error) {
+			logger.warn("KV put failed for shop UUIDs cache", { error });
+		}
+	}
+
+	private async getCachedShopNamesMap(): Promise<Record<string, string> | null> {
+		if (!this.kv) return null;
+		try {
+			const cached = await this.kv.get(this.shopNamesCacheKey, {
+				type: "json",
+			});
+			if (!cached || typeof cached !== "object") return null;
+			const result: Record<string, string> = {};
+			for (const [key, value] of Object.entries(cached)) {
+				if (typeof key === "string" && typeof value === "string") {
+					result[key] = value;
+				}
+			}
+			return Object.keys(result).length > 0 ? result : null;
+		} catch (error) {
+			logger.warn("KV get failed for shop names cache", { error });
+			return null;
+		}
+	}
+
+	private async saveShopNamesMap(
+		shopNamesMap: Record<string, string>,
+	): Promise<void> {
+		if (!this.kv || Object.keys(shopNamesMap).length === 0) return;
+		try {
+			await this.kv.put(this.shopNamesCacheKey, JSON.stringify(shopNamesMap), {
+				expirationTtl: this.cacheTtlSeconds,
+			});
+		} catch (error) {
+			logger.warn("KV put failed for shop names cache", { error });
+		}
+	}
+
+	private isRateLimitError(error: unknown): boolean {
+		if (!(error instanceof Error)) return false;
+		return /HTTP:\s*429/.test(error.message);
+	}
+
+	private normalizeEmployeeLookupValue(value: string | null | undefined): string {
+		return String(value || "").trim();
+	}
+
+	private isEmployeeMatchedByTelegramId(
+		employee: Employee,
+		telegramId: string,
+	): boolean {
+		const normalizedTelegramId =
+			this.normalizeEmployeeLookupValue(telegramId);
+		if (!normalizedTelegramId) return false;
+		const employeeLastName = this.normalizeEmployeeLookupValue(employee.lastName);
+		const employeeAltLastName = this.normalizeEmployeeLookupValue(employee.last_name);
+		return (
+			employeeLastName === normalizedTelegramId ||
+			employeeAltLastName === normalizedTelegramId
+		);
 	}
 
 	async getProductsShopUuidsT(shopId: string): Promise<ProductUuid[]> {
@@ -241,7 +329,12 @@ export class Evotor {
 
 			// Фильтруем сотрудников по фамилии и преобразуем в массив объектов с нужными полями
 			const result = employees
-				.filter((emp) => emp.lastName === lastName && emp.uuid && emp.name) // Проверка наличия данных и соответствия фамилии
+				.filter(
+					(emp) =>
+						this.isEmployeeMatchedByTelegramId(emp, lastName) &&
+						emp.uuid &&
+						emp.name,
+				) // Проверка наличия данных и соответствия фамилии
 				.map((emp) => ({
 					uuid: emp.uuid, // UUID сотрудника
 					name: emp.name, // Имя сотрудника
@@ -273,8 +366,8 @@ export class Evotor {
 			}
 
 			// Поиск сотрудника по lastName
-			const employee = shopsResponse.find(
-				(doc: Employee) => doc.lastName === lastName,
+			const employee = shopsResponse.find((doc: Employee) =>
+				this.isEmployeeMatchedByTelegramId(doc, lastName),
 			); // Найти первого подходящего сотрудника
 
 			// Если сотрудник найден, вернуть его фамилию, иначе вернуть null
@@ -366,8 +459,8 @@ export class Evotor {
 			}
 
 			// Поиск сотрудника по lastName
-			const employee = shopsResponse.find(
-				(doc: Employee) => doc.lastName === lastName,
+			const employee = shopsResponse.find((doc: Employee) =>
+				this.isEmployeeMatchedByTelegramId(doc, lastName),
 			); // Найти первого подходящего сотрудника
 
 			// Если сотрудник найден, вернуть его фамилию, иначе вернуть null
@@ -1947,9 +2040,42 @@ export class Evotor {
 	 * @throws {Error} - В случае ошибки при получении данных магазинов.
 	 */
 	async getShops(): Promise<ShopsResponse> {
-		return this.getCachedData("shops", () =>
-			this._fetchData(this.urls.getShops),
-		);
+		try {
+			return await this.getCachedData("shops", () =>
+				this._fetchData(this.urls.getShops),
+			);
+		} catch (error) {
+			if (this.isRateLimitError(error)) {
+				const cachedNames = await this.getCachedShopNamesMap();
+				if (cachedNames) {
+					logger.warn(
+						"Evotor rate limit on shops list, using cached shop names",
+					);
+					const items = Object.entries(cachedNames).map(([uuid, name]) => ({
+						uuid,
+						name,
+					}));
+					const result = Object.assign(items, {
+						items,
+						paging: { next_cursor: "" },
+					});
+					return result as ShopsResponse;
+				}
+				const cachedUuids = await this.getCachedShopUuids();
+				if (cachedUuids) {
+					logger.warn(
+						"Evotor rate limit on shops list, using cached shop UUIDs only",
+					);
+					const items = cachedUuids.map((uuid) => ({ uuid, name: "" }));
+					const result = Object.assign(items, {
+						items,
+						paging: { next_cursor: "" },
+					});
+					return result as ShopsResponse;
+				}
+			}
+			throw error;
+		}
 	}
 
 	/**
@@ -1986,9 +2112,19 @@ export class Evotor {
 
 			// Извлекаем uuid для каждого магазина из массива items
 			const shopUuids: string[] = shopsResponse.map((shop) => shop.uuid); // Исправлено с id на uuid
+			await this.saveShopUuidsToCache(shopUuids);
 
 			return shopUuids;
 		} catch (error) {
+			if (this.isRateLimitError(error)) {
+				const cached = await this.getCachedShopUuids();
+				if (cached) {
+					logger.warn(
+						"Evotor rate limit on shops list, using cached shop UUIDs",
+					);
+					return cached;
+				}
+			}
 			this._logError("Ошибка при получении списка uuid магазинов", error);
 			throw error;
 		}
@@ -2023,6 +2159,11 @@ export class Evotor {
 				uuid: shop.uuid,
 				name: shop.name,
 			}));
+			const namesMap = result.reduce<Record<string, string>>((acc, shop) => {
+				if (shop.uuid && shop.name) acc[shop.uuid] = shop.name;
+				return acc;
+			}, {});
+			await this.saveShopNamesMap(namesMap);
 
 			return result; // Возвращаем массив объектов
 		} catch (error) {
@@ -2051,6 +2192,7 @@ export class Evotor {
 			for (const shop of shopsResponse) {
 				result[shop.uuid] = shop.name;
 			}
+			await this.saveShopNamesMap(result);
 
 			return result;
 		} catch (error) {
@@ -2082,11 +2224,20 @@ export class Evotor {
 
 			return shop ? shop.name : "Магазин не найден"; // Возвращаем имя или сообщение о ненайденном магазине
 		} catch (error) {
+			if (this.isRateLimitError(error)) {
+				const cached = await this.getCachedShopNamesMap();
+				if (cached && cached[shopUuid]) {
+					logger.warn(
+						"Evotor rate limit on shop name, using cached shop names",
+					);
+					return cached[shopUuid];
+				}
+			}
 			this._logError(
 				`Ошибка при получении имени магазина с ID: ${shopUuid}`,
 				error,
 			);
-			throw error; // Пробрасываем ошибку дальше
+			return "Магазин не найден";
 		}
 	}
 
@@ -2113,9 +2264,22 @@ export class Evotor {
 				const shop = shopsResponse.find((s) => s.uuid === uuid);
 				result[uuid] = shop ? shop.name : "Магазин не найден";
 			}
+			await this.saveShopNamesMap(result);
 
 			return result;
 		} catch (error) {
+			if (this.isRateLimitError(error)) {
+				const cached = await this.getCachedShopNamesMap();
+				if (cached) {
+					logger.warn(
+						"Evotor rate limit on shop names, using cached shop names",
+					);
+					return shopUuids.reduce<Record<string, string>>((acc, uuid) => {
+						acc[uuid] = cached[uuid] || "Магазин не найден";
+						return acc;
+					}, {});
+				}
+			}
 			this._logError("Ошибка при получении названий магазинов (батч)", error);
 			throw error;
 		}

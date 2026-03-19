@@ -13,7 +13,7 @@ export const initializeDrizzle = (c: IContext) => {
 };
 
 export const initialize = (c: IContext, next: Next) => {
-	c.set("evotor", new Evotor(c.env.EVOTOR_API_TOKEN));
+	c.set("evotor", new Evotor(c.env.EVOTOR_API_TOKEN, c.env.KV));
 	c.set("db", c.env.DB);
 	c.set("drizzle", drizzle(c.env.DB));
 	c.set("ai", c.env.AI);

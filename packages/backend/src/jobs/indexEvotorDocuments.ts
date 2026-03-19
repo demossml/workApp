@@ -18,9 +18,11 @@ import {
 	upsertReceiptPositions,
 	upsertReceipts,
 	upsertReferenceSets,
+	upsertStoresWithNames,
 } from "../db/repositories/normalizedSales";
 import { recomputeDailySales } from "../analytics/dailySales";
 import { recomputeTopProducts } from "../analytics/topProducts";
+import { upsertEmployeesDetails } from "../db/repositories/employeesDetails";
 import {
 	buildAiReportKey,
 	buildSalesDayKey,
@@ -32,14 +34,41 @@ import {
 export async function runEvotorDocumentsIndexingJob(
 	bindings: IEnv["Bindings"],
 ): Promise<void> {
-	const evotor = new Evotor(bindings.EVOTOR_API_TOKEN);
+	const evotor = new Evotor(bindings.EVOTOR_API_TOKEN, bindings.KV);
 	const db = bindings.DB;
 
 	await createIndexDocumentsTable(db);
 	await createIndexOnType(db);
 	await ensureNormalizedTables(db);
+	try {
+		const shops = await evotor.getShopNameUuids();
+		if (shops && shops.length > 0) {
+			await upsertStoresWithNames(db, shops);
+		}
+	} catch (error) {
+		logger.warn("Stores sync skipped", { error });
+	}
+	try {
+		const employees = await evotor.getEmployees();
+		await upsertEmployeesDetails(db, employees);
+	} catch (error) {
+		logger.warn("Employees sync skipped", { error });
+	}
 
-	const shopUuids = await evotor.getShopUuids();
+	let shopUuids: string[] = [];
+	try {
+		shopUuids = await evotor.getShopUuids();
+	} catch (error) {
+		logger.warn("Evotor shop UUIDs fetch failed, trying DB fallback", {
+			error,
+		});
+		const fallback = await db
+			.prepare("SELECT store_uuid FROM stores")
+			.all<{ store_uuid: string }>();
+		shopUuids = (fallback.results || [])
+			.map((row) => row.store_uuid)
+			.filter(Boolean);
+	}
 	if (shopUuids.length === 0) {
 		logger.warn("Evotor documents indexing skipped: no shops found");
 		return;

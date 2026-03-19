@@ -2,7 +2,6 @@ import { Route, Routes, useLocation } from "react-router";
 import { Suspense, lazy, useEffect, useState } from "react";
 import { BottomNavigation } from "./components/BottomNavigation";
 import { PWAInstall } from "./pwa";
-import Home from "./pages/Home";
 import { useEmployeeRole } from "./hooks/useApi";
 import { useTheme } from "./hooks/useTheme";
 import { useUser } from "./hooks/userProvider";
@@ -14,6 +13,7 @@ import { trackEvent } from "./helpers/analytics";
 import { useTelegramFullscreenLayout } from "./hooks/useTelegramFullscreenLayout";
 
 const Settings = lazy(() => import("./pages/reports/Settings"));
+const Home = lazy(() => import("./pages/Home"));
 const PlanSalesReport = lazy(() => import("./pages/reports/PlanSalesReport"));
 const SalesReport = lazy(() => import("./pages/reports/SaleRepor"));
 const SalaryReports = lazy(() => import("./pages/reports/SalarysReport"));

@@ -2,12 +2,14 @@
 import { motion } from "framer-motion";
 import { formatCurrency } from "../../../utils/formatCurrency";
 import { ShoppingCart } from "lucide-react";
+import type { ShopSalesData } from "../type";
 
 interface ExpensesCardProps {
   value: number;
   onClick?: () => void;
   label?: string;
   cashBalanceByShop?: Record<string, number>;
+  salesDataByShopName?: Record<string, ShopSalesData>;
 }
 
 export function ExpensesCard({
@@ -15,11 +17,18 @@ export function ExpensesCard({
   onClick,
   label,
   cashBalanceByShop,
+  salesDataByShopName,
 }: ExpensesCardProps) {
   const shopsWithCash = Object.entries(cashBalanceByShop || {})
+    .filter(([, amount]) => Number(amount || 0) > 0)
     .sort(([, a], [, b]) => b - a);
-  const previewShops = shopsWithCash.slice(0, 3);
-  const hiddenCount = Math.max(0, shopsWithCash.length - previewShops.length);
+  const shopsWithSales = Object.entries(salesDataByShopName || {})
+    .map(([shopName, data]) => [shopName, Number(data?.totalSell || 0)] as const)
+    .filter(([, amount]) => amount > 0)
+    .sort(([, a], [, b]) => b - a);
+  const previewSource = shopsWithCash.length > 0 ? shopsWithCash : shopsWithSales;
+  const previewShops = previewSource.slice(0, 3);
+  const hiddenCount = Math.max(0, previewSource.length - previewShops.length);
 
   return (
     <motion.div

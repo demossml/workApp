@@ -22,6 +22,7 @@ import {
 	assert,
 	calculateDateRanges,
 	formatDate,
+	formatDateTime,
 	formatDateWithTime,
 	getIntervals,
 	getIsoTimestamp,
@@ -68,12 +69,135 @@ import { WorkingByShopsResponseSchema } from "../contracts/workingByShops";
 import { CurrentWorkShopResponseSchema } from "../contracts/currentWorkShop";
 import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
 import { saveNewIndexDocuments } from "../db/repositories/indexDocuments";
+import { getDocumentsByPeriod } from "../db/repositories/documents";
+import { normalizeDocuments } from "../analytics/normalize";
+import {
+	upsertReceipts,
+	upsertReceiptPositions,
+	upsertReferenceSets,
+} from "../db/repositories/normalizedSales";
 import {
 	buildSalesDayKey,
 	buildTopProductsKey,
 	getCachedJson,
-	getTodayAndYesterdayKeys,
 } from "../utils/kvCache";
+
+async function getShopUuidsWithFallback(
+	c: { get: (key: "db") => IEnv["Bindings"]["DB"] },
+	evotor: { getShopUuids: () => Promise<string[]> },
+): Promise<string[]> {
+	try {
+		return await evotor.getShopUuids();
+	} catch (error) {
+		logger.warn("Evotor shop UUIDs fetch failed, using DB fallback", {
+			error,
+		});
+		const db = c.get("db");
+		const rows = await db
+			.prepare("SELECT store_uuid FROM stores")
+			.all<{ store_uuid: string }>();
+		const list = (rows.results || [])
+			.map((row) => row.store_uuid)
+			.filter(Boolean);
+		if (list.length > 0) return list;
+		throw error;
+	}
+}
+
+async function getShopUuidsFromDb(
+	c: { get: (key: "db") => IEnv["Bindings"]["DB"] },
+): Promise<string[]> {
+	const db = c.get("db");
+	const rows = await db
+		.prepare("SELECT store_uuid FROM stores")
+		.all<{ store_uuid: string }>();
+	return (rows.results || []).map((row) => row.store_uuid).filter(Boolean);
+}
+
+async function getShopNamesFromDb(
+	c: { get: (key: "db") => IEnv["Bindings"]["DB"] },
+): Promise<Record<string, string>> {
+	const db = c.get("db");
+	const rows = await db
+		.prepare("SELECT store_uuid, name FROM stores")
+		.all<{ store_uuid: string; name: string | null }>();
+	const map: Record<string, string> = {};
+	for (const row of rows.results || []) {
+		if (row.store_uuid) {
+			map[row.store_uuid] = row.name || row.store_uuid;
+		}
+	}
+	return map;
+}
+
+async function resolveScopedShopUuidForFinancial(
+	c: {
+		var: IEnv["Variables"];
+	},
+): Promise<string | null> {
+	try {
+		const userId = c.var.userId || "";
+		if (!userId) return null;
+		const roleFromEvotor = await c.var.evotor.getEmployeeRole(userId);
+		const employeeRole =
+			userId === "5700958253" || userId === "475039971"
+				? "SUPERADMIN"
+				: roleFromEvotor;
+		if (employeeRole === "SUPERADMIN") return null;
+
+		const now = new Date();
+		const since = formatDateWithTime(now, false);
+		const until = formatDateWithTime(now, true);
+		const employeeData = await c.var.evotor.getEmployeesByLastName(userId);
+		const employeeUuid = employeeData?.[0]?.uuid;
+		if (!employeeUuid) return null;
+		const shopUuid = await c.var.evotor.getFirstOpenSession(
+			since,
+			until,
+			employeeUuid,
+		);
+		return shopUuid || null;
+	} catch (error) {
+		logger.warn("Financial scope resolution failed, fallback to all shops", {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		return null;
+	}
+}
+
+function getLocalDateKey(now: Date, tzOffsetMinutes: number): string {
+	const shifted = new Date(now.getTime() + tzOffsetMinutes * 60 * 1000);
+	return shifted.toISOString().slice(0, 10);
+}
+
+function getLocalTodayAndYesterdayKeys(tzOffsetMinutes: number) {
+	const now = new Date();
+	const todayKey = getLocalDateKey(now, tzOffsetMinutes);
+	const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+	const yesterdayKey = getLocalDateKey(yesterday, tzOffsetMinutes);
+	return { todayKey, yesterdayKey };
+}
+
+function buildUtcRangeForLocalDates(
+	startDate: string,
+	endDate: string,
+	tzOffsetMinutes: number,
+): { since: string; until: string } {
+	const [startY, startM, startD] = startDate.split("-").map(Number);
+	const [endY, endM, endD] = endDate.split("-").map(Number);
+	const startUtc = new Date(
+		Date.UTC(startY, startM - 1, startD, 0, 0, 0, 0) -
+			tzOffsetMinutes * 60 * 1000,
+	);
+	const endUtc = new Date(
+		Date.UTC(endY, endM - 1, endD, 23, 59, 59, 999) -
+			tzOffsetMinutes * 60 * 1000,
+	);
+	return {
+		since: formatDateTime(startUtc),
+		until: formatDateTime(endUtc),
+	};
+}
 
 const paymentTypeLabels: Record<string, string> = {
 	CARD: "Банковской картой:",
@@ -296,6 +420,135 @@ function buildTopProductsFromIndexedDocuments(
 		.sort((a, b) => b.netRevenue - a.netRevenue);
 }
 
+async function buildTopProductsFromDbAggregates(
+	db: IEnv["Bindings"]["DB"],
+	shopUuids: string[],
+	since: string,
+	until: string,
+) {
+	if (shopUuids.length === 0) return [];
+
+	const placeholders = shopUuids.map(() => "?").join(", ");
+	const normalizedSince = since.replace("+00:00", "+0000").replace(/Z$/, "+0000");
+	const normalizedUntil = until.replace("+00:00", "+0000").replace(/Z$/, "+0000");
+
+	const endDate = new Date(until);
+	const dayKeys: string[] = [];
+	for (let i = 6; i >= 0; i--) {
+		const d = new Date(endDate);
+		d.setDate(endDate.getDate() - i);
+		dayKeys.push(d.toISOString().slice(0, 10));
+	}
+	const dayIndex = new Map(dayKeys.map((key, idx) => [key, idx]));
+
+	// В receipt_positions исторически могут быть дубль-строки.
+	// Дедуплируем по (receipt_id, commodity_uuid), чтобы расчет topProducts
+	// следовал тому же принципу, что и выручка из receipts.
+	const summarySql = `
+		WITH dedup AS (
+			SELECT
+				receipt_id,
+				shop_id,
+				close_date,
+				commodity_uuid,
+				MAX(commodity_name) as commodity_name,
+				MAX(quantity) as quantity,
+				MAX(sum) as sum,
+				MAX(cost_price) as cost_price
+			FROM receipt_positions
+			WHERE close_date >= ? AND close_date <= ?
+				AND shop_id IN (${placeholders})
+			GROUP BY receipt_id, commodity_uuid
+		)
+		SELECT
+			commodity_uuid as commodityUuid,
+			MAX(commodity_name) as productName,
+			SUM(CASE WHEN sum > 0 THEN sum ELSE 0 END) as revenue,
+			SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END) as quantity,
+			SUM(CASE WHEN sum < 0 THEN ABS(sum) ELSE 0 END) as refundRevenue,
+			SUM(CASE WHEN quantity < 0 THEN ABS(quantity) ELSE 0 END) as refundQuantity,
+			SUM(CASE WHEN quantity > 0 THEN cost_price * quantity ELSE 0 END) as cost,
+			SUM(CASE WHEN quantity < 0 THEN cost_price * ABS(quantity) ELSE 0 END) as refundCost
+		FROM dedup
+		GROUP BY commodity_uuid
+	`;
+
+	const dailySql = `
+		WITH dedup AS (
+			SELECT
+				receipt_id,
+				shop_id,
+				close_date,
+				commodity_uuid,
+				MAX(sum) as sum
+			FROM receipt_positions
+			WHERE close_date >= ? AND close_date <= ?
+				AND shop_id IN (${placeholders})
+			GROUP BY receipt_id, commodity_uuid
+		)
+		SELECT
+			commodity_uuid as commodityUuid,
+			substr(close_date, 1, 10) as dayKey,
+			SUM(sum) as netRevenue
+		FROM dedup
+		GROUP BY commodity_uuid, dayKey
+	`;
+
+	const [summaryRows, dailyRows] = await Promise.all([
+		db.prepare(summarySql).bind(normalizedSince, normalizedUntil, ...shopUuids).all<{
+			commodityUuid: string;
+			productName: string | null;
+			revenue: number | null;
+			quantity: number | null;
+			refundRevenue: number | null;
+			refundQuantity: number | null;
+			cost: number | null;
+			refundCost: number | null;
+		}>(),
+		db.prepare(dailySql).bind(normalizedSince, normalizedUntil, ...shopUuids).all<{
+			commodityUuid: string;
+			dayKey: string;
+			netRevenue: number | null;
+		}>(),
+	]);
+
+	const dailyByCommodity = new Map<string, number[]>();
+	for (const row of dailyRows.results || []) {
+		const idx = dayIndex.get(row.dayKey);
+		if (idx === undefined) continue;
+		const arr = dailyByCommodity.get(row.commodityUuid) || [0, 0, 0, 0, 0, 0, 0];
+		arr[idx] += Number(row.netRevenue || 0);
+		dailyByCommodity.set(row.commodityUuid, arr);
+	}
+
+	return (summaryRows.results || [])
+		.map((row) => {
+			const revenue = Number(row.revenue || 0);
+			const quantity = Number(row.quantity || 0);
+			const refundRevenue = Number(row.refundRevenue || 0);
+			const refundQuantity = Number(row.refundQuantity || 0);
+			const netRevenue = revenue - refundRevenue;
+			const grossProfit = netRevenue - (Number(row.cost || 0) - Number(row.refundCost || 0));
+			return {
+				productName: row.productName || "Неизвестный товар",
+				revenue,
+				quantity,
+				refundRevenue,
+				refundQuantity,
+				netRevenue,
+				netQuantity: quantity - refundQuantity,
+				grossProfit,
+				marginPct: netRevenue > 0 ? (grossProfit / netRevenue) * 100 : 0,
+				averagePrice: quantity > 0 ? revenue / quantity : 0,
+				refundRate: revenue > 0 ? (refundRevenue / revenue) * 100 : 0,
+				dailyNetRevenue7:
+					dailyByCommodity.get(row.commodityUuid) || [0, 0, 0, 0, 0, 0, 0],
+			};
+		})
+		.filter((item) => item.netRevenue > 0)
+		.sort((a, b) => b.netRevenue - a.netRevenue);
+}
+
 async function getFinancialDataFromIndexWithFallback(
 	db: IEnv["Bindings"]["DB"],
 	evo: IEnv["Variables"]["evotor"],
@@ -404,6 +657,160 @@ async function getFinancialDataFromIndexWithFallback(
 			topProducts,
 		}),
 	};
+}
+
+async function getFinancialDataFromDbAggregates(
+	db: IEnv["Bindings"]["DB"],
+	evo: IEnv["Variables"]["evotor"],
+	shopUuids: string[],
+	since: string,
+	until: string,
+	shopNamesMap: Record<string, string>,
+	cashBalanceMode: "current" | "period" = "period",
+) {
+	if (shopUuids.length === 0) {
+		return FinancialMetricsResponseSchema.parse({
+			salesDataByShopName: {},
+			grandTotalSell: 0,
+			grandTotalRefund: 0,
+			netRevenue: 0,
+			averageCheck: 0,
+			grandTotalCashOutcome: 0,
+			cashOutcomeData: {},
+			cashBalanceByShop: {},
+			totalCashBalance: 0,
+			totalChecks: 0,
+			topProducts: [],
+		});
+	}
+
+	const placeholders = shopUuids.map(() => "?").join(", ");
+	const normalizedSince = since.replace("+00:00", "+0000").replace(/Z$/, "+0000");
+	const normalizedUntil = until.replace("+00:00", "+0000").replace(/Z$/, "+0000");
+	const stmt = db.prepare(
+		`SELECT shop_id as shopId,
+			SUM(CASE WHEN type = 'SELL' THEN total ELSE 0 END) as totalSell,
+			SUM(CASE WHEN type = 'PAYBACK' THEN ABS(total) ELSE 0 END) as totalRefund,
+			SUM(CASE WHEN type = 'SELL' THEN 1 ELSE 0 END) as checksCount
+		FROM receipts
+		WHERE close_date >= ? AND close_date <= ?
+			AND shop_id IN (${placeholders})
+		GROUP BY shop_id`,
+	);
+
+	const rows = await stmt
+		.bind(normalizedSince, normalizedUntil, ...shopUuids)
+		.all<{
+			shopId: string;
+			totalSell: number | null;
+			totalRefund: number | null;
+			checksCount: number | null;
+		}>();
+
+	const salesDataByShopName: Record<
+		string,
+		{
+			sell: Record<string, number>;
+			refund: Record<string, number>;
+			totalSell: number;
+			checksCount: number;
+		}
+	> = {};
+	let grandTotalSell = 0;
+	let grandTotalRefund = 0;
+	let totalChecks = 0;
+
+	for (const row of rows.results || []) {
+		const totalSell = Number(row.totalSell || 0);
+		const totalRefund = Number(row.totalRefund || 0);
+		const checksCount = Number(row.checksCount || 0);
+		const shopName = shopNamesMap[row.shopId] || row.shopId;
+		const unknownPaymentLabel = "Неизвестно. По-умолчанию:";
+		salesDataByShopName[shopName] = {
+			sell: totalSell > 0 ? { [unknownPaymentLabel]: totalSell } : {},
+			refund: totalRefund > 0 ? { [unknownPaymentLabel]: totalRefund } : {},
+			totalSell,
+			checksCount,
+		};
+		grandTotalSell += totalSell;
+		grandTotalRefund += totalRefund;
+		totalChecks += checksCount;
+	}
+
+	const { netRevenue, averageCheck } = computeRevenueSummary(
+		grandTotalSell,
+		grandTotalRefund,
+		totalChecks,
+	);
+	const [topProductsResult, cashOutcomeResult, cashBalanceResult] = await Promise.allSettled([
+		buildTopProductsFromDbAggregates(db, shopUuids, since, until),
+		evo.getDocumentsByCashOutcomeData(shopUuids, since, until, db),
+		cashBalanceMode === "current"
+			? evo.getCashByShops()
+			: evo.getCashByShopsForPeriod(since, until),
+	]);
+
+	let topProducts = topProductsResult.status === "fulfilled" ? topProductsResult.value : [];
+	if (topProductsResult.status === "rejected") {
+		logger.warn("Financial: failed to load top products from DB aggregates", {
+			error:
+				topProductsResult.reason instanceof Error
+					? topProductsResult.reason.message
+					: String(topProductsResult.reason),
+		});
+		try {
+			topProducts = await getTopProductsData(evo, shopUuids, since, until);
+		} catch (fallbackError) {
+			logger.warn("Financial: fallback top products from Evotor failed", {
+				error:
+					fallbackError instanceof Error
+						? fallbackError.message
+						: String(fallbackError),
+			});
+		}
+	}
+
+	const cashOutcomeData =
+		cashOutcomeResult.status === "fulfilled" ? cashOutcomeResult.value : {};
+	if (cashOutcomeResult.status === "rejected") {
+		logger.warn("Financial: failed to load cash outcome data for DB aggregates", {
+			error:
+				cashOutcomeResult.reason instanceof Error
+					? cashOutcomeResult.reason.message
+					: String(cashOutcomeResult.reason),
+		});
+	}
+
+	const cashBalanceByShop =
+		cashBalanceResult.status === "fulfilled" ? cashBalanceResult.value : {};
+	if (cashBalanceResult.status === "rejected") {
+		logger.warn("Financial: failed to load cash balances for DB aggregates", {
+			error:
+				cashBalanceResult.reason instanceof Error
+					? cashBalanceResult.reason.message
+					: String(cashBalanceResult.reason),
+		});
+	}
+
+	const grandTotalCashOutcome = calculateTotalSum(cashOutcomeData);
+	const totalCashBalance = Object.values(cashBalanceByShop).reduce(
+		(sum, value) => sum + Number(value || 0),
+		0,
+	);
+
+	return FinancialMetricsResponseSchema.parse({
+		salesDataByShopName,
+		grandTotalSell,
+		grandTotalRefund,
+		netRevenue,
+		averageCheck,
+		grandTotalCashOutcome,
+		cashOutcomeData,
+		cashBalanceByShop,
+		totalCashBalance,
+		totalChecks,
+		topProducts,
+	});
 }
 
 function calculateSmaLocal(data: number[], period: number): number[] {
@@ -572,7 +979,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			const since = formatDateWithTime(today, false);
 			const until = formatDateWithTime(today, true);
 
-			const shopUuids = await evo.getShopUuids();
+			const shopUuids = await getShopUuidsWithFallback(c, evo);
 			const shopNamesMap = await evo.getShopNamesByUuids(shopUuids);
 
 			const sessionsByShop = await Promise.all(
@@ -643,7 +1050,7 @@ export const evotorRoutes = new Hono<IEnv>()
 	.get("/sales-today-graf", async (c) => {
 		const db = c.get("db");
 		const evo = c.var.evotor;
-		const shopUuids = await c.var.evotor.getShopUuids();
+		const shopUuids = await getShopUuidsWithFallback(c, c.var.evotor);
 		const nowDate = new Date();
 		const sevenDaysAgo = new Date(nowDate.getTime() - 7 * 24 * 60 * 60 * 1000);
 		const nowSince = formatDateWithTime(nowDate, false);
@@ -738,7 +1145,7 @@ export const evotorRoutes = new Hono<IEnv>()
 					nonAccessoriesTotal?: AccessoriesSalesItem[];
 				} = {};
 			if (role === "SUPERADMIN") {
-				const shopUuids = await evo.getShopUuids();
+				const shopUuids = await getShopUuidsWithFallback(c, evo);
 				const shopProductsPromises = shopUuids.map((shopId) =>
 					getProductsByGroup(db, shopId, groupIdsAks),
 				);
@@ -1070,7 +1477,7 @@ export const evotorRoutes = new Hono<IEnv>()
 				datPlan = plan;
 			}
 
-			const shopUuids: string[] = await c.var.evotor.getShopUuids();
+			const shopUuids: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
 			salesData = {};
 
 			const shopNamesMap = await c.var.evotor.getShopNamesByUuids(shopUuids);
@@ -1140,7 +1547,7 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.get("/groups", async (c) => {
-		const shopIds: string[] = await c.var.evotor.getShopUuids();
+		const shopIds: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
 
 		const groups = await c.var.evotor.getGroupsByNameUuid(shopIds[0]);
 
@@ -1351,7 +1758,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			await saveOrUpdateUUIDs(groups, c.get("db"));
 			const uuid = await getAllUuid(c.get("db"));
 
-			const shopIds: string[] = await c.var.evotor.getShopUuids();
+			const shopIds: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
 
 			const filteredUuids = shopIds.filter(
 				(uuid: string) => uuid !== "20231001-6611-407F-8068-AC44283C9196",
@@ -1373,7 +1780,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			await createAccessoriesTable(db);
 			await createSalaryBonusTable(db);
 
-			const shopIds: string[] = await c.var.evotor.getShopUuids();
+			const shopIds: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
 			const filteredUuids = shopIds.filter(
 				(uuid: string) => uuid !== "20231001-6611-407F-8068-AC44283C9196",
 			);
@@ -1411,7 +1818,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			await createAccessoriesTable(db);
 			await saveOrUpdateUUIDs(groups, db);
 
-			const shopIds: string[] = await c.var.evotor.getShopUuids();
+			const shopIds: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
 			const filteredUuids = shopIds.filter(
 				(uuid: string) => uuid !== "20231001-6611-407F-8068-AC44283C9196",
 			);
@@ -1473,7 +1880,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			{} as Record<string, string>,
 		);
 
-		const shopIds: string[] = await c.var.evotor.getShopUuids();
+		const shopIds: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
 
 		const filteredUuids = shopIds.filter(
 			(uuid: string) => uuid !== "20231001-6611-407F-8068-AC44283C9196",
@@ -1486,26 +1893,27 @@ export const evotorRoutes = new Hono<IEnv>()
 
 	.get("/financial", async (c) => {
 		try {
-			const evo = c.var.evotor;
 			const db = c.get("db");
 			const startDate = c.req.query("since");
 			const endDate = c.req.query("until");
+			const requestedShopUuid = c.req.query("shopUuid")?.trim() || "";
+			const scopedShopUuid = await resolveScopedShopUuidForFinancial(c);
+			const effectiveShopUuid = requestedShopUuid || scopedShopUuid || "";
 			const kv = c.env.KV;
 
 			if (!startDate || !endDate) {
 				return c.json({ error: "since и until обязательны" }, 400);
 			}
 
-			// Конвертируем YYYY-MM-DD в формат Evotor API
-			const since = formatDateWithTime(new Date(startDate), false);
-			const until = formatDateWithTime(new Date(endDate), true);
-			const shopUuids = await evo.getShopUuids();
-
-			const { todayKey, yesterdayKey } = getTodayAndYesterdayKeys();
+			const tzOffsetMinutes = Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180);
+			const { todayKey, yesterdayKey } =
+				getLocalTodayAndYesterdayKeys(tzOffsetMinutes);
 			const isSingleDay = startDate === endDate;
+			const useDbAggregatesOnly = true;
+			const scopeShopId = effectiveShopUuid || "all";
 			const cacheKey = isSingleDay
-				? buildSalesDayKey("all", startDate)
-				: `sales:store:all:day:${startDate}-${endDate}`;
+				? buildSalesDayKey(scopeShopId, startDate)
+				: `sales:store:${scopeShopId}:day:${startDate}-${endDate}`;
 			const ttlSeconds = isSingleDay
 				? startDate === todayKey
 					? 300
@@ -1519,6 +1927,34 @@ export const evotorRoutes = new Hono<IEnv>()
 				cacheKey,
 				ttlSeconds,
 				async () => {
+					const evo = c.var.evotor;
+					// Конвертируем YYYY-MM-DD в формат Evotor API
+					const { since, until } = buildUtcRangeForLocalDates(
+						startDate,
+						endDate,
+						tzOffsetMinutes,
+					);
+					if (useDbAggregatesOnly) {
+						const allShopUuids = await getShopUuidsFromDb(c);
+						const shopUuids = effectiveShopUuid
+							? allShopUuids.includes(effectiveShopUuid)
+								? [effectiveShopUuid]
+								: []
+							: allShopUuids;
+						const shopNamesMap = await getShopNamesFromDb(c);
+						return await getFinancialDataFromDbAggregates(
+							db,
+							evo,
+							shopUuids,
+							since,
+							until,
+							shopNamesMap,
+							startDate === todayKey && endDate === todayKey
+								? "current"
+								: "period",
+						);
+					}
+					const shopUuids = await getShopUuidsWithFallback(c, evo);
 					try {
 						return await getFinancialDataFromIndexWithFallback(
 							db,
@@ -1551,20 +1987,24 @@ export const evotorRoutes = new Hono<IEnv>()
 				c.header("x-cache", "hit");
 			}
 
-			if (isSingleDay && kv) {
+				if (isSingleDay && kv) {
 				const period =
 					startDate === todayKey
 						? "today"
 						: startDate === yesterdayKey
 							? "yesterday"
 							: "custom";
-				const topKey = buildTopProductsKey("all", period);
+					const topKey = buildTopProductsKey(scopeShopId, period);
 				const topProducts = (financialData as { topProducts?: unknown })
 					.topProducts;
 				if (topProducts) {
-					await kv.put(topKey, JSON.stringify(topProducts), {
-						expirationTtl: 1800,
-					});
+					try {
+						await kv.put(topKey, JSON.stringify(topProducts), {
+							expirationTtl: 1800,
+						});
+					} catch (error) {
+						logger.warn("KV put failed for top products", { error, key: topKey });
+					}
 				}
 			}
 
@@ -1576,59 +2016,59 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 	.get("/financial/today", async (c) => {
 		try {
-			const evo = c.var.evotor;
 			const db = c.get("db");
 			const kv = c.env.KV;
-			const now = new Date();
+			const requestedShopUuid = c.req.query("shopUuid")?.trim() || "";
+			const scopedShopUuid = await resolveScopedShopUuidForFinancial(c);
+			const effectiveShopUuid = requestedShopUuid || scopedShopUuid || "";
 
-			const since = formatDateWithTime(now, false);
-			const until = formatDateWithTime(now, true);
-
-			const shopUuids = await evo.getShopUuids();
-
-			const todayKey = getTodayAndYesterdayKeys().todayKey;
+			const tzOffsetMinutes = Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180);
+			const todayKey = getLocalDateKey(new Date(), tzOffsetMinutes);
+			const scopeShopId = effectiveShopUuid || "all";
 			const { data: financialData, cacheHit } = await getCachedJson(
 				kv,
-				buildSalesDayKey("all", todayKey),
+				buildSalesDayKey(scopeShopId, todayKey),
 				300,
 				async () => {
-					try {
-						return await getFinancialDataFromIndexWithFallback(
-							db,
-							evo,
-							shopUuids,
-							since,
-							until,
-						);
-					} catch (indexedError) {
-						logger.warn(
-							"Financial/today: indexed source failed, fallback to Evotor direct",
-							{
-								error:
-									indexedError instanceof Error
-										? indexedError.message
-										: String(indexedError),
-							},
-						);
-						return await getFinancialDataDirectFromEvotor(
-							evo,
-							shopUuids,
-							since,
-							until,
-						);
-					}
+					const localTodayKey = getLocalDateKey(new Date(), tzOffsetMinutes);
+					const { since, until } = buildUtcRangeForLocalDates(
+						localTodayKey,
+						localTodayKey,
+						tzOffsetMinutes,
+					);
+					const allShopUuids = await getShopUuidsFromDb(c);
+					const shopUuids = effectiveShopUuid
+						? allShopUuids.includes(effectiveShopUuid)
+							? [effectiveShopUuid]
+							: []
+						: allShopUuids;
+					const shopNamesMap = await getShopNamesFromDb(c);
+					return await getFinancialDataFromDbAggregates(
+						db,
+						c.var.evotor,
+						shopUuids,
+						since,
+						until,
+						shopNamesMap,
+						"current",
+					);
 				},
 			);
 			if (cacheHit) {
 				c.header("x-cache", "hit");
 			}
-			if (kv) {
-				const topProducts = (financialData as { topProducts?: unknown })
-					.topProducts;
-				if (topProducts) {
-					await kv.put(buildTopProductsKey("all", "today"), JSON.stringify(topProducts), {
-						expirationTtl: 1800,
-					});
+				if (kv) {
+					const topProducts = (financialData as { topProducts?: unknown })
+						.topProducts;
+					if (topProducts) {
+						const key = buildTopProductsKey(scopeShopId, "today");
+					try {
+						await kv.put(key, JSON.stringify(topProducts), {
+							expirationTtl: 1800,
+						});
+					} catch (error) {
+						logger.warn("KV put failed for top products", { error, key });
+					}
 				}
 			}
 			return c.json(financialData);
@@ -1656,7 +2096,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			const now = new Date();
 			const since = formatDateWithTime(now, false);
 			const until = formatDateWithTime(now, true);
-			const shopUuids = await evo.getShopUuids();
+			const shopUuids = await getShopUuidsWithFallback(c, evo);
 			const financialData = await getFinancialDataDirectFromEvotor(
 				evo,
 				shopUuids,
@@ -1729,7 +2169,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			const now = new Date();
 			const since = formatDateWithTime(now, false);
 			const until = formatDateWithTime(now, true);
-			const shopUuids = await evotor.getShopUuids();
+			const shopUuids = await getShopUuidsWithFallback(c, evotor);
 			const queries = shopUuids.map((shopId) => ({
 				shopId,
 				since,
@@ -1759,6 +2199,86 @@ export const evotorRoutes = new Hono<IEnv>()
 		} catch (error) {
 			logger.error("Index pull-today failed", { error });
 			return c.json({ error: "INDEX_PULL_TODAY_FAILED" }, 500);
+		}
+	})
+	.post("/receipts/rebuild-day", async (c) => {
+		try {
+			const userId = c.var.userId || "";
+			const roleFromEvotor = userId
+				? await c.var.evotor.getEmployeeRole(userId)
+				: null;
+			const employeeRole =
+				userId === "5700958253" || userId === "475039971"
+					? "SUPERADMIN"
+					: roleFromEvotor;
+
+			if (employeeRole !== "SUPERADMIN") {
+				return c.json({ error: "Доступ только для SUPERADMIN" }, 403);
+			}
+
+			const payload = await c.req.json().catch(() => ({}));
+			const date = String(payload?.date || "");
+			if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+				return c.json({ error: "date is required (YYYY-MM-DD)" }, 400);
+			}
+
+			const db = c.get("db");
+			const tzOffsetMinutes = Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180);
+			const { since, until } = buildUtcRangeForLocalDates(
+				date,
+				date,
+				tzOffsetMinutes,
+			);
+
+			let shopUuids = await getShopUuidsFromDb(c);
+			if (shopUuids.length === 0) {
+				shopUuids = await getShopUuidsWithFallback(c, c.var.evotor);
+			}
+
+			let deletedReceipts = 0;
+			let deletedPositions = 0;
+			let rebuiltReceipts = 0;
+			let rebuiltPositions = 0;
+
+			for (const shopId of shopUuids) {
+				const delReceipts = await db
+					.prepare(
+						"DELETE FROM receipts WHERE shop_id = ? AND close_date >= ? AND close_date <= ?",
+					)
+					.bind(shopId, since, until)
+					.run();
+				deletedReceipts += Number(delReceipts.meta?.changes || 0);
+
+				const delPositions = await db
+					.prepare(
+						"DELETE FROM receipt_positions WHERE shop_id = ? AND close_date >= ? AND close_date <= ?",
+					)
+					.bind(shopId, since, until)
+					.run();
+				deletedPositions += Number(delPositions.meta?.changes || 0);
+
+				const docs = await getDocumentsByPeriod(db, shopId, since, until);
+				const normalized = normalizeDocuments(docs);
+				await upsertReceipts(db, normalized.receipts);
+				await upsertReceiptPositions(db, normalized.positions);
+				await upsertReferenceSets(db, normalized.sets);
+
+				rebuiltReceipts += normalized.receipts.length;
+				rebuiltPositions += normalized.positions.length;
+			}
+
+			return c.json({
+				ok: true,
+				date,
+				shops: shopUuids.length,
+				deletedReceipts,
+				deletedPositions,
+				rebuiltReceipts,
+				rebuiltPositions,
+			});
+		} catch (error) {
+			logger.error("Receipts rebuild failed", { error });
+			return c.json({ error: "REBUILD_RECEIPTS_FAILED" }, 500);
 		}
 	})
 	.post("/order", async (c) => {
@@ -2053,7 +2573,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			const data = await c.req.json(); // Разбор JSON тела
 			const { startDate, endDate } = validate(SalesGardenReportSchema, data);
 
-			const shopUuids = await c.var.evotor.getShopUuids();
+			const shopUuids = await getShopUuidsWithFallback(c, c.var.evotor);
 
 			const sincetDate = new Date(startDate); // Преобразуем в объект Date
 			const untilDate = new Date(endDate); // Преобразуем в объект Date
