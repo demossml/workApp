@@ -22,6 +22,22 @@ export default function AiDirectorPage() {
       averageCheck: number;
     }>
   >([]);
+  const [deepEmployees, setDeepEmployees] = useState<
+    Array<{
+      employeeUuid: string;
+      name: string;
+      revenue: number;
+      checks: number;
+      averageCheck: number;
+      refunds: number;
+      refundRatePct: number;
+      revenueTrendPct: number | null;
+      riskScore: number;
+      reasons: string[];
+      recommendations: string[];
+      shopCount: number;
+    }>
+  >([]);
   const [forecast, setForecast] = useState<{
     forecast: number;
     weather?: {
@@ -66,11 +82,14 @@ export default function AiDirectorPage() {
       setLoading(true);
       setError(null);
       try {
-        const [ratingRes, employeesRes, forecastRes, heatmapRes] =
+        const [ratingRes, employeesRes, deepEmployeesRes, forecastRes, heatmapRes] =
           await Promise.all([
             aiDirector["director/store-rating"].$post({ json: { date: todayStr } }),
             aiDirector["director/employee-analysis"].$post({
               json: { until: todayStr },
+            }),
+            aiDirector["director/employee-deep-analysis"].$post({
+              json: { until: todayStr, limit: 20 },
             }),
             aiDirector["director/demand-forecast"].$post({ json: { date: todayStr } }),
             aiDirector["director/heatmap"].$post({ json: {} }),
@@ -78,17 +97,22 @@ export default function AiDirectorPage() {
 
         if (!ratingRes.ok) throw new Error("Не удалось загрузить рейтинг");
         if (!employeesRes.ok) throw new Error("Не удалось загрузить сотрудников");
+        if (!deepEmployeesRes.ok) {
+          throw new Error("Не удалось загрузить глубокий анализ сотрудников");
+        }
         if (!forecastRes.ok) throw new Error("Не удалось загрузить прогноз");
         if (!heatmapRes.ok) throw new Error("Не удалось загрузить heatmap");
 
         const ratingJson = await ratingRes.json();
         const employeesJson = await employeesRes.json();
+        const deepEmployeesJson = await deepEmployeesRes.json();
         const forecastJson = await forecastRes.json();
         const heatmapJson = await heatmapRes.json();
 
         if (cancelled) return;
         setRating(ratingJson.rating || []);
         setEmployees(employeesJson.employees || []);
+        setDeepEmployees(deepEmployeesJson.employees || []);
         setForecast({
           forecast: Number(forecastJson.forecast || 0),
           weather: forecastJson.weather || null,
@@ -265,6 +289,51 @@ export default function AiDirectorPage() {
                   {employees.length === 0 && !loading && (
                     <tr>
                       <td className="py-3 text-gray-500 dark:text-gray-400" colSpan={4}>
+                        Нет данных.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Глубокий анализ сотрудников
+            </h2>
+            <div className="mt-4 w-full max-w-full overflow-x-auto">
+              <table className="w-full min-w-[900px] text-left text-xs sm:text-sm">
+                <thead className="text-[10px] sm:text-xs uppercase text-gray-500 dark:text-gray-400">
+                  <tr>
+                    <th className="py-2 pr-3">Сотрудник</th>
+                    <th className="py-2 pr-3">Риск</th>
+                    <th className="py-2 pr-3">Тренд</th>
+                    <th className="py-2 pr-3">Возвраты</th>
+                    <th className="py-2 pr-3">Причина</th>
+                    <th className="py-2 pr-3">Рекомендация</th>
+                  </tr>
+                </thead>
+                <tbody className="text-gray-800 dark:text-gray-100">
+                  {deepEmployees.map((row) => (
+                    <tr key={row.employeeUuid} className="border-t border-gray-100 dark:border-gray-800">
+                      <td className="py-2 pr-3">{row.name}</td>
+                      <td className="py-2 pr-3 font-semibold">{Math.round(row.riskScore)}</td>
+                      <td className="py-2 pr-3">
+                        {row.revenueTrendPct == null
+                          ? "—"
+                          : `${(row.revenueTrendPct * 100).toFixed(1)}%`}
+                      </td>
+                      <td className="py-2 pr-3">{row.refundRatePct.toFixed(1)}%</td>
+                      <td className="py-2 pr-3">{row.reasons?.[0] || "—"}</td>
+                      <td className="py-2 pr-3">
+                        {row.recommendations?.[0] || "Продолжать текущую модель продаж"}
+                      </td>
+                    </tr>
+                  ))}
+                  {deepEmployees.length === 0 && !loading && (
+                    <tr>
+                      <td className="py-3 text-gray-500 dark:text-gray-400" colSpan={6}>
                         Нет данных.
                       </td>
                     </tr>

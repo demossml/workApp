@@ -8,6 +8,7 @@ import {
 	AiDirectorChatRequestSchema,
 	AiDirectorStoreRatingRequestSchema,
 	AiDirectorEmployeeAnalysisRequestSchema,
+	AiDirectorEmployeeDeepAnalysisRequestSchema,
 	AiDirectorDemandForecastRequestSchema,
 	AiDirectorExplainSalesRequestSchema,
 	AiDirectorHeatmapRequestSchema,
@@ -2629,6 +2630,250 @@ export const aiRoutes = new Hono<IEnv>()
 		} catch (error) {
 			logger.error("AI director employee analysis failed", { error });
 			return c.json({ error: "AI_DIRECTOR_EMPLOYEE_ANALYSIS_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/employee-deep-analysis", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { since, until, shopUuids, employeeUuids, limit } = validate(
+				AiDirectorEmployeeDeepAnalysisRequestSchema,
+				payload,
+			);
+
+			const evo = c.var.evotor;
+			const db = c.get("db");
+			const resolvedShopUuids = await resolveDirectorShopUuids(
+				db,
+				evo,
+				shopUuids,
+			);
+
+			const todayKey = toIsoDate(new Date());
+			const resolvedSince = since ?? shiftDateKey(todayKey, -6);
+			const resolvedUntil = until ?? todayKey;
+			const [rangeSince, rangeUntil] = [
+				buildEvotorDayRange(resolvedSince)[0],
+				buildEvotorDayRange(resolvedUntil)[1],
+			];
+
+			if (resolvedShopUuids.length === 0) {
+				return c.json({
+					since: resolvedSince,
+					until: resolvedUntil,
+					employees: [],
+					warning: "SHOP_UUIDS_UNAVAILABLE",
+				});
+			}
+
+			const selectedEmployees =
+				employeeUuids && employeeUuids.length > 0
+					? new Set(employeeUuids.map((item) => item.trim().toLowerCase()))
+					: null;
+			const days = daysInRangeInclusive(resolvedSince, resolvedUntil);
+			const previousUntil = shiftDateKey(resolvedSince, -1);
+			const previousSince = shiftDateKey(previousUntil, -(days - 1));
+			const [prevRangeSince, prevRangeUntil] = [
+				buildEvotorDayRange(previousSince)[0],
+				buildEvotorDayRange(previousUntil)[1],
+			];
+
+			const buildEmployeeMapFromRows = (
+				rows: Array<{
+					employeeUuid: string | null;
+					shopUuid: string | null;
+					totalSell: number | null;
+					totalRefund: number | null;
+					checks: number | null;
+				}>,
+			) => {
+				const result = new Map<
+					string,
+					{
+						employeeUuid: string;
+						revenue: number;
+						sell: number;
+						refunds: number;
+						checks: number;
+						shopUuids: Set<string>;
+					}
+				>();
+				for (const row of rows) {
+					const employeeUuid = String(row.employeeUuid || "").trim();
+					if (!employeeUuid) continue;
+					if (selectedEmployees && !selectedEmployees.has(employeeUuid.toLowerCase())) {
+						continue;
+					}
+					const current = result.get(employeeUuid) || {
+						employeeUuid,
+						revenue: 0,
+						sell: 0,
+						refunds: 0,
+						checks: 0,
+						shopUuids: new Set<string>(),
+					};
+					const sell = Number(row.totalSell || 0);
+					const refunds = Number(row.totalRefund || 0);
+					const checks = Number(row.checks || 0);
+					current.sell += sell;
+					current.refunds += refunds;
+					current.revenue += sell - refunds;
+					current.checks += checks;
+					if (row.shopUuid) current.shopUuids.add(row.shopUuid);
+					result.set(employeeUuid, current);
+				}
+				return result;
+			};
+
+			const queryEmployeeAgg = async (sinceTs: string, untilTs: string) => {
+				const placeholders = resolvedShopUuids.map(() => "?").join(", ");
+				const stmt = db.prepare(
+					`SELECT
+						open_user_uuid as employeeUuid,
+						shop_id as shopUuid,
+						SUM(CASE WHEN type = 'SELL' THEN total ELSE 0 END) as totalSell,
+						SUM(CASE WHEN type = 'PAYBACK' THEN ABS(total) ELSE 0 END) as totalRefund,
+						SUM(CASE WHEN type IN ('SELL','PAYBACK') THEN 1 ELSE 0 END) as checks
+					FROM receipts
+					WHERE close_date >= ? AND close_date <= ?
+						AND shop_id IN (${placeholders})
+						AND open_user_uuid IS NOT NULL
+						AND open_user_uuid != ''
+					GROUP BY open_user_uuid, shop_id`,
+				);
+				const agg = await stmt
+					.bind(sinceTs, untilTs, ...resolvedShopUuids)
+					.all<{
+						employeeUuid: string | null;
+						shopUuid: string | null;
+						totalSell: number | null;
+						totalRefund: number | null;
+						checks: number | null;
+					}>();
+				return buildEmployeeMapFromRows(agg.results || []);
+			};
+
+			const [currentMap, previousMap] = await Promise.all([
+				queryEmployeeAgg(rangeSince, rangeUntil),
+				queryEmployeeAgg(prevRangeSince, prevRangeUntil),
+			]);
+
+			const employeeNames = await (async () => {
+				try {
+					const rows = await db
+						.prepare("SELECT uuid, id, user_id, name FROM employees_details")
+						.all<{
+							uuid: string | null;
+							id: string | null;
+							user_id: string | null;
+							name: string | null;
+						}>();
+					const map: Record<string, string> = {};
+					const putName = (key: string | null | undefined, value: string) => {
+						if (!key) return;
+						const normalized = key.trim();
+						if (!normalized) return;
+						map[normalized] = value;
+						map[normalized.toLowerCase()] = value;
+					};
+					for (const row of rows.results || []) {
+						const resolvedName = typeof row.name === "string" ? row.name.trim() : "";
+						if (!resolvedName) continue;
+						putName(row.uuid, resolvedName);
+						putName(row.id, resolvedName);
+						putName(row.user_id, resolvedName);
+					}
+					return map;
+				} catch (error) {
+					logger.warn(
+						"AI director employee deep analysis: employees_details lookup failed",
+						{ error },
+					);
+					return {};
+				}
+			})();
+
+			const items = Array.from(currentMap.values())
+				.map((current) => {
+					const previous = previousMap.get(current.employeeUuid);
+					const revenueTrendPct = calcChangePct(
+						current.revenue,
+						previous?.revenue ?? 0,
+					);
+					const refundRatePct =
+						current.sell > 0 ? (current.refunds / current.sell) * 100 : 0;
+					const averageCheck =
+						current.checks > 0 ? current.revenue / current.checks : 0;
+					const reasons: string[] = [];
+					const recommendations: string[] = [];
+					let riskScore = 0;
+
+					if (refundRatePct >= 8) {
+						riskScore += 35;
+						reasons.push("Высокая доля возвратов");
+						recommendations.push(
+							"Проверить причины возвратов и скрипт продажи по проблемным категориям",
+						);
+					}
+					if (revenueTrendPct !== null && revenueTrendPct <= -0.2) {
+						riskScore += 35;
+						reasons.push("Резкое падение выручки к прошлому периоду");
+						recommendations.push(
+							"Разобрать смены с минимальной выручкой и усилить допродажи на кассе",
+						);
+					}
+					if (averageCheck > 0 && averageCheck < 350) {
+						riskScore += 20;
+						reasons.push("Низкий средний чек");
+						recommendations.push(
+							"Добавить обязательное предложение 1-2 сопутствующих товаров в каждом чеке",
+						);
+					}
+					if (current.checks < 20) {
+						riskScore += 10;
+						reasons.push("Низкий поток чеков");
+						recommendations.push(
+							"Перераспределить часы сотрудника на более трафиковые интервалы",
+						);
+					}
+
+					const employeeName =
+						employeeNames[current.employeeUuid] ||
+						employeeNames[current.employeeUuid.toLowerCase()] ||
+						current.employeeUuid;
+
+					return {
+						employeeUuid: current.employeeUuid,
+						name: employeeName,
+						revenue: current.revenue,
+						checks: current.checks,
+						averageCheck,
+						refunds: current.refunds,
+						refundRatePct,
+						revenueTrendPct,
+						riskScore: Math.max(0, Math.min(100, riskScore)),
+						reasons:
+							reasons.length > 0 ? reasons : ["Стабильные показатели без критичных рисков"],
+						recommendations:
+							recommendations.length > 0
+								? recommendations.slice(0, 3)
+								: ["Продолжать текущую модель продаж и контролировать возвраты"],
+						shopCount: current.shopUuids.size,
+					};
+				})
+				.sort((a, b) => b.riskScore - a.riskScore || b.revenue - a.revenue)
+				.slice(0, limit ?? 200);
+
+			return c.json({
+				since: resolvedSince,
+				until: resolvedUntil,
+				previousSince,
+				previousUntil,
+				employees: items,
+			});
+		} catch (error) {
+			logger.error("AI director employee deep analysis failed", { error });
+			return c.json({ error: "AI_DIRECTOR_EMPLOYEE_DEEP_ANALYSIS_FAILED" }, 500);
 		}
 	})
 

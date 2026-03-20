@@ -160,6 +160,17 @@ export const AiDirectorEmployeeAnalysisRequestSchema = z.object({
 });
 
 /**
+ * POST /api/ai/director/employee-deep-analysis
+ */
+export const AiDirectorEmployeeDeepAnalysisRequestSchema = z.object({
+	since: DateStringSchema.optional(),
+	until: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+	employeeUuids: z.array(z.string().min(1)).min(1).optional(),
+	limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+/**
  * POST /api/ai/director/demand-forecast
  */
 export const AiDirectorDemandForecastRequestSchema = z.object({
