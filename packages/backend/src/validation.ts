@@ -168,6 +168,22 @@ export const AiDirectorEmployeeDeepAnalysisRequestSchema = z.object({
 	shopUuids: z.array(UuidSchema).min(1).optional(),
 	employeeUuids: z.array(z.string().min(1)).min(1).optional(),
 	limit: z.coerce.number().int().min(1).max(500).optional(),
+	analysisDepth: z.enum(["lite", "standard", "deep"]).optional(),
+	historyDays: z.coerce.number().int().min(14).max(365).optional(),
+	focusAreas: z
+		.array(
+			z.enum([
+				"revenue_trend",
+				"avg_check",
+				"refunds",
+				"traffic",
+				"peer_comparison",
+				"stability",
+			]),
+		)
+		.min(1)
+		.optional(),
+	riskSensitivity: z.enum(["low", "normal", "high"]).optional(),
 });
 
 /**

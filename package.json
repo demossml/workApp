@@ -12,17 +12,21 @@
     "build": "turbo run build",
     "dev": "turbo run dev --filter=@@work-appt/{backend,frontend}",
     "deploy": "turbo run deploy",
+    "deploy:backend": "pnpm -C packages/backend run deploy",
+    "deploy:backend:debug": "pnpm -C packages/backend run deploy:debug",
+    "deploy:backend:dry-run": "pnpm -C packages/backend run deploy:dry-run",
+    "whoami:cf": "pnpm -C packages/backend run whoami",
     "typecheck": "pnpm -C packages/backend exec tsc --noEmit && pnpm -C packages/frontend exec tsc --noEmit",
     "lint:ci": "pnpm biome lint --error-on-warnings packages/backend/src/contracts packages/backend/src/routes/evotor.ts packages/backend/src/routes/schedules.ts packages/frontend/src/App.tsx packages/frontend/src/pages/Home.tsx packages/frontend/src/hooks/dashboard/useSalesData.tsx packages/frontend/src/hooks/useReportData.tsx packages/frontend/src/hooks/useCurrentWorkShop.ts packages/frontend/src/hooks/useOpenTimes.tsx packages/frontend/src/pages/reports/PlanSalesReport.tsx packages/frontend/src/components/PlanSalesReport.tsx",
     "smoke:ci": "node scripts/smoke-home-plan-opening.mjs",
     "smoke:api": "node scripts/smoke-api-dev.mjs",
     "smoke:api:prepare": "pnpm -C packages/backend db:prepare-local",
     "smoke:api:full": "pnpm smoke:api:prepare && pnpm smoke:api",
-    "test:metrics": "node -r esbuild-register --test packages/backend/src/contracts/revenueMath.test.cjs packages/backend/src/contracts/financialAggregation.test.cjs && node -r esbuild-register --test packages/frontend/src/hooks/dashboard/useSalesCalculations.test.cjs",
+    "test:metrics": "node -r esbuild-register --test packages/backend/src/contracts/revenueMath.test.cjs packages/backend/src/contracts/financialAggregation.test.cjs packages/backend/src/index.scheduled.test.cjs packages/backend/src/services/shiftSummary.test.cjs packages/backend/src/telegram/tempoAlerts.test.cjs packages/backend/src/ai/deadStocksNarrative.test.cjs packages/backend/src/ai/employeeKpiNarrative.test.cjs packages/backend/utils/formatDeadStocksMessage.test.cjs && node -r esbuild-register --test packages/frontend/src/hooks/dashboard/useSalesCalculations.test.cjs",
     "ci:check": "pnpm typecheck && pnpm lint:ci && pnpm smoke:ci && pnpm test:metrics",
     "format": "prettier . --write",
     "lint": "pnpm biome lint --write --unsafe .",
-    "deploy:with-frontend-build": "pnpm --filter frontend build && pnpm run deploy"
+    "deploy:with-frontend-build": "pnpm run deploy"
 
   },
   "prettier": {

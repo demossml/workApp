@@ -60,6 +60,11 @@ import { sendTelegramMessage } from "../../utils/sendTelegramMessage";
 import { buildAiReportKey } from "../utils/kvCache";
 import { getSalesHourly } from "../db/repositories/salesHourly";
 import { getWeatherSummary, weatherDemandFactor } from "../utils/weather";
+import { buildEmployeeKpiNarrative } from "../ai/employeeKpiNarrative";
+import {
+	listAiAlerts,
+	listAiShiftSummaries,
+} from "../db/repositories/aiHistory";
 
 const toIsoDate = (date: Date) => date.toISOString().split("T")[0];
 
@@ -2636,7 +2641,17 @@ export const aiRoutes = new Hono<IEnv>()
 	.post("/director/employee-deep-analysis", async (c) => {
 		try {
 			const payload = await c.req.json().catch(() => ({}));
-			const { since, until, shopUuids, employeeUuids, limit } = validate(
+			const {
+				since,
+				until,
+				shopUuids,
+				employeeUuids,
+				limit,
+				analysisDepth,
+				historyDays,
+				focusAreas,
+				riskSensitivity,
+			} = validate(
 				AiDirectorEmployeeDeepAnalysisRequestSchema,
 				payload,
 			);
@@ -2673,10 +2688,44 @@ export const aiRoutes = new Hono<IEnv>()
 			const days = daysInRangeInclusive(resolvedSince, resolvedUntil);
 			const previousUntil = shiftDateKey(resolvedSince, -1);
 			const previousSince = shiftDateKey(previousUntil, -(days - 1));
+			const depth = analysisDepth ?? "standard";
+			const sensitivity = riskSensitivity ?? "normal";
+			const thresholdMultiplier =
+				sensitivity === "high" ? 1.25 : sensitivity === "low" ? 0.8 : 1;
+			const defaultFocusAreas = [
+				"revenue_trend",
+				"avg_check",
+				"refunds",
+				"traffic",
+				"peer_comparison",
+				"stability",
+			] as const;
+			const enabledFocuses = new Set<string>(
+				(focusAreas && focusAreas.length > 0 ? focusAreas : defaultFocusAreas).map(
+					(item) => item.toLowerCase(),
+				),
+			);
+			const isFocusEnabled = (focus: (typeof defaultFocusAreas)[number]) =>
+				enabledFocuses.has(focus);
+			const depthHistoryDaysMap: Record<typeof depth, number> = {
+				lite: 28,
+				standard: 56,
+				deep: 112,
+			};
+			const effectiveHistoryDays = historyDays ?? depthHistoryDaysMap[depth];
+			const historyUntil = shiftDateKey(resolvedSince, -1);
+			const historySince = shiftDateKey(historyUntil, -(effectiveHistoryDays - 1));
 			const [prevRangeSince, prevRangeUntil] = [
 				buildEvotorDayRange(previousSince)[0],
 				buildEvotorDayRange(previousUntil)[1],
 			];
+			const [historyRangeSince, historyRangeUntil] = [
+				buildEvotorDayRange(historySince)[0],
+				buildEvotorDayRange(historyUntil)[1],
+			];
+			const tzOffsetHours = Math.round(
+				Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180) / 60,
+			);
 
 			const buildEmployeeMapFromRows = (
 				rows: Array<{
@@ -2696,6 +2745,9 @@ export const aiRoutes = new Hono<IEnv>()
 						refunds: number;
 						checks: number;
 						shopUuids: Set<string>;
+						shopCount: number;
+						soldQty: number;
+						shiftHours: number;
 					}
 				>();
 				for (const row of rows) {
@@ -2704,14 +2756,17 @@ export const aiRoutes = new Hono<IEnv>()
 					if (selectedEmployees && !selectedEmployees.has(employeeUuid.toLowerCase())) {
 						continue;
 					}
-					const current = result.get(employeeUuid) || {
-						employeeUuid,
-						revenue: 0,
-						sell: 0,
-						refunds: 0,
-						checks: 0,
-						shopUuids: new Set<string>(),
-					};
+						const current = result.get(employeeUuid) || {
+							employeeUuid,
+							revenue: 0,
+							sell: 0,
+							refunds: 0,
+							checks: 0,
+							shopUuids: new Set<string>(),
+							shopCount: 0,
+							soldQty: 0,
+							shiftHours: 0,
+						};
 					const sell = Number(row.totalSell || 0);
 					const refunds = Number(row.totalRefund || 0);
 					const checks = Number(row.checks || 0);
@@ -2722,10 +2777,10 @@ export const aiRoutes = new Hono<IEnv>()
 					if (row.shopUuid) current.shopUuids.add(row.shopUuid);
 					result.set(employeeUuid, current);
 				}
-				return result;
-			};
+					return result;
+				};
 
-			const queryEmployeeAgg = async (sinceTs: string, untilTs: string) => {
+				const queryEmployeeAgg = async (sinceTs: string, untilTs: string) => {
 				const placeholders = resolvedShopUuids.map(() => "?").join(", ");
 				const stmt = db.prepare(
 					`SELECT
@@ -2750,13 +2805,790 @@ export const aiRoutes = new Hono<IEnv>()
 						totalRefund: number | null;
 						checks: number | null;
 					}>();
-				return buildEmployeeMapFromRows(agg.results || []);
-			};
+					return buildEmployeeMapFromRows(agg.results || []);
+				};
 
-			const [currentMap, previousMap] = await Promise.all([
-				queryEmployeeAgg(rangeSince, rangeUntil),
-				queryEmployeeAgg(prevRangeSince, prevRangeUntil),
-			]);
+				const queryEmployeeKpiAgg = async (sinceDate: string, untilDate: string) => {
+					try {
+						const placeholders = resolvedShopUuids.map(() => "?").join(", ");
+						const filters: unknown[] = [sinceDate, untilDate, ...resolvedShopUuids];
+						let employeeFilterSql = "";
+						if (selectedEmployees && selectedEmployees.size > 0) {
+							const selected = Array.from(selectedEmployees);
+							employeeFilterSql = ` AND lower(employee_uuid) IN (${selected.map(() => "?").join(",")})`;
+							filters.push(...selected);
+						}
+						const stmt = db.prepare(
+							`SELECT
+								employee_uuid as employeeUuid,
+								SUM(revenue) as revenue,
+								SUM(checks) as checks,
+								SUM(refunds) as refunds,
+								SUM(sold_qty) as soldQty,
+								SUM(shift_hours) as shiftHours,
+								COUNT(DISTINCT shop_uuid) as shopCount
+							FROM employee_kpi_daily
+							WHERE date >= ? AND date <= ?
+								AND shop_uuid IN (${placeholders})
+								${employeeFilterSql}
+							GROUP BY employee_uuid`,
+						);
+						const rows = await stmt.bind(...filters).all<{
+							employeeUuid: string | null;
+							revenue: number | null;
+							checks: number | null;
+							refunds: number | null;
+							soldQty: number | null;
+							shiftHours: number | null;
+							shopCount: number | null;
+						}>();
+						const map = new Map<
+							string,
+							{
+								employeeUuid: string;
+								revenue: number;
+								sell: number;
+								refunds: number;
+								checks: number;
+								shopUuids: Set<string>;
+								shopCount: number;
+								soldQty: number;
+								shiftHours: number;
+							}
+						>();
+						for (const row of rows.results || []) {
+							const employeeUuid = String(row.employeeUuid || "").trim();
+							if (!employeeUuid) continue;
+							const revenue = Number(row.revenue || 0);
+							const refunds = Number(row.refunds || 0);
+							map.set(employeeUuid, {
+								employeeUuid,
+								revenue,
+								sell: revenue + refunds,
+								refunds,
+								checks: Number(row.checks || 0),
+								shopUuids: new Set<string>(),
+								shopCount: Number(row.shopCount || 0),
+								soldQty: Number(row.soldQty || 0),
+								shiftHours: Number(row.shiftHours || 0),
+							});
+						}
+						return map;
+					} catch (error) {
+						logger.warn(
+							"AI director employee deep analysis: employee_kpi_daily lookup failed",
+							{ error },
+						);
+						return null;
+					}
+				};
+
+				const queryEmployeeKpiWeekdayAgg = async (
+					sinceDate: string,
+					untilDate: string,
+				) => {
+					try {
+						const placeholders = resolvedShopUuids.map(() => "?").join(", ");
+						const filters: unknown[] = [sinceDate, untilDate, ...resolvedShopUuids];
+						let employeeFilterSql = "";
+						if (selectedEmployees && selectedEmployees.size > 0) {
+							const selected = Array.from(selectedEmployees);
+							employeeFilterSql = ` AND lower(employee_uuid) IN (${selected.map(() => "?").join(",")})`;
+							filters.push(...selected);
+						}
+						const stmt = db.prepare(
+							`SELECT
+								employee_uuid as employeeUuid,
+								shop_uuid as shopUuid,
+								CAST(strftime('%w', date) AS INTEGER) as weekday,
+								SUM(revenue) as revenue,
+								SUM(checks) as checks,
+								COUNT(DISTINCT date) as days
+							FROM employee_kpi_daily
+							WHERE date >= ? AND date <= ?
+								AND shop_uuid IN (${placeholders})
+								${employeeFilterSql}
+							GROUP BY employee_uuid, shop_uuid, weekday`,
+						);
+						const rows = await stmt.bind(...filters).all<{
+							employeeUuid: string | null;
+							shopUuid: string | null;
+							weekday: number | null;
+							revenue: number | null;
+							checks: number | null;
+							days: number | null;
+						}>();
+						return (rows.results || []).flatMap((row) => {
+							const employeeUuid = String(row.employeeUuid || "").trim();
+							const shopUuid = String(row.shopUuid || "").trim();
+							if (!employeeUuid || !shopUuid) return [];
+							const weekday = Number(row.weekday);
+							if (!Number.isFinite(weekday) || weekday < 0 || weekday > 6) {
+								return [];
+							}
+							return [
+								{
+									employeeUuid,
+									shopUuid,
+									weekday,
+									revenue: Number(row.revenue || 0),
+									checks: Number(row.checks || 0),
+									days: Math.max(1, Number(row.days || 0)),
+								},
+							];
+						});
+					} catch (error) {
+						logger.warn(
+							"AI director employee deep analysis: employee_kpi_daily weekday lookup failed",
+							{ error },
+						);
+						return null;
+					}
+				};
+
+				type WeekdayAggRow = {
+					employeeUuid: string;
+					shopUuid: string;
+					weekday: number;
+					revenue: number;
+					checks: number;
+					days: number;
+				};
+
+				type SegmentAggRow = {
+					employeeUuid: string;
+					shopUuid: string;
+					weekday: number;
+					hourBucket: number;
+					revenue: number;
+					checks: number;
+					periods: number;
+				};
+
+				const queryEmployeeReceiptsWeekdayAgg = async (
+					sinceTs: string,
+					untilTs: string,
+				): Promise<WeekdayAggRow[] | null> => {
+					try {
+						const placeholders = resolvedShopUuids.map(() => "?").join(", ");
+						const filters: unknown[] = [sinceTs, untilTs, ...resolvedShopUuids];
+						let employeeFilterSql = "";
+						if (selectedEmployees && selectedEmployees.size > 0) {
+							const selected = Array.from(selectedEmployees);
+							employeeFilterSql = ` AND lower(open_user_uuid) IN (${selected.map(() => "?").join(",")})`;
+							filters.push(...selected);
+						}
+						const stmt = db.prepare(
+							`SELECT
+								open_user_uuid as employeeUuid,
+								shop_id as shopUuid,
+								substr(close_date, 1, 10) as dateKey,
+								SUM(CASE WHEN type = 'SELL' THEN total ELSE 0 END)
+									- SUM(CASE WHEN type = 'PAYBACK' THEN ABS(total) ELSE 0 END) as revenue,
+								SUM(CASE WHEN type IN ('SELL','PAYBACK') THEN 1 ELSE 0 END) as checks
+							FROM receipts
+							WHERE close_date >= ? AND close_date <= ?
+								AND shop_id IN (${placeholders})
+								AND open_user_uuid IS NOT NULL
+								AND open_user_uuid != ''
+								${employeeFilterSql}
+							GROUP BY open_user_uuid, shop_id, substr(close_date, 1, 10)`,
+						);
+						const rows = await stmt.bind(...filters).all<{
+							employeeUuid: string | null;
+							shopUuid: string | null;
+							dateKey: string | null;
+							revenue: number | null;
+							checks: number | null;
+						}>();
+						const byEmployeeShopWeekday = new Map<string, WeekdayAggRow>();
+						for (const row of rows.results || []) {
+							const employeeUuid = String(row.employeeUuid || "").trim();
+							const shopUuid = String(row.shopUuid || "").trim();
+							const dateKey = String(row.dateKey || "").trim();
+							if (!employeeUuid || !shopUuid || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+								continue;
+							}
+							const weekday = new Date(`${dateKey}T00:00:00Z`).getUTCDay();
+							if (!Number.isFinite(weekday) || weekday < 0 || weekday > 6) continue;
+							const key = `${employeeUuid}|${shopUuid}|${weekday}`;
+							const current = byEmployeeShopWeekday.get(key) || {
+								employeeUuid,
+								shopUuid,
+								weekday,
+								revenue: 0,
+								checks: 0,
+								days: 0,
+							};
+							current.revenue += Number(row.revenue || 0);
+							current.checks += Number(row.checks || 0);
+							current.days += 1;
+							byEmployeeShopWeekday.set(key, current);
+						}
+						return Array.from(byEmployeeShopWeekday.values());
+					} catch (error) {
+						logger.warn(
+							"AI director employee deep analysis: receipts weekday lookup failed",
+							{ error },
+						);
+						return null;
+					}
+				};
+
+				const queryEmployeeReceiptsSegmentAgg = async (
+					sinceTs: string,
+					untilTs: string,
+				): Promise<SegmentAggRow[] | null> => {
+					try {
+						const placeholders = resolvedShopUuids.map(() => "?").join(", ");
+						const filters: unknown[] = [sinceTs, untilTs, ...resolvedShopUuids];
+						let employeeFilterSql = "";
+						if (selectedEmployees && selectedEmployees.size > 0) {
+							const selected = Array.from(selectedEmployees);
+							employeeFilterSql = ` AND lower(open_user_uuid) IN (${selected.map(() => "?").join(",")})`;
+							filters.push(...selected);
+						}
+						const stmt = db.prepare(
+							`SELECT
+								open_user_uuid as employeeUuid,
+								shop_id as shopUuid,
+								substr(close_date, 1, 10) as dateKey,
+								CAST(substr(close_date, 12, 2) AS INTEGER) as hourUtc,
+								SUM(CASE WHEN type = 'SELL' THEN total ELSE 0 END)
+									- SUM(CASE WHEN type = 'PAYBACK' THEN ABS(total) ELSE 0 END) as revenue,
+								SUM(CASE WHEN type IN ('SELL','PAYBACK') THEN 1 ELSE 0 END) as checks
+							FROM receipts
+							WHERE close_date >= ? AND close_date <= ?
+								AND shop_id IN (${placeholders})
+								AND open_user_uuid IS NOT NULL
+								AND open_user_uuid != ''
+								${employeeFilterSql}
+							GROUP BY open_user_uuid, shop_id, substr(close_date, 1, 10), CAST(substr(close_date, 12, 2) AS INTEGER)`,
+						);
+						const rows = await stmt.bind(...filters).all<{
+							employeeUuid: string | null;
+							shopUuid: string | null;
+							dateKey: string | null;
+							hourUtc: number | null;
+							revenue: number | null;
+							checks: number | null;
+						}>();
+						const bySegment = new Map<string, SegmentAggRow>();
+						for (const row of rows.results || []) {
+							const employeeUuid = String(row.employeeUuid || "").trim();
+							const shopUuid = String(row.shopUuid || "").trim();
+							const dateKey = String(row.dateKey || "").trim();
+							if (!employeeUuid || !shopUuid || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+								continue;
+							}
+							const weekday = new Date(`${dateKey}T00:00:00Z`).getUTCDay();
+							if (!Number.isFinite(weekday) || weekday < 0 || weekday > 6) continue;
+							const hourUtc = Number(row.hourUtc);
+							if (!Number.isFinite(hourUtc) || hourUtc < 0 || hourUtc > 23) continue;
+							const hourLocal = (hourUtc + tzOffsetHours + 24) % 24;
+							const hourBucket = Math.floor(hourLocal / 6);
+							const key = `${employeeUuid}|${shopUuid}|${weekday}|${hourBucket}`;
+							const current = bySegment.get(key) || {
+								employeeUuid,
+								shopUuid,
+								weekday,
+								hourBucket,
+								revenue: 0,
+								checks: 0,
+								periods: 0,
+							};
+							current.revenue += Number(row.revenue || 0);
+							current.checks += Number(row.checks || 0);
+							current.periods += 1;
+							bySegment.set(key, current);
+						}
+						return Array.from(bySegment.values());
+					} catch (error) {
+						logger.warn(
+							"AI director employee deep analysis: receipts segment lookup failed",
+							{ error },
+						);
+						return null;
+					}
+				};
+
+				const buildComparisonMap = (
+					currentWeekdayRows: WeekdayAggRow[],
+					historyWeekdayRows: WeekdayAggRow[],
+				) => {
+					const result = new Map<
+						string,
+						{
+							primaryShopUuid: string;
+							historyDays: number;
+							weekdays: Array<{
+								weekday: number;
+								currentAvgRevenue: number;
+								currentAvgChecks: number;
+								ownHistoryAvgRevenue: number | null;
+								peerAvgRevenue: number | null;
+								vsOwnHistoryPct: number | null;
+								vsPeersPct: number | null;
+							}>;
+							summary: {
+								avgVsOwnHistoryPct: number | null;
+								avgVsPeersPct: number | null;
+								bestWeekday: number | null;
+								weakestWeekday: number | null;
+							};
+						}
+					>();
+
+					const employeeShopRevenue = new Map<string, Map<string, number>>();
+					for (const row of currentWeekdayRows) {
+						const byShop =
+							employeeShopRevenue.get(row.employeeUuid) || new Map<string, number>();
+						byShop.set(row.shopUuid, (byShop.get(row.shopUuid) || 0) + row.revenue);
+						employeeShopRevenue.set(row.employeeUuid, byShop);
+					}
+
+					const historyByEmployeeShopWeekday = new Map<
+						string,
+						{ revenue: number; checks: number; days: number }
+					>();
+					const historyByShopWeekday = new Map<
+						string,
+						{ revenue: number; checks: number; days: number }
+					>();
+					for (const row of historyWeekdayRows) {
+						const employeeKey = `${row.employeeUuid}|${row.shopUuid}|${row.weekday}`;
+						historyByEmployeeShopWeekday.set(employeeKey, {
+							revenue: row.revenue,
+							checks: row.checks,
+							days: row.days,
+						});
+						const shopKey = `${row.shopUuid}|${row.weekday}`;
+						const total = historyByShopWeekday.get(shopKey) || {
+							revenue: 0,
+							checks: 0,
+							days: 0,
+						};
+						total.revenue += row.revenue;
+						total.checks += row.checks;
+						total.days += row.days;
+						historyByShopWeekday.set(shopKey, total);
+					}
+
+					for (const current of currentMap.values()) {
+						const revenueByShop = employeeShopRevenue.get(current.employeeUuid);
+						if (!revenueByShop || revenueByShop.size === 0) continue;
+						const primaryShopUuid = Array.from(revenueByShop.entries()).sort(
+							(a, b) => b[1] - a[1],
+						)[0][0];
+
+						const ownCurrentRows = currentWeekdayRows.filter(
+							(row) =>
+								row.employeeUuid === current.employeeUuid &&
+								row.shopUuid === primaryShopUuid,
+						);
+						if (ownCurrentRows.length === 0) continue;
+
+						const ownVsHistory: number[] = [];
+						const ownVsPeers: number[] = [];
+						const weekdays = ownCurrentRows
+							.map((row) => {
+								const currentAvgRevenue = row.revenue / Math.max(1, row.days);
+								const currentAvgChecks = row.checks / Math.max(1, row.days);
+								const ownHistory = historyByEmployeeShopWeekday.get(
+									`${current.employeeUuid}|${primaryShopUuid}|${row.weekday}`,
+								);
+								const ownHistoryAvgRevenue = ownHistory
+									? ownHistory.revenue / Math.max(1, ownHistory.days)
+									: null;
+								const shopHistoryTotal = historyByShopWeekday.get(
+									`${primaryShopUuid}|${row.weekday}`,
+								);
+								let peerAvgRevenue: number | null = null;
+								if (shopHistoryTotal) {
+									const peerRevenue =
+										shopHistoryTotal.revenue - (ownHistory?.revenue || 0);
+									const peerDays = shopHistoryTotal.days - (ownHistory?.days || 0);
+									if (peerDays > 0) peerAvgRevenue = peerRevenue / peerDays;
+								}
+								const vsOwnHistoryPct =
+									ownHistoryAvgRevenue !== null
+										? calcChangePct(currentAvgRevenue, ownHistoryAvgRevenue)
+										: null;
+								const vsPeersPct =
+									peerAvgRevenue !== null
+										? calcChangePct(currentAvgRevenue, peerAvgRevenue)
+										: null;
+								if (vsOwnHistoryPct !== null) ownVsHistory.push(vsOwnHistoryPct);
+								if (vsPeersPct !== null) ownVsPeers.push(vsPeersPct);
+								return {
+									weekday: row.weekday,
+									currentAvgRevenue,
+									currentAvgChecks,
+									ownHistoryAvgRevenue,
+									peerAvgRevenue,
+									vsOwnHistoryPct,
+									vsPeersPct,
+								};
+							})
+							.sort((a, b) => a.weekday - b.weekday);
+
+						const pickExtremeWeekday = (
+							items: typeof weekdays,
+							field: "vsPeersPct" | "vsOwnHistoryPct",
+							pick: "max" | "min",
+						): number | null => {
+							const filtered = items.filter(
+								(item) => item[field] !== null && Number.isFinite(item[field]),
+							);
+							if (filtered.length === 0) return null;
+							const sorted = filtered.sort((a, b) =>
+								pick === "max"
+									? Number(b[field]) - Number(a[field])
+									: Number(a[field]) - Number(b[field]),
+							);
+							return sorted[0]?.weekday ?? null;
+						};
+
+						const avg = (values: number[]) =>
+							values.length > 0
+								? values.reduce((sum, value) => sum + value, 0) / values.length
+								: null;
+
+						result.set(current.employeeUuid, {
+							primaryShopUuid,
+							historyDays: effectiveHistoryDays,
+							weekdays,
+							summary: {
+								avgVsOwnHistoryPct: avg(ownVsHistory),
+								avgVsPeersPct: avg(ownVsPeers),
+								bestWeekday:
+									pickExtremeWeekday(weekdays, "vsPeersPct", "max") ??
+									pickExtremeWeekday(weekdays, "vsOwnHistoryPct", "max"),
+								weakestWeekday:
+									pickExtremeWeekday(weekdays, "vsPeersPct", "min") ??
+									pickExtremeWeekday(weekdays, "vsOwnHistoryPct", "min"),
+							},
+						});
+					}
+
+					return result;
+				};
+
+				const buildFairComparisonMap = (
+					currentSegmentRows: SegmentAggRow[],
+					historySegmentRows: SegmentAggRow[],
+				) => {
+					const result = new Map<
+						string,
+						{
+							primaryShopUuid: string;
+							normalizers: ["shop", "weekday", "hour_bucket"];
+							segments: Array<{
+								weekday: number;
+								hourBucket: number;
+								currentAvgRevenue: number;
+								currentAvgChecks: number;
+								ownHistoryAvgRevenue: number | null;
+								peerAvgRevenue: number | null;
+								vsOwnHistoryPct: number | null;
+								vsPeersPct: number | null;
+							}>;
+							summary: {
+								avgVsOwnHistoryPct: number | null;
+								avgVsPeersPct: number | null;
+								bestSegment: { weekday: number; hourBucket: number } | null;
+								weakestSegment: { weekday: number; hourBucket: number } | null;
+							};
+						}
+					>();
+
+					const employeeShopRevenue = new Map<string, Map<string, number>>();
+					for (const row of currentSegmentRows) {
+						const byShop =
+							employeeShopRevenue.get(row.employeeUuid) || new Map<string, number>();
+						byShop.set(row.shopUuid, (byShop.get(row.shopUuid) || 0) + row.revenue);
+						employeeShopRevenue.set(row.employeeUuid, byShop);
+					}
+
+					const historyByEmployeeSegment = new Map<
+						string,
+						{ revenue: number; checks: number; periods: number }
+					>();
+					const historyByShopSegment = new Map<
+						string,
+						{ revenue: number; checks: number; periods: number }
+					>();
+					for (const row of historySegmentRows) {
+						const employeeKey = `${row.employeeUuid}|${row.shopUuid}|${row.weekday}|${row.hourBucket}`;
+						historyByEmployeeSegment.set(employeeKey, {
+							revenue: row.revenue,
+							checks: row.checks,
+							periods: row.periods,
+						});
+						const shopKey = `${row.shopUuid}|${row.weekday}|${row.hourBucket}`;
+						const total = historyByShopSegment.get(shopKey) || {
+							revenue: 0,
+							checks: 0,
+							periods: 0,
+						};
+						total.revenue += row.revenue;
+						total.checks += row.checks;
+						total.periods += row.periods;
+						historyByShopSegment.set(shopKey, total);
+					}
+
+					for (const current of currentMap.values()) {
+						const revenueByShop = employeeShopRevenue.get(current.employeeUuid);
+						if (!revenueByShop || revenueByShop.size === 0) continue;
+						const primaryShopUuid = Array.from(revenueByShop.entries()).sort(
+							(a, b) => b[1] - a[1],
+						)[0][0];
+
+						const ownCurrentRows = currentSegmentRows.filter(
+							(row) =>
+								row.employeeUuid === current.employeeUuid &&
+								row.shopUuid === primaryShopUuid,
+						);
+						if (ownCurrentRows.length === 0) continue;
+
+						const ownVsHistory: number[] = [];
+						const ownVsPeers: number[] = [];
+						const segments = ownCurrentRows
+							.map((row) => {
+								const currentAvgRevenue = row.revenue / Math.max(1, row.periods);
+								const currentAvgChecks = row.checks / Math.max(1, row.periods);
+								const ownHistory = historyByEmployeeSegment.get(
+									`${current.employeeUuid}|${primaryShopUuid}|${row.weekday}|${row.hourBucket}`,
+								);
+								const ownHistoryAvgRevenue = ownHistory
+									? ownHistory.revenue / Math.max(1, ownHistory.periods)
+									: null;
+								const shopHistory = historyByShopSegment.get(
+									`${primaryShopUuid}|${row.weekday}|${row.hourBucket}`,
+								);
+								let peerAvgRevenue: number | null = null;
+								if (shopHistory) {
+									const peerRevenue =
+										shopHistory.revenue - (ownHistory?.revenue || 0);
+									const peerPeriods =
+										shopHistory.periods - (ownHistory?.periods || 0);
+									if (peerPeriods > 0) {
+										peerAvgRevenue = peerRevenue / peerPeriods;
+									}
+								}
+								const vsOwnHistoryPct =
+									ownHistoryAvgRevenue !== null
+										? calcChangePct(currentAvgRevenue, ownHistoryAvgRevenue)
+										: null;
+								const vsPeersPct =
+									peerAvgRevenue !== null
+										? calcChangePct(currentAvgRevenue, peerAvgRevenue)
+										: null;
+								if (vsOwnHistoryPct !== null) ownVsHistory.push(vsOwnHistoryPct);
+								if (vsPeersPct !== null) ownVsPeers.push(vsPeersPct);
+								return {
+									weekday: row.weekday,
+									hourBucket: row.hourBucket,
+									currentAvgRevenue,
+									currentAvgChecks,
+									ownHistoryAvgRevenue,
+									peerAvgRevenue,
+									vsOwnHistoryPct,
+									vsPeersPct,
+								};
+							})
+							.sort(
+								(a, b) =>
+									a.weekday - b.weekday || a.hourBucket - b.hourBucket,
+							);
+
+						const avg = (values: number[]) =>
+							values.length > 0
+								? values.reduce((sum, value) => sum + value, 0) / values.length
+								: null;
+
+						const sortedByPeers = segments
+							.filter(
+								(item) =>
+									item.vsPeersPct !== null && Number.isFinite(item.vsPeersPct),
+							)
+							.sort((a, b) => Number(b.vsPeersPct) - Number(a.vsPeersPct));
+						const sortedByHistory = segments
+							.filter(
+								(item) =>
+									item.vsOwnHistoryPct !== null &&
+									Number.isFinite(item.vsOwnHistoryPct),
+							)
+							.sort(
+								(a, b) => Number(b.vsOwnHistoryPct) - Number(a.vsOwnHistoryPct),
+							);
+
+						const bestSegmentSource = sortedByPeers[0] || sortedByHistory[0] || null;
+						const weakestSegmentSource =
+							sortedByPeers[sortedByPeers.length - 1] ||
+							sortedByHistory[sortedByHistory.length - 1] ||
+							null;
+
+						result.set(current.employeeUuid, {
+							primaryShopUuid,
+							normalizers: ["shop", "weekday", "hour_bucket"],
+							segments,
+							summary: {
+								avgVsOwnHistoryPct: avg(ownVsHistory),
+								avgVsPeersPct: avg(ownVsPeers),
+								bestSegment: bestSegmentSource
+									? {
+											weekday: bestSegmentSource.weekday,
+											hourBucket: bestSegmentSource.hourBucket,
+										}
+									: null,
+								weakestSegment: weakestSegmentSource
+									? {
+											weekday: weakestSegmentSource.weekday,
+											hourBucket: weakestSegmentSource.hourBucket,
+										}
+									: null,
+							},
+						});
+					}
+
+					return result;
+				};
+
+				const [currentFromKpi, previousFromKpi] = await Promise.all([
+					queryEmployeeKpiAgg(resolvedSince, resolvedUntil),
+					queryEmployeeKpiAgg(previousSince, previousUntil),
+				]);
+				const useKpi =
+					currentFromKpi !== null &&
+					previousFromKpi !== null &&
+					currentFromKpi.size > 0;
+				const [currentMap, previousMap] = useKpi
+					? [currentFromKpi, previousFromKpi]
+					: await Promise.all([
+							queryEmployeeAgg(rangeSince, rangeUntil),
+							queryEmployeeAgg(prevRangeSince, prevRangeUntil),
+						]);
+
+			let comparisonByEmployee = new Map<
+				string,
+				{
+					primaryShopUuid: string;
+					historyDays: number;
+					weekdays: Array<{
+						weekday: number;
+						currentAvgRevenue: number;
+						currentAvgChecks: number;
+						ownHistoryAvgRevenue: number | null;
+						peerAvgRevenue: number | null;
+						vsOwnHistoryPct: number | null;
+						vsPeersPct: number | null;
+					}>;
+					summary: {
+						avgVsOwnHistoryPct: number | null;
+						avgVsPeersPct: number | null;
+						bestWeekday: number | null;
+						weakestWeekday: number | null;
+					};
+				}
+			>();
+
+			const getComparableEmployeesCount = (
+				map: typeof comparisonByEmployee,
+			): number =>
+				Array.from(map.values()).filter(
+					(item) =>
+						item.summary.avgVsOwnHistoryPct !== null ||
+						item.summary.avgVsPeersPct !== null,
+				).length;
+
+			if (useKpi) {
+				const [currentWeekdayRows, historyWeekdayRows] = await Promise.all([
+					queryEmployeeKpiWeekdayAgg(resolvedSince, resolvedUntil),
+					queryEmployeeKpiWeekdayAgg(historySince, historyUntil),
+				]);
+
+				if (currentWeekdayRows && historyWeekdayRows) {
+					comparisonByEmployee = buildComparisonMap(
+						currentWeekdayRows,
+						historyWeekdayRows,
+					);
+				}
+
+				if (getComparableEmployeesCount(comparisonByEmployee) === 0) {
+					const [currentWeekdayRowsFromReceipts, historyWeekdayRowsFromReceipts] =
+						await Promise.all([
+							queryEmployeeReceiptsWeekdayAgg(rangeSince, rangeUntil),
+							queryEmployeeReceiptsWeekdayAgg(
+								historyRangeSince,
+								historyRangeUntil,
+							),
+						]);
+					if (
+						currentWeekdayRowsFromReceipts &&
+						historyWeekdayRowsFromReceipts &&
+						currentWeekdayRowsFromReceipts.length > 0 &&
+						historyWeekdayRowsFromReceipts.length > 0
+					) {
+						comparisonByEmployee = buildComparisonMap(
+							currentWeekdayRowsFromReceipts,
+							historyWeekdayRowsFromReceipts,
+						);
+					}
+				}
+			} else {
+				const [currentWeekdayRowsFromReceipts, historyWeekdayRowsFromReceipts] =
+					await Promise.all([
+						queryEmployeeReceiptsWeekdayAgg(rangeSince, rangeUntil),
+						queryEmployeeReceiptsWeekdayAgg(historyRangeSince, historyRangeUntil),
+					]);
+				if (
+					currentWeekdayRowsFromReceipts &&
+					historyWeekdayRowsFromReceipts &&
+					currentWeekdayRowsFromReceipts.length > 0 &&
+					historyWeekdayRowsFromReceipts.length > 0
+				) {
+					comparisonByEmployee = buildComparisonMap(
+						currentWeekdayRowsFromReceipts,
+						historyWeekdayRowsFromReceipts,
+					);
+				}
+			}
+
+			const [currentSegmentRowsFromReceipts, historySegmentRowsFromReceipts] =
+				await Promise.all([
+					queryEmployeeReceiptsSegmentAgg(rangeSince, rangeUntil),
+					queryEmployeeReceiptsSegmentAgg(historyRangeSince, historyRangeUntil),
+				]);
+			const fairComparisonByEmployee =
+				currentSegmentRowsFromReceipts && historySegmentRowsFromReceipts
+					? buildFairComparisonMap(
+							currentSegmentRowsFromReceipts,
+							historySegmentRowsFromReceipts,
+						)
+					: new Map<
+							string,
+							{
+								primaryShopUuid: string;
+								normalizers: ["shop", "weekday", "hour_bucket"];
+								segments: Array<{
+									weekday: number;
+									hourBucket: number;
+									currentAvgRevenue: number;
+									currentAvgChecks: number;
+									ownHistoryAvgRevenue: number | null;
+									peerAvgRevenue: number | null;
+									vsOwnHistoryPct: number | null;
+									vsPeersPct: number | null;
+								}>;
+								summary: {
+									avgVsOwnHistoryPct: number | null;
+									avgVsPeersPct: number | null;
+									bestSegment: { weekday: number; hourBucket: number } | null;
+									weakestSegment: { weekday: number; hourBucket: number } | null;
+								};
+							}
+						>();
 
 			const employeeNames = await (async () => {
 				try {
@@ -2796,6 +3628,10 @@ export const aiRoutes = new Hono<IEnv>()
 			const items = Array.from(currentMap.values())
 				.map((current) => {
 					const previous = previousMap.get(current.employeeUuid);
+					const comparison = comparisonByEmployee.get(current.employeeUuid) || null;
+					const fairComparison =
+						fairComparisonByEmployee.get(current.employeeUuid) || null;
+					const fairVsPeersPct = fairComparison?.summary.avgVsPeersPct ?? null;
 					const revenueTrendPct = calcChangePct(
 						current.revenue,
 						previous?.revenue ?? 0,
@@ -2807,33 +3643,118 @@ export const aiRoutes = new Hono<IEnv>()
 					const reasons: string[] = [];
 					const recommendations: string[] = [];
 					let riskScore = 0;
+					const weekdayRevenue = (comparison?.weekdays || []).map((item) =>
+						Number(item.currentAvgRevenue || 0),
+					);
+					const avgWeekdayRevenue =
+						weekdayRevenue.length > 0
+							? weekdayRevenue.reduce((sum, value) => sum + value, 0) /
+								weekdayRevenue.length
+							: 0;
+					const stdWeekdayRevenue =
+						weekdayRevenue.length > 1
+							? Math.sqrt(
+									weekdayRevenue.reduce(
+										(sum, value) =>
+											sum + (value - avgWeekdayRevenue) * (value - avgWeekdayRevenue),
+										0,
+									) / weekdayRevenue.length,
+								)
+							: 0;
+					const weekdayRevenueCv =
+						avgWeekdayRevenue > 0 ? stdWeekdayRevenue / avgWeekdayRevenue : 0;
 
-					if (refundRatePct >= 8) {
+					if (
+						isFocusEnabled("refunds") &&
+						refundRatePct >= 8 / Math.max(0.5, thresholdMultiplier)
+					) {
 						riskScore += 35;
 						reasons.push("Высокая доля возвратов");
 						recommendations.push(
 							"Проверить причины возвратов и скрипт продажи по проблемным категориям",
 						);
 					}
-					if (revenueTrendPct !== null && revenueTrendPct <= -0.2) {
+					if (
+						isFocusEnabled("revenue_trend") &&
+						revenueTrendPct !== null &&
+						revenueTrendPct <= -0.2 / Math.max(0.5, thresholdMultiplier)
+					) {
 						riskScore += 35;
 						reasons.push("Резкое падение выручки к прошлому периоду");
 						recommendations.push(
 							"Разобрать смены с минимальной выручкой и усилить допродажи на кассе",
 						);
 					}
-					if (averageCheck > 0 && averageCheck < 350) {
+					if (
+						isFocusEnabled("avg_check") &&
+						averageCheck > 0 &&
+						averageCheck < 350 * thresholdMultiplier
+					) {
 						riskScore += 20;
 						reasons.push("Низкий средний чек");
 						recommendations.push(
 							"Добавить обязательное предложение 1-2 сопутствующих товаров в каждом чеке",
 						);
 					}
-					if (current.checks < 20) {
+					if (
+						isFocusEnabled("traffic") &&
+						current.checks < 20 * thresholdMultiplier
+					) {
 						riskScore += 10;
 						reasons.push("Низкий поток чеков");
 						recommendations.push(
 							"Перераспределить часы сотрудника на более трафиковые интервалы",
+						);
+					}
+					if (
+						isFocusEnabled("peer_comparison") &&
+						(fairVsPeersPct ?? comparison?.summary.avgVsPeersPct) !== null &&
+						(fairVsPeersPct ?? comparison?.summary.avgVsPeersPct) !== undefined &&
+						Number(fairVsPeersPct ?? comparison?.summary.avgVsPeersPct) <=
+							-0.15 / Math.max(0.5, thresholdMultiplier)
+					) {
+						riskScore += 15;
+						reasons.push(
+							"Ниже коллег в похожих сменах (магазин/день недели/час)",
+						);
+					}
+					if (
+						isFocusEnabled("stability") &&
+						weekdayRevenue.length >= 3 &&
+						weekdayRevenueCv >= 0.45 / Math.max(0.5, thresholdMultiplier)
+					) {
+						riskScore += 10;
+						reasons.push("Нестабильная выручка по дням недели");
+						recommendations.push(
+							"Стабилизировать результат: единый скрипт допродаж и контроль выполнения по чек-листу смены",
+						);
+					}
+					if (fairComparison?.summary.weakestSegment) {
+						const weekdayLabels = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+						const segmentLabels = [
+							"00:00-05:59",
+							"06:00-11:59",
+							"12:00-17:59",
+							"18:00-23:59",
+						];
+						const dayLabel =
+							weekdayLabels[fairComparison.summary.weakestSegment.weekday] ||
+							"пиковые дни";
+						const segmentLabel =
+							segmentLabels[fairComparison.summary.weakestSegment.hourBucket] ||
+							"часовой слот";
+						recommendations.push(
+							`Провести разбор похожих смен: ${dayLabel}, ${segmentLabel} (сравнение с коллегами этого же слота)`,
+						);
+					} else if (
+						comparison?.summary.weakestWeekday !== null &&
+						comparison?.summary.weakestWeekday !== undefined
+					) {
+						const weekdayLabels = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+						const dayLabel =
+							weekdayLabels[comparison.summary.weakestWeekday] || "пиковые дни";
+						recommendations.push(
+							`Провести разбор смен в ${dayLabel}: чек-лист допродаж и контроль скрипта кассы`,
 						);
 					}
 
@@ -2858,19 +3779,54 @@ export const aiRoutes = new Hono<IEnv>()
 							recommendations.length > 0
 								? recommendations.slice(0, 3)
 								: ["Продолжать текущую модель продаж и контролировать возвраты"],
-						shopCount: current.shopUuids.size,
-					};
-				})
+						shopCount:
+							current.shopCount > 0 ? current.shopCount : current.shopUuids.size,
+						comparison,
+						fairComparison,
+						};
+					})
 				.sort((a, b) => b.riskScore - a.riskScore || b.revenue - a.revenue)
 				.slice(0, limit ?? 200);
 
-			return c.json({
-				since: resolvedSince,
-				until: resolvedUntil,
-				previousSince,
-				previousUntil,
-				employees: items,
-			});
+				const comparableEmployees = items.filter((item) => {
+					const fairPeers = item.fairComparison?.summary?.avgVsPeersPct;
+					const fairHistory = item.fairComparison?.summary?.avgVsOwnHistoryPct;
+					const avgVsPeers = item.comparison?.summary?.avgVsPeersPct;
+					const avgVsHistory = item.comparison?.summary?.avgVsOwnHistoryPct;
+					return (
+						fairPeers !== null ||
+						fairHistory !== null ||
+						avgVsPeers !== null ||
+						avgVsHistory !== null
+					);
+				}).length;
+				const comparisonWarning =
+					useKpi && comparableEmployees === 0
+						? "INSUFFICIENT_HISTORY_FOR_WEEKDAY_COMPARISON"
+						: null;
+
+				return c.json({
+					since: resolvedSince,
+					until: resolvedUntil,
+					previousSince,
+					previousUntil,
+					source: useKpi ? "employee_kpi_daily" : "receipts",
+					analysisDepth: depth,
+					historyDays: effectiveHistoryDays,
+					appliedFocusAreas: Array.from(enabledFocuses),
+					riskSensitivity: sensitivity,
+					historyWindow: {
+						since: historySince,
+						until: historyUntil,
+					},
+					comparisonMode: "fair_shop_weekday_hour",
+					comparisonCoverage: {
+						totalEmployees: items.length,
+						comparableEmployees,
+					},
+					warning: comparisonWarning,
+					employees: items,
+				});
 		} catch (error) {
 			logger.error("AI director employee deep analysis failed", { error });
 			return c.json({ error: "AI_DIRECTOR_EMPLOYEE_DEEP_ANALYSIS_FAILED" }, 500);
@@ -3728,6 +4684,60 @@ export const aiRoutes = new Hono<IEnv>()
 				return { ...row, reasons };
 			});
 
+			const sortedEmployees = withScoreAndReasons.sort((a, b) => b.score - a.score);
+			let narrative: string | null = null;
+			try {
+				const aiModel = c.env.AI_MODEL;
+				const aiMaxTokens = Number(c.env.AI_MAX_TOKENS || "1000");
+				const aiResult = await buildEmployeeKpiNarrative({
+					ai: c.var.ai,
+					model: aiModel,
+					maxTokens: Number.isFinite(aiMaxTokens) ? aiMaxTokens : 1000,
+					data: {
+						period: {
+							startDate: payload.startDate,
+							endDate: payload.endDate,
+							days: periodDays,
+						},
+						overall: {
+							revenue: overall.revenue,
+							checks: overall.checks,
+							avgCheck: overall.avgCheck,
+							returnRate: overall.returnRate,
+							marginPercent: overall.marginPercent,
+						},
+						topEmployees: sortedEmployees.slice(0, 3).map((row) => ({
+							employeeName: row.employeeName,
+							score: row.score,
+							avgCheck: row.avgCheck,
+							returnRate: row.returnRate,
+							reasons: row.reasons,
+						})),
+						problemEmployees: [...sortedEmployees]
+							.sort((a, b) => a.score - b.score)
+							.slice(0, 3)
+							.map((row) => ({
+								employeeName: row.employeeName,
+								score: row.score,
+								avgCheck: row.avgCheck,
+								returnRate: row.returnRate,
+								reasons: row.reasons,
+							})),
+						shiftSummary: shiftSummary.map((row) => ({
+							shift: row.shift,
+							avgCheck: row.avgCheck,
+							returnRate: row.returnRate,
+							reasons: row.reasons,
+						})),
+					},
+				});
+				narrative = aiResult.narrative;
+			} catch (aiError) {
+				logger.warn("Employee KPI narrative generation failed", {
+					error: aiError instanceof Error ? aiError.message : String(aiError),
+				});
+			}
+
 			return c.json({
 				period: {
 					startDate: payload.startDate,
@@ -3736,8 +4746,9 @@ export const aiRoutes = new Hono<IEnv>()
 					generatedAt: toIsoDate(new Date()),
 				},
 				overall,
-				employees: withScoreAndReasons.sort((a, b) => b.score - a.score),
+				employees: sortedEmployees,
 				shifts: shiftSummary,
+				narrative,
 			});
 		} catch (error) {
 			logger.error("Employee/shift KPI error:", error);
@@ -4083,6 +5094,78 @@ export const aiRoutes = new Hono<IEnv>()
 						error instanceof Error
 							? error.message
 							: "Failed to build dashboard summary insights",
+				},
+				500,
+			);
+		}
+	})
+	.get("/history/shift-summaries", async (c) => {
+		try {
+			const shopUuid = c.req.query("shopUuid") || undefined;
+			const date = c.req.query("date") || undefined;
+			const limitRaw = Number(c.req.query("limit") || "30");
+			const limit = Number.isFinite(limitRaw) ? limitRaw : 30;
+
+			const items = await listAiShiftSummaries(c.env.DB, {
+				shopUuid,
+				date,
+				limit,
+			});
+
+			return c.json({
+				items,
+				filters: { shopUuid: shopUuid || null, date: date || null, limit },
+				total: items.length,
+			});
+		} catch (error) {
+			logger.error("AI shift summaries history endpoint failed:", error);
+			return c.json(
+				{
+					error:
+						error instanceof Error
+							? error.message
+							: "Failed to load shift summaries history",
+				},
+				500,
+			);
+		}
+	})
+	.get("/history/alerts", async (c) => {
+		try {
+			const shopUuid = c.req.query("shopUuid") || undefined;
+			const alertTypeRaw = c.req.query("alertType") || undefined;
+			const alertType =
+				alertTypeRaw === "tempo_alert" ||
+				alertTypeRaw === "anomaly" ||
+				alertTypeRaw === "dead_stock"
+					? alertTypeRaw
+					: undefined;
+			const limitRaw = Number(c.req.query("limit") || "50");
+			const limit = Number.isFinite(limitRaw) ? limitRaw : 50;
+
+			const items = await listAiAlerts(c.env.DB, {
+				shopUuid,
+				alertType,
+				limit,
+			});
+
+			return c.json({
+				items,
+				filters: {
+					shopUuid: shopUuid || null,
+					alertType: alertType || null,
+					limit,
+				},
+				total: items.length,
+			});
+		} catch (error) {
+			logger.error("AI alerts history endpoint failed:", error);
+			return c.json(
+				{
+					error:
+						error instanceof Error
+							? error.message
+							: "Failed to load alerts history",
 				},
 				500,
 			);

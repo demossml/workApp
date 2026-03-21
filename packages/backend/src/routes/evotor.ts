@@ -76,6 +76,7 @@ import {
 	upsertReceiptPositions,
 	upsertReferenceSets,
 } from "../db/repositories/normalizedSales";
+import { recomputeEmployeeKpiDailyForShopDates } from "../db/repositories/employeeKpiDaily";
 import {
 	buildSalesDayKey,
 	buildTopProductsKey,
@@ -128,6 +129,18 @@ async function getShopNamesFromDb(
 		}
 	}
 	return map;
+}
+
+async function getShopNameByUuidFromDb(
+	c: { get: (key: "db") => IEnv["Bindings"]["DB"] },
+	shopUuid: string,
+): Promise<string | null> {
+	const db = c.get("db");
+	const row = await db
+		.prepare("SELECT name FROM stores WHERE store_uuid = ? LIMIT 1")
+		.bind(shopUuid)
+		.first<{ name: string | null }>();
+	return row?.name || null;
 }
 
 async function resolveScopedShopUuidForFinancial(
@@ -207,6 +220,17 @@ const paymentTypeLabels: Record<string, string> = {
 	CREDIT: "Постоплатой (в кредит):",
 	ELECTRON: "Безналичными средствами:",
 	UNKNOWN: "Неизвестно. По-умолчанию:",
+};
+
+const SUPERADMIN_TELEGRAM_IDS = new Set(["5700958253", "475039971"]);
+
+const resolveEmployeeRole = async (c: {
+	var: IEnv["Variables"];
+}): Promise<string | null> => {
+	const userId = c.var.userId || "";
+	if (!userId) return null;
+	if (SUPERADMIN_TELEGRAM_IDS.has(userId)) return "SUPERADMIN";
+	return c.var.evotor.getEmployeeRole(userId);
 };
 
 function isFullMonthRange(since: string, until: string): boolean {
@@ -912,13 +936,11 @@ export const evotorRoutes = new Hono<IEnv>()
 
 	.get("/current-work-shop", async (c) => {
 		try {
-			const userId = c.var.userId;
-			const evo = c.var.evotor;
-			const today = new Date();
-			const since = formatDateWithTime(today, false);
-			const until = formatDateWithTime(today, true);
-			const employeeData = await evo.getEmployeesByLastName(userId);
-			if (!employeeData || employeeData.length === 0) {
+			const userId =
+				String(c.var.userId || "").trim() ||
+				String(c.req.header("telegram-id") || "").trim() ||
+				String(c.req.query("telegram-id") || "").trim();
+			if (!userId) {
 				return c.json(
 					CurrentWorkShopResponseSchema.parse({
 						uuid: "",
@@ -927,12 +949,55 @@ export const evotorRoutes = new Hono<IEnv>()
 					}),
 				);
 			}
-			const employeeUuid = employeeData[0].uuid;
-			const shopUuid = await evo.getFirstOpenSession(
-				since,
-				until,
-				employeeUuid,
-			);
+
+			const evo = c.var.evotor;
+			const today = new Date();
+			const since = formatDateWithTime(today, false);
+			const until = formatDateWithTime(today, true);
+
+			let employeeUuid = "";
+			try {
+				const row = await c
+					.get("db")
+					.prepare(
+						"SELECT uuid FROM employees_details WHERE user_id = ? OR id = ? LIMIT 1",
+					)
+					.bind(userId, userId)
+					.first<{ uuid: string | null }>();
+				employeeUuid = String(row?.uuid || "").trim();
+			} catch (error) {
+				logger.warn("current-work-shop: employees_details lookup failed", { error });
+			}
+
+			if (!employeeUuid) {
+				try {
+					const employeeData = await evo.getEmployeesByLastName(userId);
+					employeeUuid = String(employeeData?.[0]?.uuid || "").trim();
+				} catch (error) {
+					logger.warn("current-work-shop: employee lookup via Evotor failed", {
+						error,
+					});
+				}
+			}
+
+			if (!employeeUuid) {
+				return c.json(
+					CurrentWorkShopResponseSchema.parse({
+						uuid: "",
+						name: "",
+						isWorkingToday: false,
+					}),
+				);
+			}
+
+			let shopUuid: string | null = null;
+			try {
+				shopUuid = await evo.getFirstOpenSession(since, until, employeeUuid);
+			} catch (error) {
+				logger.warn("current-work-shop: first open session lookup failed", {
+					error,
+				});
+			}
 			if (!shopUuid) {
 				return c.json(
 					CurrentWorkShopResponseSchema.parse({
@@ -942,21 +1007,27 @@ export const evotorRoutes = new Hono<IEnv>()
 					}),
 				);
 			}
-			const shops = await evo.getShops();
-			const currentShop = shops.find((shop) => shop.uuid === shopUuid);
-			if (!currentShop) {
-				return c.json(
-					CurrentWorkShopResponseSchema.parse({
-						uuid: shopUuid,
-						name: "",
-						isWorkingToday: true,
-					}),
-				);
+
+			let shopName = "";
+			try {
+				shopName = (await getShopNameByUuidFromDb(c, shopUuid)) || "";
+			} catch (error) {
+				logger.warn("current-work-shop: DB shop name lookup failed", { error });
 			}
+			if (!shopName) {
+				try {
+					shopName = (await evo.getShopName(shopUuid)) || "";
+				} catch (error) {
+					logger.warn("current-work-shop: Evotor shop name lookup failed", {
+						error,
+					});
+				}
+			}
+
 			return c.json(
 				CurrentWorkShopResponseSchema.parse({
-					uuid: currentShop.uuid,
-					name: currentShop.name,
+					uuid: shopUuid,
+					name: shopName,
 					isWorkingToday: true,
 				}),
 			);
@@ -968,7 +1039,6 @@ export const evotorRoutes = new Hono<IEnv>()
 					name: "",
 					isWorkingToday: false,
 				}),
-				500,
 			);
 		}
 	})
@@ -2079,14 +2149,7 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 	.post("/financial/today/direct", async (c) => {
 		try {
-			const userId = c.var.userId || "";
-			const roleFromEvotor = userId
-				? await c.var.evotor.getEmployeeRole(userId)
-				: null;
-			const employeeRole =
-				userId === "5700958253" || userId === "475039971"
-					? "SUPERADMIN"
-					: roleFromEvotor;
+			const employeeRole = await resolveEmployeeRole(c);
 
 			if (employeeRole !== "SUPERADMIN") {
 				return c.json({ error: "Доступ только для SUPERADMIN" }, 403);
@@ -2112,14 +2175,7 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 	.post("/index/warm", async (c) => {
 		try {
-			const userId = c.var.userId || "";
-			const roleFromEvotor = userId
-				? await c.var.evotor.getEmployeeRole(userId)
-				: null;
-			const employeeRole =
-				userId === "5700958253" || userId === "475039971"
-					? "SUPERADMIN"
-					: roleFromEvotor;
+			const employeeRole = await resolveEmployeeRole(c);
 
 			if (employeeRole !== "SUPERADMIN") {
 				return c.json({ error: "Доступ только для SUPERADMIN" }, 403);
@@ -2152,14 +2208,7 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 	.post("/index/pull-today", async (c) => {
 		try {
-			const userId = c.var.userId || "";
-			const roleFromEvotor = userId
-				? await c.var.evotor.getEmployeeRole(userId)
-				: null;
-			const employeeRole =
-				userId === "5700958253" || userId === "475039971"
-					? "SUPERADMIN"
-					: roleFromEvotor;
+			const employeeRole = await resolveEmployeeRole(c);
 
 			if (employeeRole !== "SUPERADMIN") {
 				return c.json({ error: "Доступ только для SUPERADMIN" }, 403);
@@ -2203,14 +2252,7 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 	.post("/receipts/rebuild-day", async (c) => {
 		try {
-			const userId = c.var.userId || "";
-			const roleFromEvotor = userId
-				? await c.var.evotor.getEmployeeRole(userId)
-				: null;
-			const employeeRole =
-				userId === "5700958253" || userId === "475039971"
-					? "SUPERADMIN"
-					: roleFromEvotor;
+			const employeeRole = await resolveEmployeeRole(c);
 
 			if (employeeRole !== "SUPERADMIN") {
 				return c.json({ error: "Доступ только для SUPERADMIN" }, 403);
@@ -2279,6 +2321,103 @@ export const evotorRoutes = new Hono<IEnv>()
 		} catch (error) {
 			logger.error("Receipts rebuild failed", { error });
 			return c.json({ error: "REBUILD_RECEIPTS_FAILED" }, 500);
+		}
+	})
+	.post("/employee-kpi/backfill-index-range", async (c) => {
+		try {
+			const employeeRole = await resolveEmployeeRole(c);
+
+			if (employeeRole !== "SUPERADMIN") {
+				return c.json({ error: "Доступ только для SUPERADMIN" }, 403);
+			}
+
+			const payload = await c.req.json().catch(() => ({}));
+			const sinceDate = String(payload?.since || "").trim();
+			const untilDate = String(payload?.until || "").trim();
+			if (
+				!/^\d{4}-\d{2}-\d{2}$/.test(sinceDate) ||
+				!/^\d{4}-\d{2}-\d{2}$/.test(untilDate)
+			) {
+				return c.json(
+					{ error: "since/until are required (YYYY-MM-DD)" },
+					400,
+				);
+			}
+			if (sinceDate > untilDate) {
+				return c.json({ error: "since must be <= until" }, 400);
+			}
+
+			const db = c.get("db");
+			const tzOffsetMinutes = Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180);
+			const { since, until } = buildUtcRangeForLocalDates(
+				sinceDate,
+				untilDate,
+				tzOffsetMinutes,
+			);
+
+			let shopUuids = await getShopUuidsFromDb(c);
+			if (shopUuids.length === 0) {
+				shopUuids = await getShopUuidsWithFallback(c, c.var.evotor);
+			}
+
+			let deletedReceipts = 0;
+			let deletedPositions = 0;
+			let rebuiltReceipts = 0;
+			let rebuiltPositions = 0;
+			const touchedShopDates = new Set<string>();
+
+			for (const shopId of shopUuids) {
+				const delReceipts = await db
+					.prepare(
+						"DELETE FROM receipts WHERE shop_id = ? AND close_date >= ? AND close_date <= ?",
+					)
+					.bind(shopId, since, until)
+					.run();
+				deletedReceipts += Number(delReceipts.meta?.changes || 0);
+
+				const delPositions = await db
+					.prepare(
+						"DELETE FROM receipt_positions WHERE shop_id = ? AND close_date >= ? AND close_date <= ?",
+					)
+					.bind(shopId, since, until)
+					.run();
+				deletedPositions += Number(delPositions.meta?.changes || 0);
+
+				const docs = await getDocumentsByPeriod(db, shopId, since, until);
+				if (!docs || docs.length === 0) continue;
+
+				const normalized = normalizeDocuments(docs);
+				await upsertReceipts(db, normalized.receipts);
+				await upsertReceiptPositions(db, normalized.positions);
+				await upsertReferenceSets(db, normalized.sets);
+
+				rebuiltReceipts += normalized.receipts.length;
+				rebuiltPositions += normalized.positions.length;
+				for (const value of normalized.sets.shopDates) {
+					touchedShopDates.add(value);
+				}
+			}
+
+			const shopDates = Array.from(touchedShopDates).map((value) => {
+				const [shopId, date] = value.split(":");
+				return { shopId, date };
+			});
+			await recomputeEmployeeKpiDailyForShopDates(db, shopDates);
+
+			return c.json({
+				ok: true,
+				since: sinceDate,
+				until: untilDate,
+				shops: shopUuids.length,
+				shopDatesRecomputed: shopDates.length,
+				deletedReceipts,
+				deletedPositions,
+				rebuiltReceipts,
+				rebuiltPositions,
+			});
+		} catch (error) {
+			logger.error("Employee KPI backfill from index range failed", { error });
+			return c.json({ error: "EMPLOYEE_KPI_BACKFILL_FROM_INDEX_FAILED" }, 500);
 		}
 	})
 	.post("/order", async (c) => {

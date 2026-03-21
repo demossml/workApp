@@ -11,6 +11,7 @@ export async function sendDeadStocksToTelegram(
 		chatId: number | string;
 		shopUuid: string;
 		items: DeadStockItem[];
+		narrative?: string;
 	},
 	TELEGRAM_BOT_TOKEN: string,
 	evotor: Evotor,
@@ -26,6 +27,7 @@ export async function sendDeadStocksToTelegram(
 			evotor,
 			params.shopUuid,
 			params.items,
+			params.narrative,
 		);
 
 		if (!text || text.trim().length === 0) {

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { IEnv, SaveDeadStocksRequest } from "../types";
+import type { IEnv } from "../types";
 import { logger } from "../logger";
 import {
 	FinishOpeningSchema,
@@ -17,8 +17,6 @@ import {
 	formatDateWithTime,
 	getTelegramFile,
 } from "../utils";
-import { saveDeadStocks } from "../db/repositories/saveDeadStocks";
-import { sendDeadStocksToTelegram } from "../../utils/sendDeadStocksToTelegram";
 import { getData } from "../db/repositories/openShops";
 import {
 	getLatestShopOpeningForDate,
@@ -34,6 +32,8 @@ import {
 	saveOpeningsReportCache,
 } from "../db/repositories/openingsReportCache";
 import { trackAppEvent } from "../analytics/track";
+import { handleDeadStocksUpdate } from "../services/deadStocksUpdate";
+import { generateAndSendShiftSummary } from "../services/shiftSummary";
 
 export const storesRoutes = new Hono<IEnv>()
 
@@ -701,67 +701,7 @@ export const storesRoutes = new Hono<IEnv>()
 	})
 
 	.post("/dead-stocks/update", async (c) => {
-		try {
-			const db = c.get("drizzle");
-
-			const { shopUuid, items } = await c.req.json<
-				SaveDeadStocksRequest & { userId: number }
-			>();
-			await trackAppEvent(c, "deadstock_save_started", {
-				shopUuid,
-				props: { itemsCount: Array.isArray(items) ? items.length : 0 },
-			});
-
-			if (!shopUuid || !items || !Array.isArray(items)) {
-				await trackAppEvent(c, "deadstock_save_failed", {
-					shopUuid: shopUuid || undefined,
-					props: { reason: "invalid_request_data" },
-				});
-				return c.json({ success: false, error: "Invalid request data" }, 400);
-			}
-
-			const TELEGRAM_GROUP_ID = "5700958253";
-
-			try {
-				await sendDeadStocksToTelegram(
-					{
-						chatId: TELEGRAM_GROUP_ID,
-						shopUuid,
-						items,
-					},
-					c.env.BOT_TOKEN,
-					c.var.evotor,
-				);
-			} catch (telegramError) {
-				logger.error("Failed to send to Telegram", telegramError);
-			}
-
-			await saveDeadStocks(db, shopUuid, items);
-			await trackAppEvent(c, "deadstock_save_success", {
-				shopUuid,
-				props: { itemsCount: items.length },
-			});
-
-			return c.json({ success: true });
-		} catch (error) {
-			await trackAppEvent(c, "deadstock_save_failed", {
-				props: {
-					reason:
-						error instanceof Error ? error.message : "dead_stocks_update_failed",
-				},
-			});
-			logger.error("Dead stocks update failed", error);
-			return c.json(
-				{
-					success: false,
-					error:
-						error instanceof Error
-							? error.message
-							: "Failed to update dead stocks",
-				},
-				500,
-			);
-		}
+		return handleDeadStocksUpdate(c);
 	})
 
 	.post("/finish-opening", async (c) => {
@@ -789,6 +729,24 @@ export const storesRoutes = new Hono<IEnv>()
 			}
 
 			await updateOpenStore(db, userId, shopUuid, { cash, sign, ok: okValue });
+
+			// Не блокируем основной ответ закрытия смены из-за AI/Telegram ошибок.
+			try {
+				await generateAndSendShiftSummary({
+					bindings: c.env,
+					evotor: c.var.evotor,
+					ai: c.var.ai,
+					shopUuid,
+				});
+			} catch (summaryError) {
+				logger.warn("Shift summary hook failed after finish-opening", {
+					shopUuid,
+					error:
+						summaryError instanceof Error
+							? summaryError.message
+							: String(summaryError),
+				});
+			}
 
 			return c.json({ success: true });
 		} catch (error) {

@@ -46,11 +46,14 @@ R2_PUBLIC_URL = "c1e9f63e6135bb4fa5600e83bf4a1a4b.r2.cloudflarestorage.com/evoto
 ALERT_TZ_OFFSET_MINUTES = "180"
 ALERT_REFUND_THRESHOLD_PCT = "15"
 ALERT_REVENUE_DROP_THRESHOLD_PCT = "20"
+ALERT_THRESHOLD_PCT = "80"
+AI_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+AI_MAX_TOKENS = "1000"
 ONEC_API_KEY = "секретный_ключ_минимум_32_символа"
 WEATHER_DEFAULT_LAT = "54.7826"
 WEATHER_DEFAULT_LON = "32.0453"
 WEATHER_DEFAULT_NAME = "Smolensk"
 
 [triggers]
-# Индексация каждые 3 минуты; ежедневный дайджест запускается в коде в 06:00 UTC.
-crons = ["*/3 * * * *"]
+# Mixed schedule: каждые 3 минуты + в 08:00 и 11:00 UTC.
+crons = ["*/3 * * * *", "0 8 * * *", "0 11 * * *"]

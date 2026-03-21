@@ -23,6 +23,7 @@ import {
 import { recomputeDailySales } from "../analytics/dailySales";
 import { recomputeTopProducts } from "../analytics/topProducts";
 import { upsertEmployeesDetails } from "../db/repositories/employeesDetails";
+import { recomputeEmployeeKpiDailyForShopDates } from "../db/repositories/employeeKpiDaily";
 import {
 	buildAiReportKey,
 	buildSalesDayKey,
@@ -102,6 +103,7 @@ export async function runEvotorDocumentsIndexingJob(
 		});
 		await recomputeDailySales(db, bootstrapShopDates);
 		await recomputeTopProducts(db, bootstrapShopDates);
+		await recomputeEmployeeKpiDailyForShopDates(db, bootstrapShopDates);
 		logger.info("Evotor documents indexing bootstrap completed", {
 			shops: shopUuids.length,
 			fetchedDocuments: bootstrapDocuments.length,
@@ -129,6 +131,7 @@ export async function runEvotorDocumentsIndexingJob(
 	});
 	await recomputeDailySales(db, shopDates);
 	await recomputeTopProducts(db, shopDates);
+	await recomputeEmployeeKpiDailyForShopDates(db, shopDates);
 
 	if (bindings.KV) {
 		const todayKey = getDateKey(new Date());

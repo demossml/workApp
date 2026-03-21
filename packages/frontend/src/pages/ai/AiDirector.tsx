@@ -4,6 +4,13 @@ import { client } from "../../helpers/api";
 
 export default function AiDirectorPage() {
   const aiDirector = client.api.ai as any;
+  type DeepFocusArea =
+    | "revenue_trend"
+    | "avg_check"
+    | "refunds"
+    | "traffic"
+    | "peer_comparison"
+    | "stability";
   const [rating, setRating] = useState<
     Array<{
       shopUuid: string;
@@ -36,8 +43,74 @@ export default function AiDirectorPage() {
       reasons: string[];
       recommendations: string[];
       shopCount: number;
+      comparison?: {
+        primaryShopUuid: string;
+        historyDays: number;
+        weekdays: Array<{
+          weekday: number;
+          currentAvgRevenue: number;
+          currentAvgChecks: number;
+          ownHistoryAvgRevenue: number | null;
+          peerAvgRevenue: number | null;
+          vsOwnHistoryPct: number | null;
+          vsPeersPct: number | null;
+        }>;
+        summary: {
+          avgVsOwnHistoryPct: number | null;
+          avgVsPeersPct: number | null;
+          bestWeekday: number | null;
+          weakestWeekday: number | null;
+        };
+      } | null;
+      fairComparison?: {
+        primaryShopUuid: string;
+        normalizers: ["shop", "weekday", "hour_bucket"];
+        segments: Array<{
+          weekday: number;
+          hourBucket: number;
+          currentAvgRevenue: number;
+          currentAvgChecks: number;
+          ownHistoryAvgRevenue: number | null;
+          peerAvgRevenue: number | null;
+          vsOwnHistoryPct: number | null;
+          vsPeersPct: number | null;
+        }>;
+        summary: {
+          avgVsOwnHistoryPct: number | null;
+          avgVsPeersPct: number | null;
+          bestSegment: { weekday: number; hourBucket: number } | null;
+          weakestSegment: { weekday: number; hourBucket: number } | null;
+        };
+      } | null;
     }>
   >([]);
+  const [deepMeta, setDeepMeta] = useState<{
+    analysisDepth: "lite" | "standard" | "deep";
+    historyDays: number;
+    warning: string | null;
+    comparisonCoverage?: {
+      totalEmployees: number;
+      comparableEmployees: number;
+    };
+  } | null>(null);
+  const [deepAnalysisDepth, setDeepAnalysisDepth] = useState<
+    "lite" | "standard" | "deep"
+  >("standard");
+  const [deepRiskSensitivity, setDeepRiskSensitivity] = useState<
+    "low" | "normal" | "high"
+  >("normal");
+  const [focusDropdownOpen, setFocusDropdownOpen] = useState(false);
+  const focusOptions: Array<{ key: DeepFocusArea; label: string }> = [
+    { key: "revenue_trend", label: "Тренд выручки" },
+    { key: "avg_check", label: "Средний чек" },
+    { key: "refunds", label: "Возвраты" },
+    { key: "traffic", label: "Трафик чеков" },
+    { key: "peer_comparison", label: "Сравнение с коллегами" },
+    { key: "stability", label: "Стабильность по дням" },
+  ];
+  const [deepFocusAreas, setDeepFocusAreas] = useState<DeepFocusArea[]>(
+    focusOptions.map((item) => item.key),
+  );
   const [forecast, setForecast] = useState<{
     forecast: number;
     weather?: {
@@ -60,6 +133,40 @@ export default function AiDirectorPage() {
       checks: number;
     }>
   >([]);
+  const [kpiNarrative, setKpiNarrative] = useState<string | null>(null);
+  const [kpiNarrativeShopName, setKpiNarrativeShopName] = useState<string | null>(
+    null,
+  );
+  const [kpiSelectedShopUuid, setKpiSelectedShopUuid] = useState("");
+  const [kpiNarrativeLoading, setKpiNarrativeLoading] = useState(false);
+  const [kpiNarrativeError, setKpiNarrativeError] = useState<string | null>(null);
+  const [shiftSummariesHistory, setShiftSummariesHistory] = useState<
+    Array<{
+      id: number;
+      shopUuid: string;
+      date: string;
+      generatedAt: string;
+      summaryText: string;
+      revenueActual: number | null;
+      revenuePlan: number | null;
+      topEmployee: string | null;
+    }>
+  >([]);
+  const [alertsHistory, setAlertsHistory] = useState<
+    Array<{
+      id: number;
+      shopUuid: string;
+      alertType: "tempo_alert" | "anomaly" | "dead_stock";
+      severity: "info" | "warning" | "critical";
+      triggeredAt: string;
+      message: string;
+    }>
+  >([]);
+  const [shiftHistoryShopFilter, setShiftHistoryShopFilter] = useState("all");
+  const [shiftHistoryDateFilter, setShiftHistoryDateFilter] = useState("");
+  const [alertsHistoryShopFilter, setAlertsHistoryShopFilter] = useState("all");
+  const [alertsHistoryTypeFilter, setAlertsHistoryTypeFilter] = useState("all");
+  const [alertsHistoryDateFilter, setAlertsHistoryDateFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,17 +189,37 @@ export default function AiDirectorPage() {
       setLoading(true);
       setError(null);
       try {
-        const [ratingRes, employeesRes, deepEmployeesRes, forecastRes, heatmapRes] =
+        const [
+          ratingRes,
+          employeesRes,
+          deepEmployeesRes,
+          forecastRes,
+          heatmapRes,
+          shiftSummariesRes,
+          alertsHistoryRes,
+        ] =
           await Promise.all([
             aiDirector["director/store-rating"].$post({ json: { date: todayStr } }),
             aiDirector["director/employee-analysis"].$post({
               json: { until: todayStr },
             }),
             aiDirector["director/employee-deep-analysis"].$post({
-              json: { until: todayStr, limit: 20 },
+              json: {
+                until: todayStr,
+                limit: 20,
+                analysisDepth: deepAnalysisDepth,
+                riskSensitivity: deepRiskSensitivity,
+                focusAreas: deepFocusAreas,
+              },
             }),
             aiDirector["director/demand-forecast"].$post({ json: { date: todayStr } }),
             aiDirector["director/heatmap"].$post({ json: {} }),
+            aiDirector.history["shift-summaries"].$get({
+              query: { limit: "20" },
+            }),
+            aiDirector.history.alerts.$get({
+              query: { limit: "20" },
+            }),
           ]);
 
         if (!ratingRes.ok) throw new Error("Не удалось загрузить рейтинг");
@@ -102,17 +229,65 @@ export default function AiDirectorPage() {
         }
         if (!forecastRes.ok) throw new Error("Не удалось загрузить прогноз");
         if (!heatmapRes.ok) throw new Error("Не удалось загрузить heatmap");
+        if (!shiftSummariesRes.ok) {
+          throw new Error("Не удалось загрузить историю итогов смен");
+        }
+        if (!alertsHistoryRes.ok) {
+          throw new Error("Не удалось загрузить историю алертов");
+        }
 
         const ratingJson = await ratingRes.json();
         const employeesJson = await employeesRes.json();
         const deepEmployeesJson = await deepEmployeesRes.json();
         const forecastJson = await forecastRes.json();
         const heatmapJson = await heatmapRes.json();
+        const shiftSummariesJson = await shiftSummariesRes.json();
+        const alertsHistoryJson = await alertsHistoryRes.json();
+
+        const topRatedShop = (ratingJson.rating || [])[0];
+        let kpiNarrativeText: string | null = null;
+        let kpiNarrativeTopShopName: string | null = null;
+
+        if (topRatedShop?.shopUuid) {
+          try {
+            const kpiRes = await aiDirector["employee-shift-kpi"].$post({
+              json: {
+                shopUuid: topRatedShop.shopUuid,
+                startDate: todayStr,
+                endDate: todayStr,
+              },
+            });
+            if (kpiRes.ok) {
+              const kpiJson = await kpiRes.json();
+              kpiNarrativeText =
+                typeof kpiJson.narrative === "string" ? kpiJson.narrative : null;
+              kpiNarrativeTopShopName =
+                typeof topRatedShop.shopName === "string"
+                  ? topRatedShop.shopName
+                  : null;
+            }
+          } catch {
+            // Fallback: narrative section останется пустым, базовый экран не ломаем.
+          }
+        }
 
         if (cancelled) return;
         setRating(ratingJson.rating || []);
         setEmployees(employeesJson.employees || []);
         setDeepEmployees(deepEmployeesJson.employees || []);
+        setDeepMeta({
+          analysisDepth:
+            deepEmployeesJson.analysisDepth === "lite" ||
+            deepEmployeesJson.analysisDepth === "deep"
+              ? deepEmployeesJson.analysisDepth
+              : "standard",
+          historyDays: Number(deepEmployeesJson.historyDays || 0),
+          warning:
+            typeof deepEmployeesJson.warning === "string"
+              ? deepEmployeesJson.warning
+              : null,
+          comparisonCoverage: deepEmployeesJson.comparisonCoverage || undefined,
+        });
         setForecast({
           forecast: Number(forecastJson.forecast || 0),
           weather: forecastJson.weather || null,
@@ -125,6 +300,12 @@ export default function AiDirectorPage() {
             forecastJson.historySource === "index" ? "index" : "receipts",
         });
         setHeatmapRows(heatmapJson.rows || []);
+        setShiftSummariesHistory(shiftSummariesJson.items || []);
+        setAlertsHistory(alertsHistoryJson.items || []);
+        setKpiNarrative(kpiNarrativeText);
+        setKpiNarrativeShopName(kpiNarrativeTopShopName);
+        setKpiSelectedShopUuid(topRatedShop?.shopUuid || "");
+        setKpiNarrativeError(null);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Ошибка загрузки");
@@ -137,7 +318,7 @@ export default function AiDirectorPage() {
     return () => {
       cancelled = true;
     };
-  }, [aiDirector, todayStr]);
+  }, [aiDirector, todayStr, deepAnalysisDepth, deepRiskSensitivity, deepFocusAreas]);
 
   const handleChat = async () => {
     if (!chatMessage.trim()) return;
@@ -157,6 +338,37 @@ export default function AiDirectorPage() {
     }
   };
 
+  const handleRefreshKpiNarrative = async () => {
+    if (!kpiSelectedShopUuid) return;
+    setKpiNarrativeLoading(true);
+    setKpiNarrativeError(null);
+    try {
+      const kpiRes = await aiDirector["employee-shift-kpi"].$post({
+        json: {
+          shopUuid: kpiSelectedShopUuid,
+          startDate: todayStr,
+          endDate: todayStr,
+        },
+      });
+      if (!kpiRes.ok) throw new Error("Не удалось получить KPI narrative");
+      const kpiJson = await kpiRes.json();
+      setKpiNarrative(
+        typeof kpiJson.narrative === "string" ? kpiJson.narrative : null,
+      );
+
+      const selectedShopName =
+        rating.find((row) => row.shopUuid === kpiSelectedShopUuid)?.shopName ||
+        kpiSelectedShopUuid;
+      setKpiNarrativeShopName(selectedShopName);
+    } catch (err) {
+      setKpiNarrativeError(
+        err instanceof Error ? err.message : "Ошибка обновления KPI narrative",
+      );
+    } finally {
+      setKpiNarrativeLoading(false);
+    }
+  };
+
   const heatmap = useMemo(() => {
     const map = new Map<string, number>();
     let max = 0;
@@ -169,8 +381,114 @@ export default function AiDirectorPage() {
     return { map, max };
   }, [heatmapRows]);
 
+  const shiftHistoryShopOptions = useMemo(
+    () => Array.from(new Set(shiftSummariesHistory.map((row) => row.shopUuid))),
+    [shiftSummariesHistory],
+  );
+
+  const filteredShiftSummaries = useMemo(
+    () =>
+      shiftSummariesHistory.filter((row) => {
+        if (shiftHistoryShopFilter !== "all" && row.shopUuid !== shiftHistoryShopFilter) {
+          return false;
+        }
+        if (shiftHistoryDateFilter && row.date !== shiftHistoryDateFilter) {
+          return false;
+        }
+        return true;
+      }),
+    [shiftSummariesHistory, shiftHistoryShopFilter, shiftHistoryDateFilter],
+  );
+
+  const alertsHistoryShopOptions = useMemo(
+    () => Array.from(new Set(alertsHistory.map((row) => row.shopUuid))),
+    [alertsHistory],
+  );
+
+  const filteredAlertsHistory = useMemo(
+    () =>
+      alertsHistory.filter((row) => {
+        if (alertsHistoryShopFilter !== "all" && row.shopUuid !== alertsHistoryShopFilter) {
+          return false;
+        }
+        if (alertsHistoryTypeFilter !== "all" && row.alertType !== alertsHistoryTypeFilter) {
+          return false;
+        }
+        if (alertsHistoryDateFilter && !row.triggeredAt.startsWith(alertsHistoryDateFilter)) {
+          return false;
+        }
+        return true;
+      }),
+    [
+      alertsHistory,
+      alertsHistoryShopFilter,
+      alertsHistoryTypeFilter,
+      alertsHistoryDateFilter,
+    ],
+  );
+
   const dayLabels = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
   const heatmapStops = [0, 25, 50, 75, 100];
+  const toggleFocus = (focus: DeepFocusArea) => {
+    setDeepFocusAreas((prev) => {
+      if (prev.includes(focus)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter((item) => item !== focus);
+      }
+      return [...prev, focus];
+    });
+  };
+
+  const kpiNarrativeSections = useMemo(() => {
+    const source = (kpiNarrative || "").trim();
+    if (!source) {
+      return {
+        strengths: [] as string[],
+        growth: [] as string[],
+        actions: [] as string[],
+        raw: "",
+      };
+    }
+
+    const lines = source
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const normalize = (line: string) =>
+      line
+        .replace(/^[\d\)\.\-\s•]+/, "")
+        .trim();
+
+    const strengths: string[] = [];
+    const growth: string[] = [];
+    const actions: string[] = [];
+
+    let mode: "strengths" | "growth" | "actions" | null = null;
+    for (const line of lines) {
+      const lower = line.toLowerCase();
+      if (lower.includes("сильн")) {
+        mode = "strengths";
+        continue;
+      }
+      if (lower.includes("зон") || lower.includes("рост")) {
+        mode = "growth";
+        continue;
+      }
+      if (lower.includes("действ") || lower.includes("следующ")) {
+        mode = "actions";
+        continue;
+      }
+
+      const item = normalize(line);
+      if (!item) continue;
+      if (mode === "strengths") strengths.push(item);
+      else if (mode === "growth") growth.push(item);
+      else if (mode === "actions") actions.push(item);
+    }
+
+    return { strengths, growth, actions, raw: source };
+  }, [kpiNarrative]);
 
   return (
     <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-20 sm:pt-24 px-2 sm:px-6 pb-24 overflow-x-hidden">
@@ -300,16 +618,341 @@ export default function AiDirectorPage() {
 
           <section className="w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
             <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Глубокий анализ сотрудников
+              KPI Narrative
             </h2>
+            <div className="mt-2 text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
+              {kpiNarrativeShopName
+                ? `Сводка по магазину: ${kpiNarrativeShopName}`
+                : "Сводка по KPI сотрудников"}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <select
+                value={kpiSelectedShopUuid}
+                onChange={(e) => setKpiSelectedShopUuid(e.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              >
+                <option value="" disabled>
+                  Выберите магазин
+                </option>
+                {rating.map((row) => (
+                  <option key={row.shopUuid} value={row.shopUuid}>
+                    {row.shopName}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleRefreshKpiNarrative}
+                disabled={!kpiSelectedShopUuid || kpiNarrativeLoading}
+                className="rounded-lg bg-black px-3 py-1 text-[11px] sm:text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black"
+              >
+                {kpiNarrativeLoading ? "Обновляю..." : "Перегенерировать"}
+              </button>
+              {kpiNarrativeError && (
+                <span className="text-[11px] sm:text-xs text-red-600 dark:text-red-400">
+                  {kpiNarrativeError}
+                </span>
+              )}
+            </div>
+            {kpiNarrative ? (
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900/70 dark:bg-emerald-950/20">
+                  <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                    Сильные стороны
+                  </div>
+                  {kpiNarrativeSections.strengths.length > 0 ? (
+                    <ul className="mt-2 space-y-1 text-xs sm:text-sm text-emerald-900 dark:text-emerald-100">
+                      {kpiNarrativeSections.strengths.map((item, idx) => (
+                        <li key={`str-${idx}`}>• {item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="mt-2 text-xs sm:text-sm text-emerald-900 dark:text-emerald-100">
+                      {kpiNarrativeSections.raw}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/70 dark:bg-amber-950/20">
+                  <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                    Зоны роста
+                  </div>
+                  {kpiNarrativeSections.growth.length > 0 ? (
+                    <ul className="mt-2 space-y-1 text-xs sm:text-sm text-amber-900 dark:text-amber-100">
+                      {kpiNarrativeSections.growth.map((item, idx) => (
+                        <li key={`grw-${idx}`}>• {item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="mt-2 text-xs sm:text-sm text-amber-900 dark:text-amber-100">
+                      Нет явных зон роста в ответе AI.
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 dark:border-sky-900/70 dark:bg-sky-950/20">
+                  <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                    Действия на смену
+                  </div>
+                  {kpiNarrativeSections.actions.length > 0 ? (
+                    <ul className="mt-2 space-y-1 text-xs sm:text-sm text-sky-900 dark:text-sky-100">
+                      {kpiNarrativeSections.actions.map((item, idx) => (
+                        <li key={`act-${idx}`}>• {item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="mt-2 text-xs sm:text-sm text-sky-900 dark:text-sky-100">
+                      Нет выделенных действий в ответе AI.
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-xl bg-gray-50 p-4 text-xs sm:text-sm text-gray-800 dark:bg-gray-900 dark:text-gray-100">
+                AI-нарратив пока недоступен. Числовые KPI продолжают работать в штатном режиме.
+              </div>
+            )}
+          </section>
+
+          <section className="w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+              История итогов смен
+            </h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <select
+                value={shiftHistoryShopFilter}
+                onChange={(e) => setShiftHistoryShopFilter(e.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              >
+                <option value="all">Все магазины</option>
+                {shiftHistoryShopOptions.map((shopUuid) => (
+                  <option key={shopUuid} value={shopUuid}>
+                    {shopUuid}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="date"
+                value={shiftHistoryDateFilter}
+                onChange={(e) => setShiftHistoryDateFilter(e.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setShiftHistoryShopFilter("all");
+                  setShiftHistoryDateFilter("");
+                }}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              >
+                Сбросить
+              </button>
+            </div>
             <div className="mt-4 w-full max-w-full overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-xs sm:text-sm">
+              <table className="w-full min-w-[700px] text-left text-xs sm:text-sm">
+                <thead className="text-[10px] sm:text-xs uppercase text-gray-500 dark:text-gray-400">
+                  <tr>
+                    <th className="py-2 pr-3">Дата</th>
+                    <th className="py-2 pr-3">Магазин</th>
+                    <th className="py-2 pr-3">Факт</th>
+                    <th className="py-2 pr-3">План</th>
+                    <th className="py-2 pr-3">Топ сотрудник</th>
+                    <th className="py-2 pr-3">Сводка</th>
+                  </tr>
+                </thead>
+                <tbody className="text-gray-800 dark:text-gray-100">
+                  {filteredShiftSummaries.map((row) => (
+                    <tr key={row.id} className="border-t border-gray-100 dark:border-gray-800">
+                      <td className="py-2 pr-3">{row.date}</td>
+                      <td className="py-2 pr-3">{row.shopUuid}</td>
+                      <td className="py-2 pr-3">
+                        {row.revenueActual == null ? "—" : `${Math.round(row.revenueActual)} ₽`}
+                      </td>
+                      <td className="py-2 pr-3">
+                        {row.revenuePlan == null ? "—" : `${Math.round(row.revenuePlan)} ₽`}
+                      </td>
+                      <td className="py-2 pr-3">{row.topEmployee || "—"}</td>
+                      <td className="py-2 pr-3 max-w-[360px]">
+                        <div className="line-clamp-3 whitespace-pre-line">
+                          {row.summaryText}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredShiftSummaries.length === 0 && !loading && (
+                    <tr>
+                      <td className="py-3 text-gray-500 dark:text-gray-400" colSpan={6}>
+                        Нет данных.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+              История алертов
+            </h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <select
+                value={alertsHistoryShopFilter}
+                onChange={(e) => setAlertsHistoryShopFilter(e.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              >
+                <option value="all">Все магазины</option>
+                {alertsHistoryShopOptions.map((shopUuid) => (
+                  <option key={shopUuid} value={shopUuid}>
+                    {shopUuid}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={alertsHistoryTypeFilter}
+                onChange={(e) => setAlertsHistoryTypeFilter(e.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              >
+                <option value="all">Все типы</option>
+                <option value="tempo_alert">tempo_alert</option>
+                <option value="anomaly">anomaly</option>
+                <option value="dead_stock">dead_stock</option>
+              </select>
+              <input
+                type="date"
+                value={alertsHistoryDateFilter}
+                onChange={(e) => setAlertsHistoryDateFilter(e.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setAlertsHistoryShopFilter("all");
+                  setAlertsHistoryTypeFilter("all");
+                  setAlertsHistoryDateFilter("");
+                }}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              >
+                Сбросить
+              </button>
+            </div>
+            <div className="mt-4 w-full max-w-full overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-xs sm:text-sm">
+                <thead className="text-[10px] sm:text-xs uppercase text-gray-500 dark:text-gray-400">
+                  <tr>
+                    <th className="py-2 pr-3">Время</th>
+                    <th className="py-2 pr-3">Магазин</th>
+                    <th className="py-2 pr-3">Тип</th>
+                    <th className="py-2 pr-3">Severity</th>
+                    <th className="py-2 pr-3">Сообщение</th>
+                  </tr>
+                </thead>
+                <tbody className="text-gray-800 dark:text-gray-100">
+                  {filteredAlertsHistory.map((row) => (
+                    <tr key={row.id} className="border-t border-gray-100 dark:border-gray-800">
+                      <td className="py-2 pr-3">{row.triggeredAt}</td>
+                      <td className="py-2 pr-3">{row.shopUuid}</td>
+                      <td className="py-2 pr-3">{row.alertType}</td>
+                      <td className="py-2 pr-3">{row.severity}</td>
+                      <td className="py-2 pr-3 max-w-[380px]">
+                        <div className="line-clamp-3 whitespace-pre-line">{row.message}</div>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredAlertsHistory.length === 0 && !loading && (
+                    <tr>
+                      <td className="py-3 text-gray-500 dark:text-gray-400" colSpan={5}>
+                        Нет данных.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Глубокий анализ сотрудников
+              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 text-[11px] sm:text-xs text-gray-600 dark:text-gray-300">
+                  Глубина:
+                  <select
+                    value={deepAnalysisDepth}
+                    onChange={(e) =>
+                      setDeepAnalysisDepth(e.target.value as "lite" | "standard" | "deep")
+                    }
+                    className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  >
+                    <option value="lite">Lite (4 недели)</option>
+                    <option value="standard">Standard (8 недель)</option>
+                    <option value="deep">Deep (16 недель)</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-[11px] sm:text-xs text-gray-600 dark:text-gray-300">
+                  Чувствительность:
+                  <select
+                    value={deepRiskSensitivity}
+                    onChange={(e) =>
+                      setDeepRiskSensitivity(e.target.value as "low" | "normal" | "high")
+                    }
+                    className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  >
+                    <option value="low">Низкая</option>
+                    <option value="normal">Нормальная</option>
+                    <option value="high">Высокая</option>
+                  </select>
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setFocusDropdownOpen((prev) => !prev)}
+                    className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  >
+                    Фокусы: {deepFocusAreas.length}
+                  </button>
+                  {focusDropdownOpen && (
+                    <div className="absolute right-0 z-10 mt-1 w-64 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+                      {focusOptions.map((option) => (
+                        <label
+                          key={option.key}
+                          className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={deepFocusAreas.includes(option.key)}
+                            onChange={() => toggleFocus(option.key)}
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="mt-2 text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
+              Окно истории: {deepMeta?.historyDays || 0} дней. Сравнений с историей:{" "}
+              {deepMeta?.comparisonCoverage?.comparableEmployees ?? 0}/
+              {deepMeta?.comparisonCoverage?.totalEmployees ?? deepEmployees.length}.
+            </div>
+            {deepMeta?.warning === "INSUFFICIENT_HISTORY_FOR_WEEKDAY_COMPARISON" && (
+              <div className="mt-1 text-[10px] sm:text-xs text-amber-600 dark:text-amber-400">
+                Для выбранной глубины пока мало истории по тем же дням недели, поэтому часть
+                метрик сравнения не меняется.
+              </div>
+            )}
+            <div className="mt-4 w-full max-w-full overflow-x-auto">
+              <table className="w-full min-w-[1100px] text-left text-xs sm:text-sm">
                 <thead className="text-[10px] sm:text-xs uppercase text-gray-500 dark:text-gray-400">
                   <tr>
                     <th className="py-2 pr-3">Сотрудник</th>
                     <th className="py-2 pr-3">Риск</th>
                     <th className="py-2 pr-3">Тренд</th>
                     <th className="py-2 pr-3">Возвраты</th>
+                    <th className="py-2 pr-3">Сравнение (дни/магазин)</th>
                     <th className="py-2 pr-3">Причина</th>
                     <th className="py-2 pr-3">Рекомендация</th>
                   </tr>
@@ -325,6 +968,35 @@ export default function AiDirectorPage() {
                           : `${(row.revenueTrendPct * 100).toFixed(1)}%`}
                       </td>
                       <td className="py-2 pr-3">{row.refundRatePct.toFixed(1)}%</td>
+                      <td className="py-2 pr-3">
+                        {(row.fairComparison?.summary.avgVsPeersPct ??
+                          row.comparison?.summary.avgVsPeersPct) == null ? (
+                          "—"
+                        ) : (
+                          <div className="leading-tight">
+                            <div>
+                              к похожим сменам:{" "}
+                              {(
+                                ((row.fairComparison?.summary.avgVsPeersPct ??
+                                  row.comparison?.summary.avgVsPeersPct) as number) * 100
+                              ).toFixed(1)}
+                              %
+                            </div>
+                            <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
+                              слабый слот:{" "}
+                              {row.fairComparison?.summary.weakestSegment
+                                ? `${dayLabels[row.fairComparison.summary.weakestSegment.weekday]}, ${
+                                    ["00-06", "06-12", "12-18", "18-24"][
+                                      row.fairComparison.summary.weakestSegment.hourBucket
+                                    ]
+                                  }`
+                                : row.comparison?.summary.weakestWeekday == null
+                                  ? "—"
+                                  : dayLabels[row.comparison.summary.weakestWeekday]}
+                            </div>
+                          </div>
+                        )}
+                      </td>
                       <td className="py-2 pr-3">{row.reasons?.[0] || "—"}</td>
                       <td className="py-2 pr-3">
                         {row.recommendations?.[0] || "Продолжать текущую модель продаж"}
@@ -333,7 +1005,7 @@ export default function AiDirectorPage() {
                   ))}
                   {deepEmployees.length === 0 && !loading && (
                     <tr>
-                      <td className="py-3 text-gray-500 dark:text-gray-400" colSpan={6}>
+                      <td className="py-3 text-gray-500 dark:text-gray-400" colSpan={7}>
                         Нет данных.
                       </td>
                     </tr>

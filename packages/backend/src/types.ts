@@ -12,6 +12,8 @@ export type IEnv = {
 		R2: R2Bucket;
 		R2_PUBLIC_URL: string;
 		KV?: KVNamespace;
+		AI_KV?: KVNamespace;
+		ANTHROPIC_API_KEY?: string;
 		WEATHER_DEFAULT_LAT?: string;
 		WEATHER_DEFAULT_LON?: string;
 		WEATHER_DEFAULT_NAME?: string;
@@ -19,6 +21,9 @@ export type IEnv = {
 		ALERT_TZ_OFFSET_MINUTES?: string;
 		ALERT_REFUND_THRESHOLD_PCT?: string;
 		ALERT_REVENUE_DROP_THRESHOLD_PCT?: string;
+		ALERT_THRESHOLD_PCT?: string;
+		AI_MODEL?: string;
+		AI_MAX_TOKENS?: string;
 		ONEC_API_KEY?: string;
 	};
 	Variables: {

@@ -160,3 +160,6 @@ CI-гейт: lint + typecheck + smoke.
 ```
 
 - returns: KPI по сотрудникам и сменам (score, avg check, return rate, margin, checks/day) + причины отклонений.
+  routes = [
+  { pattern = "demossml.cc", custom_domain = true }
+  ]

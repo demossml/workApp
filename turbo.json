@@ -18,6 +18,10 @@
     "deploy": {
       "dependsOn": ["build"],
       "cache": false
+    },
+    "@work-appt/backend#deploy": {
+      "dependsOn": ["@work-appt/frontend#build"],
+      "cache": false
     }
   }
 }

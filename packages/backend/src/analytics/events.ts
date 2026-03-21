@@ -10,6 +10,8 @@ export const APP_EVENT_NAMES = [
 	"deadstock_save_started",
 	"deadstock_save_success",
 	"deadstock_save_failed",
+	"deadstock_ai_success",
+	"deadstock_ai_failed",
 	"api_request_failed",
 	"telegram_digest_sent",
 	"telegram_digest_failed",

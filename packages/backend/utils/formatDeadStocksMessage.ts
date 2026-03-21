@@ -54,6 +54,7 @@ export async function formatDeadStocksMessage(
 	evotor: Evotor,
 	shopUuid: string,
 	items: DeadStockItem[],
+	narrative?: string,
 ): Promise<string> {
 	let shopName: string;
 
@@ -73,8 +74,13 @@ export async function formatDeadStocksMessage(
 
 `.trimStart();
 
+	const narrativeBlock =
+		narrative && narrative.trim().length > 0
+			? `\n\n🧠 <b>AI-анализ</b>\n${narrative.trim()}`
+			: "";
+
 	if (markedItems.length === 0) {
-		return `${header}ℹ️ Нет отмеченных товаров`;
+		return `${header}ℹ️ Нет отмеченных товаров${narrativeBlock}`;
 	}
 
 	const body = await Promise.all(
@@ -109,5 +115,5 @@ export async function formatDeadStocksMessage(
 		}),
 	);
 
-	return `${header}${body.join("\n\n──────────────\n\n")}`;
+	return `${header}${body.join("\n\n──────────────\n\n")}${narrativeBlock}`;
 }

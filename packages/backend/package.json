@@ -4,13 +4,21 @@
 	"private": true,
 	"main": "src/index.ts",
 	"scripts": {
+		"build": "tsc --noEmit",
+		"test:index": "node -r esbuild-register --test src/index.scheduled.test.cjs",
+		"test:shift-summary": "node -r esbuild-register --test src/services/shiftSummary.test.cjs",
+		"test:tempo-alerts": "node -r esbuild-register --test src/telegram/tempoAlerts.test.cjs",
+		"test:dead-stocks": "node -r esbuild-register --test src/ai/deadStocksNarrative.test.cjs utils/formatDeadStocksMessage.test.cjs",
+		"test:kpi-narrative": "node -r esbuild-register --test src/ai/employeeKpiNarrative.test.cjs",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
 		"deploy": "wrangler deploy",
+		"deploy:debug": "WRANGLER_LOG=debug wrangler deploy",
+		"deploy:dry-run": "WRANGLER_LOG=debug wrangler deploy --dry-run",
+		"whoami": "wrangler whoami",
 		"db:generate": "drizzle-kit generate",
 		"db:apply-local": "wrangler d1 migrations apply DB --local",
-		"db:apply-remote": "wrangler d1 migrations apply DB --remote"
-		,
+		"db:apply-remote": "wrangler d1 migrations apply DB --remote",
 		"db:seed-local": "wrangler d1 execute DB --local --file ./scripts/seed-local.sql",
 		"db:prepare-local": "pnpm db:apply-local && pnpm db:seed-local"
 	},
@@ -23,7 +31,7 @@
 		"hono": "^4.6.20",
 		"prettier": "^3.3.3",
 		"typescript": "^5.5.2",
-		"wrangler": "^4.39.0"
+		"wrangler": "^4.76.0"
 	},
 	"dependencies": {
 		"@cloudflare/ai": "^1.2.2",
