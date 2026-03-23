@@ -3,12 +3,15 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
 import { client } from "../helpers/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateUserQueries } from "@shared/api";
 
 interface RegisterUserProps {
   onRegister: (id: string) => void;
 }
 
 export function RegisterUser({ onRegister }: RegisterUserProps) {
+  const queryClient = useQueryClient();
   const [telegramId, setTelegramId] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -32,6 +35,7 @@ export function RegisterUser({ onRegister }: RegisterUserProps) {
 
       if (data.success) {
         localStorage.setItem("telegramId", telegramId);
+        await invalidateUserQueries(queryClient);
         onRegister(telegramId);
         window.location.href = "/";
       } else {

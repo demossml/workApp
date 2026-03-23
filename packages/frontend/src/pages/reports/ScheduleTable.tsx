@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import ScheduleTableView from "../../components/ScheduleTableView";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateScheduleQueries } from "@shared/api";
 
 interface Shop {
   uuid: string;
@@ -29,6 +31,7 @@ interface ScheduleTableEntry {
 }
 
 const ScheduleTable: React.FC = () => {
+  const queryClient = useQueryClient();
   const currentDate = new Date();
   const [month, setMonth] = useState(currentDate.getMonth() + 1);
   const [year, setYear] = useState(currentDate.getFullYear());
@@ -166,6 +169,7 @@ const ScheduleTable: React.FC = () => {
 
       const data = await response.json();
       setScheduleTable(data.scheduleTable || []);
+      await invalidateScheduleQueries(queryClient);
     } catch (error) {
       console.error("Ошибка сохранения:", error);
       alert("Ошибка при сохранении табеля");

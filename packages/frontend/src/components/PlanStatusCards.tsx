@@ -12,27 +12,13 @@ import { useGetReportAndPlan } from "../hooks/useReportData";
 import { useGetShopNames } from "../hooks/useGetShopNames";
 import { useWorkingByShops } from "../hooks/useApi";
 import { isTelegramMiniApp, telegram } from "../helpers/telegram";
-
-// Интерфейс для данных плана
-interface PlanInfo {
-  datePlan: number;
-  dataSales: number;
-  dataQuantity?: Record<string, number | string>;
-}
-
-// Форматирование суммы
-const formatAmount = (amount: number): string => {
-  return new Intl.NumberFormat("ru-RU", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(amount);
-};
-
-// Расчет процента выполнения плана
-const calculateProgress = (actual: number, plan: number): number => {
-  if (plan === 0) return 0;
-  return (actual / plan) * 100;
-};
+import {
+  buildPlanCards,
+  buildSellerByShop,
+  formatPlanAmount,
+  getRenderShopNames,
+  type PlanInfo,
+} from "@features/dashboard/model/planStatusModel";
 
 export default function PlanStatusCards() {
   const { data: shopNames = [], isLoading: shopsLoading } = useGetShopNames();
@@ -61,69 +47,16 @@ export default function PlanStatusCards() {
   );
 
   const renderShopNames = useMemo(() => {
-    if (shopNames.length > 0) return shopNames;
-    return Object.keys(planData);
+    return getRenderShopNames(shopNames, planData);
   }, [shopNames, planData]);
 
   const sellerByShop = useMemo(() => {
-    const byShop = (workingByShopsData as {
+    return buildSellerByShop(workingByShopsData as {
       byShop?: Record<string, { employeeName?: string | null }>;
-    } | undefined)?.byShop;
-    if (!byShop) return {} as Record<string, string | null>;
-    const result: Record<string, string | null> = {};
-    for (const [shopName, data] of Object.entries(byShop)) {
-      result[shopName] = data.employeeName || null;
-    }
-    return result;
+    } | undefined);
   }, [workingByShopsData]);
 
-  const cards = useMemo(() => {
-    return renderShopNames.map((shopName) => {
-      const planInfo = planData[shopName];
-      const plan = planInfo?.datePlan || 0;
-      const sales = planInfo?.dataSales || 0;
-      const planQuantity = planInfo?.dataQuantity ?? null;
-      const progress = calculateProgress(sales, plan);
-      const difference = sales - plan;
-      const isPlanMet = plan > 0 ? sales >= plan : null;
-      const remainingToPlan = plan > sales ? plan - sales : 0;
-
-      let statusColor = "gray";
-      let statusText = "Нет плана";
-      if (plan > 0) {
-        if (isPlanMet) {
-          statusColor = "green";
-          statusText = "Выполнен";
-        } else if (progress >= 70) {
-          statusColor = "yellow";
-          statusText = "Риск";
-        } else {
-          statusColor = "red";
-          statusText = "Критично";
-        }
-      }
-
-      const planQuantityArray = planQuantity
-        ? Object.entries(planQuantity).map(([productName, quantity]) => ({
-            productName,
-            quantity,
-          }))
-        : [];
-
-      return {
-        shopName,
-        plan,
-        sales,
-        progress,
-        difference,
-        isPlanMet,
-        remainingToPlan,
-        statusColor,
-        statusText,
-        planQuantityArray,
-      };
-    });
-  }, [renderShopNames, planData]);
+  const cards = useMemo(() => buildPlanCards(renderShopNames, planData), [renderShopNames, planData]);
 
   if (shopsLoading && renderShopNames.length === 0) {
     return (
@@ -228,7 +161,7 @@ export default function PlanStatusCards() {
                       <div className="h-4 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
                     ) : (
                       <p className="font-bold text-xs text-gray-900 dark:text-white leading-none">
-                        {formatAmount(card.plan)} ₽
+                        {formatPlanAmount(card.plan)} ₽
                       </p>
                     )}
                   </div>
@@ -242,7 +175,7 @@ export default function PlanStatusCards() {
                       <p
                         className={`font-bold text-xs leading-none ${card.isPlanMet ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}
                       >
-                        {formatAmount(card.sales)} ₽
+                        {formatPlanAmount(card.sales)} ₽
                       </p>
                     )}
                   </div>
@@ -259,7 +192,7 @@ export default function PlanStatusCards() {
                       className={`text-[10px] font-bold flex items-center gap-1 ${card.difference >= 0 ? "text-green-600" : "text-red-500"}`}
                     >
                       {card.difference > 0 ? "+" : ""}
-                      {formatAmount(card.difference)}
+                      {formatPlanAmount(card.difference)}
                       {card.difference >= 0 ? (
                         <TrendingUp className="w-3 h-3" />
                       ) : (
@@ -287,7 +220,7 @@ export default function PlanStatusCards() {
                           className={`font-bold ${card.remainingToPlan > 0 ? "text-red-500" : "text-green-600"}`}
                         >
                           {card.remainingToPlan > 0
-                            ? `${formatAmount(card.remainingToPlan)} ₽`
+                            ? `${formatPlanAmount(card.remainingToPlan)} ₽`
                             : "План закрыт"}
                         </span>
                       </div>

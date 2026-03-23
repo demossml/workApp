@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { DateRange } from "react-day-picker";
 import { motion } from "framer-motion";
 import { PeriodSelector } from "../../components/Period";
@@ -9,8 +10,13 @@ import { ErrorDisplay } from "../../components/ErrorDisplay";
 import { GroupSelector } from "../../components/GroupSelector";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
-import { client } from "../../helpers/api";
 import { Button, Calendar, Popover, PopoverContent, PopoverTrigger } from "../../components/ui";
+import {
+  fetchEvotorShops,
+  fetchGroupsByShop,
+  fetchOrderForecast,
+  queryKeys,
+} from "@shared/api";
 
 interface GroupOption {
   name: string;
@@ -25,6 +31,7 @@ interface ReportData {
 }
 
 export default function Orders() {
+  const queryClient = useQueryClient();
   const [shopOptions, setShopOptions] = useState<Record<string, string>>({});
   const [selectedShop, setSelectedShop] = useState<string | null>(null);
   const [groupOptions, setGroupOptions] = useState<GroupOption[]>([]);
@@ -110,13 +117,11 @@ export default function Orders() {
       setIsLoadingShops(true);
       setError(null);
       try {
-        const response = await client.api.evotor.shops.$post({
-          json: { userId },
+        const result = await queryClient.fetchQuery({
+          queryKey: queryKeys.reports.sales.shops(userId),
+          queryFn: () => fetchEvotorShops(userId),
+          staleTime: 5 * 60_000,
         });
-
-        if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
-
-        const result = await response.json();
         setShopOptions(result.shopOptions);
 
         if (Object.keys(result.shopOptions).length > 0) {
@@ -135,23 +140,17 @@ export default function Orders() {
     if (userId) {
       void fetchSalesData();
     }
-  }, [userId]);
+  }, [queryClient, userId]);
 
   const fetchGroups = async (shopUuid: string) => {
     setIsLoadingGroups(true);
     setError(null);
     try {
-      const response = await client.api.evotor["groups-by-shop"].$post({
-        json: { shopUuid },
+      const result = await queryClient.fetchQuery({
+        queryKey: queryKeys.reports.sales.groups(shopUuid),
+        queryFn: () => fetchGroupsByShop(shopUuid),
+        staleTime: 5 * 60_000,
       });
-
-      if (!response.ok) {
-        throw new Error(`Ошибка загрузки групп: ${response.status}`);
-      }
-
-      const result = (await response.json()) as
-        | { groups: GroupOption[] }
-        | { code: string; message: string; details?: unknown };
 
       if (!("groups" in result)) {
         throw new Error(result.message || "Не удалось загрузить группы");
@@ -182,29 +181,26 @@ export default function Orders() {
     setIsLoadingReport(true);
     setError(null);
     try {
-      const response = await client.api.evotor.order.$post({
-        json: {
+      const report = (await queryClient.fetchQuery({
+        queryKey: queryKeys.reports.orders.forecast({
           startDate,
           endDate,
           shopUuid: selectedShop,
           groups: selectedGroups,
           period: selectedPeriod,
           userId,
-        },
-      });
-
-      if (!response.ok) {
-        const err = (await response.json().catch(() => null)) as
-          | Record<string, unknown>
-          | null;
-        const message =
-          (typeof err?.error === "string" ? err.error : undefined) ||
-          (typeof err?.message === "string" ? err.message : undefined) ||
-          `Ошибка: ${response.status}`;
-        throw new Error(message);
-      }
-
-      const report = (await response.json()) as
+        }),
+        queryFn: () =>
+          fetchOrderForecast({
+            startDate,
+            endDate,
+            shopUuid: selectedShop,
+            groups: selectedGroups,
+            period: selectedPeriod,
+            userId,
+          }),
+        staleTime: 60_000,
+      })) as
         | ReportData
         | { code: string; message: string; details?: unknown };
       if (!("order" in report)) {

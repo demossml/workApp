@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ShopSelector } from "../../components/ShopSelector";
 import { GroupSelector } from "../../components/GroupSelector";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
@@ -12,6 +13,7 @@ import { telegram, isTelegramMiniApp } from "../../helpers/telegram";
 import { client } from "../../helpers/api";
 import type { DateRange } from "react-day-picker";
 import { Popover, PopoverContent, PopoverTrigger, Calendar } from "../../components/ui";
+import { fetchEvotorShops, fetchGroupsByShop, queryKeys } from "@shared/api";
 
 interface GroupOption {
   name: string;
@@ -31,6 +33,7 @@ interface SalesReportSavedFilters {
 }
 
 export default function SalesReport() {
+  const queryClient = useQueryClient();
   const [dateMode, setDateMode] = useState<"today" | "yesterday" | "period">(
     "today"
   );
@@ -240,11 +243,12 @@ export default function SalesReport() {
     const fetchSalesData = async () => {
       setIsLoadingShops(true);
       try {
-        const response = await client.api.evotor.shops.$post({
-          json: { userId },
+        const data = await queryClient.fetchQuery({
+          queryKey: queryKeys.reports.sales.shops(userId),
+          queryFn: () => fetchEvotorShops(userId),
+          staleTime: 5 * 60_000,
         });
-        if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
-        const data = await response.json();
+
         setShopOptions(data.shopOptions);
         if (Object.keys(data.shopOptions).length > 0) {
           const availableShopUuids = Object.keys(data.shopOptions);
@@ -265,18 +269,18 @@ export default function SalesReport() {
       }
     };
     if (userId) fetchSalesData();
-  }, [userId]);
+  }, [queryClient, userId]);
 
   // 🔹 Загрузка групп
   const fetchGroups = async (shopUuid: string) => {
     setIsLoadingGroups(true);
     try {
-      const response = await client.api.evotor["groups-by-shop"].$post({
-        json: { shopUuid },
+      const data = await queryClient.fetchQuery({
+        queryKey: queryKeys.reports.sales.groups(shopUuid),
+        queryFn: () => fetchGroupsByShop(shopUuid),
+        staleTime: 5 * 60_000,
       });
-      if (!response.ok)
-        throw new Error(`Ошибка загрузки групп: ${response.status}`);
-      const data = await response.json();
+
       if (
         data &&
         typeof data === "object" &&

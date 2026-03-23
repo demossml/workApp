@@ -25,4 +25,18 @@ export default tseslint.config(
       ],
     },
   }
+  ,
+  {
+    files: ["src/features/ai/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXAttribute[name.name='style']",
+          message:
+            "Inline styles are forbidden in AI feature UI. Use design tokens and classes instead.",
+        },
+      ],
+    },
+  }
 );

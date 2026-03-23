@@ -8,15 +8,10 @@ import {
   Calculator,
   Sparkles,
 } from "lucide-react";
-
-interface QuickAction {
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  path: string;
-  color: string;
-  roles: string[];
-}
+import {
+  getAvailableQuickActions,
+  type QuickActionModel,
+} from "@features/dashboard/model/quickActionsModel";
 
 interface QuickActionsProps {
   employeeRole: string;
@@ -25,68 +20,26 @@ interface QuickActionsProps {
 export default function QuickActions({ employeeRole }: QuickActionsProps) {
   const navigate = useNavigate();
 
-  const actions: QuickAction[] = [
-    {
-      title: "Открытие магазина",
-      description: "Зафиксировать открытие",
-      icon: <DoorOpen className="w-6 h-6" />,
-      path: "/evotor/open-store",
-      color: "from-green-500 to-green-600",
-      roles: ["CASHIER", "ADMIN", "SUPERADMIN"],
-    },
-    {
-      title: "Мертвые остатки",
-      description: "Проверить товары",
-      icon: <Package className="w-6 h-6" />,
-      path: "/evotor/dead-stock",
-      color: "from-purple-500 to-purple-600",
-      roles: ["ADMIN", "SUPERADMIN"],
-    },
-    {
-      title: "Отчет по продажам",
-      description: "Просмотр продаж",
-      icon: <FileText className="w-6 h-6" />,
-      path: "/evotor/sales-report",
-      color: "from-blue-500 to-blue-600",
-      roles: ["ADMIN", "SUPERADMIN"],
-    },
-    {
-      title: "Прогноз закупки",
-      description: "SMA заказы",
-      icon: <TrendingUp className="w-6 h-6" />,
-      path: "/evotor/orders",
-      color: "from-orange-500 to-orange-600",
-      roles: ["ADMIN", "SUPERADMIN"],
-    },
-    {
-      title: "Открытия ТТ",
-      description: "Сводка по открытиям",
-      icon: <Store className="w-6 h-6" />,
-      path: "/evotor/store-openings-admin",
-      color: "from-teal-500 to-cyan-600",
-      roles: ["SUPERADMIN"],
-    },
-    {
-      title: "Расчеты прибыли",
-      description: "Валовая и чистая",
-      icon: <Calculator className="w-6 h-6" />,
-      path: "/evotor/profit",
-      color: "from-emerald-500 to-teal-600",
-      roles: ["ADMIN", "SUPERADMIN"],
-    },
-    {
-      title: "AI Директор",
-      description: "Сводка и рекомендации",
-      icon: <Sparkles className="w-6 h-6" />,
-      path: "/ai/director",
-      color: "from-slate-700 to-slate-900",
-      roles: ["ADMIN", "SUPERADMIN"],
-    },
-  ];
+  const availableActions = getAvailableQuickActions(employeeRole);
 
-  const availableActions = actions.filter((action) =>
-    action.roles.includes(employeeRole)
-  );
+  const getActionIcon = (action: QuickActionModel) => {
+    switch (action.iconKey) {
+      case "door_open":
+        return <DoorOpen className="w-6 h-6" />;
+      case "package":
+        return <Package className="w-6 h-6" />;
+      case "file_text":
+        return <FileText className="w-6 h-6" />;
+      case "trending_up":
+        return <TrendingUp className="w-6 h-6" />;
+      case "store":
+        return <Store className="w-6 h-6" />;
+      case "calculator":
+        return <Calculator className="w-6 h-6" />;
+      case "sparkles":
+        return <Sparkles className="w-6 h-6" />;
+    }
+  };
 
   if (availableActions.length === 0) return null;
 
@@ -103,7 +56,7 @@ export default function QuickActions({ employeeRole }: QuickActionsProps) {
             className={`bg-gradient-to-br ${action.color} text-white p-4 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95`}
           >
             <div className="flex flex-col items-center text-center gap-2">
-              {action.icon}
+              {getActionIcon(action)}
               <div>
                 <div className="font-semibold text-sm">{action.title}</div>
                 <div className="text-xs opacity-80 mt-1">

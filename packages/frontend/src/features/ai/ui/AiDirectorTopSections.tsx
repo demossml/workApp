@@ -1,5 +1,5 @@
-import React from "react";
 import type { AiDirectorPageModel } from "@features/ai/hooks/useAiDirectorPageModel";
+import { AlertCard, Badge, Button, Card, Select, StatCard, Textarea } from "@shared/ui";
 
 type Props = {
   model: AiDirectorPageModel;
@@ -31,9 +31,15 @@ export function AiDirectorTopSections({ model }: Props) {
     kpiNarrativeSections,
   } = model;
 
+  const systemBadgeTone = systemStatus.label.toLowerCase().includes("крит")
+    ? "danger"
+    : systemStatus.label.toLowerCase().includes("проблем")
+      ? "warning"
+      : "success";
+
   return (
     <>
-      <section className="order-1 w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-1 w-full min-w-0 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
@@ -43,97 +49,69 @@ export function AiDirectorTopSections({ model }: Props) {
               Персона: <span className="font-medium">Алексей, операционный директор</span>
             </div>
           </div>
-          <div
-            className={`rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold ${systemStatus.tone} ${systemStatus.bg}`}
-          >
+          <Badge tone={systemBadgeTone} className="px-3 py-2 text-xs sm:text-sm font-semibold">
             {systemStatus.icon} {systemStatus.label}
-          </div>
+          </Badge>
         </div>
-      </section>
+      </Card>
 
-      <section className="order-2 w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-2 w-full min-w-0 p-4 sm:p-5">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
           KPI
         </h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-4">
-          <div className="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
-            <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
-              Выручка сети
-            </div>
-            <div className="mt-1 text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-100">
-              {Math.round(topKpi.totalRevenue).toLocaleString("ru-RU")} ₽
-            </div>
-          </div>
-          <div className="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
-            <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
-              Чеки
-            </div>
-            <div className="mt-1 text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-100">
-              {topKpi.totalChecks}
-            </div>
-          </div>
-          <div className="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
-            <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
-              Средний чек
-            </div>
-            <div className="mt-1 text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-100">
-              {Math.round(topKpi.avgCheck).toLocaleString("ru-RU")} ₽
-            </div>
-          </div>
-          <div className="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
-            <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
-              Зона внимания
-            </div>
-            <div className="mt-1 text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-100">
-              {topKpi.weakShops}
-            </div>
-          </div>
+          <StatCard
+            label="Выручка сети"
+            value={`${Math.round(topKpi.totalRevenue).toLocaleString("ru-RU")} ₽`}
+          />
+          <StatCard label="Чеки" value={topKpi.totalChecks} />
+          <StatCard
+            label="Средний чек"
+            value={`${Math.round(topKpi.avgCheck).toLocaleString("ru-RU")} ₽`}
+          />
+          <StatCard label="Зона внимания" value={topKpi.weakShops} tone="warning" />
         </div>
-      </section>
+      </Card>
 
-      <section className="order-3 w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-3 w-full min-w-0 p-4 sm:p-5">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
           Проблемы
         </h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-900/70 dark:bg-red-950/20">
-            <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">
-              Критичные сигналы
-            </div>
-            <div className="mt-1 text-sm font-semibold text-red-900 dark:text-red-100">
-              {problemsSummary.criticalAlerts.length}
-            </div>
-            <div className="mt-1 text-xs text-red-800 dark:text-red-200">
-              {problemsSummary.criticalAlerts[0]?.message
+          <AlertCard
+            title="Критичные сигналы"
+            severity="critical"
+            value={problemsSummary.criticalAlerts.length}
+            description={
+              problemsSummary.criticalAlerts[0]?.message
                 ? problemsSummary.criticalAlerts[0].message.slice(0, 120)
-                : "Критичных алертов не обнаружено"}
-            </div>
-          </div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/70 dark:bg-amber-950/20">
-            <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-              Зоны риска
-            </div>
-            <div className="mt-1 text-sm font-semibold text-amber-900 dark:text-amber-100">
-              {problemsSummary.riskyEmployees.length}
-            </div>
-            <div className="mt-1 text-xs text-amber-800 dark:text-amber-200">
-              Высокий риск у сотрудников и смен. Возвраты &gt; 5%:{" "}
-              {problemsSummary.highRefundEmployees.length}
-            </div>
-          </div>
+                : "Критичных алертов не обнаружено"
+            }
+          />
+          <AlertCard
+            title="Зоны риска"
+            severity="warning"
+            value={problemsSummary.riskyEmployees.length}
+            description={
+              <>
+                Высокий риск у сотрудников и смен. Возвраты &gt; 5%:{" "}
+                {problemsSummary.highRefundEmployees.length}
+              </>
+            }
+          />
         </div>
-      </section>
+      </Card>
 
-      <section className="order-4 w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-4 w-full min-w-0 p-4 sm:p-5">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
           Рекомендации от директора
         </h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           {directorDecisions.length > 0 ? (
             directorDecisions.map((item, idx) => (
-              <div
+              <Card
                 key={`${item.employeeName}-${idx}`}
-                className="rounded-xl border border-gray-200 p-3 dark:border-gray-800"
+                className="p-3"
               >
                 <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
                   Риск: {item.risk}/100
@@ -147,25 +125,27 @@ export function AiDirectorTopSections({ model }: Props) {
                 <div className="mt-1 text-xs text-gray-700 dark:text-gray-300">
                   <span className="font-medium">Действие:</span> {item.action}
                 </div>
-              </div>
+              </Card>
             ))
           ) : (
-            <div className="rounded-xl border border-gray-200 p-3 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400 sm:col-span-3">
+            <Card className="p-3 text-xs text-gray-500 dark:text-gray-400 sm:col-span-3">
               AI пока не выявил критичных решений.
-            </div>
+            </Card>
           )}
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {["Исправить", "Создать задачу", "Отправить сотруднику", "Изменить цену"].map(
             (action) => (
-              <button
+              <Button
                 key={action}
                 type="button"
                 onClick={() => handleQuickAction(action)}
-                className="rounded-lg border border-gray-300 bg-white px-3 py-1 text-[11px] sm:text-xs font-medium text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                variant="secondary"
+                size="sm"
+                className="text-[11px] sm:text-xs font-medium"
               >
                 {action}
-              </button>
+              </Button>
             ),
           )}
         </div>
@@ -174,36 +154,47 @@ export function AiDirectorTopSections({ model }: Props) {
             {quickActionNote}
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="order-5 w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-5 w-full min-w-0 p-4 sm:p-5">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
           История решений AI
         </h2>
         <div className="mt-3 space-y-2">
           {decisionsLog.length > 0 ? (
             decisionsLog.map((item) => (
-              <div
+              <Card
                 key={item.id}
-                className="rounded-xl border border-gray-200 p-3 text-xs sm:text-sm dark:border-gray-800"
+                className="p-3 text-xs sm:text-sm"
               >
-                <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
+                <div className="flex items-center gap-2 text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
                   {item.when} · {item.type} · {item.severity}
+                  <Badge
+                    tone={
+                      item.severity === "critical"
+                        ? "danger"
+                        : item.severity === "warning"
+                          ? "warning"
+                          : "info"
+                    }
+                  >
+                    {item.severity}
+                  </Badge>
                 </div>
                 <div className="mt-1 line-clamp-2 whitespace-pre-line text-gray-800 dark:text-gray-100">
                   {item.text}
                 </div>
-              </div>
+              </Card>
             ))
           ) : (
-            <div className="rounded-xl border border-gray-200 p-3 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
+            <Card className="p-3 text-xs text-gray-500 dark:text-gray-400">
               История решений пока пуста.
-            </div>
+            </Card>
           )}
         </div>
-      </section>
+      </Card>
 
-      <section className="order-6 w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-6 w-full min-w-0 p-4 sm:p-5">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
           KPI Narrative
         </h2>
@@ -213,10 +204,10 @@ export function AiDirectorTopSections({ model }: Props) {
             : "Сводка по KPI сотрудников"}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <select
+          <Select
             value={kpiSelectedShopUuid}
             onChange={(e) => setKpiSelectedShopUuid(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+            className="h-8 w-auto px-2 text-[11px] sm:text-xs"
           >
             <option value="" disabled>
               Выберите магазин
@@ -226,15 +217,16 @@ export function AiDirectorTopSections({ model }: Props) {
                 {row.shopName}
               </option>
             ))}
-          </select>
-          <button
+          </Select>
+          <Button
             type="button"
             onClick={handleRefreshKpiNarrative}
             disabled={!kpiSelectedShopUuid || kpiNarrativeLoading}
-            className="rounded-lg bg-black px-3 py-1 text-[11px] sm:text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black"
+            size="sm"
+            className="text-[11px] sm:text-xs font-semibold"
           >
             {kpiNarrativeLoading ? "Обновляю..." : "Перегенерировать"}
-          </button>
+          </Button>
           {kpiNarrativeError && (
             <span className="text-[11px] sm:text-xs text-red-600 dark:text-red-400">
               {kpiNarrativeError}
@@ -299,28 +291,28 @@ export function AiDirectorTopSections({ model }: Props) {
             AI-нарратив пока недоступен. Числовые KPI продолжают работать в штатном режиме.
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="order-last w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-last w-full min-w-0 p-4 sm:p-5">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
           Чат с директором (опционально)
         </h2>
         <div className="mt-3 flex flex-col gap-3">
-          <textarea
-            className="min-h-[90px] w-full rounded-xl border border-gray-300 p-3 text-xs sm:text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:focus:ring-gray-200"
+          <Textarea
+            className="min-h-[90px] text-xs sm:text-sm"
             placeholder="Например: почему упали продажи?"
             value={chatMessage}
             onChange={(e) => setChatMessage(e.target.value)}
           />
           <div className="flex items-center gap-3">
-            <button
+            <Button
               type="button"
               onClick={handleChat}
               disabled={chatLoading}
-              className="rounded-xl bg-black px-4 py-2 text-xs sm:text-sm font-semibold text-white disabled:opacity-60 dark:bg-white dark:text-black"
+              className="text-xs sm:text-sm font-semibold"
             >
               {chatLoading ? "Думаю..." : "Спросить"}
-            </button>
+            </Button>
             {chatError && <span className="text-sm text-red-600 dark:text-red-400">{chatError}</span>}
           </div>
           {chatReply && (
@@ -329,7 +321,7 @@ export function AiDirectorTopSections({ model }: Props) {
             </div>
           )}
         </div>
-      </section>
+      </Card>
     </>
   );
 }

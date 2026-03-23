@@ -6,6 +6,8 @@ import { Check, Camera, DollarSign, AlertCircle } from "lucide-react";
 import { client } from "../../helpers/api";
 import { clearProgress } from "../../helpers/openingProgress";
 import { trackEvent } from "../../helpers/analytics";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateDashboardQueries } from "@shared/api";
 
 interface InitialStepProps {
   setCurrentStep: React.Dispatch<React.SetStateAction<StoreOpeningStep>>;
@@ -29,6 +31,7 @@ export default function InitialStep({
   selectedShop,
   userName,
 }: InitialStepProps) {
+  const queryClient = useQueryClient();
   const [isStarting, setIsStarting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -85,6 +88,10 @@ export default function InitialStep({
       void trackEvent("open_store_success", {
         shopUuid: selectedShop,
       });
+      await Promise.all([
+        invalidateDashboardQueries(queryClient),
+        queryClient.invalidateQueries({ queryKey: ["isOpenStore"] }),
+      ]);
 
       setCurrentStep("photos");
     } catch (error) {

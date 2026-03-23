@@ -6,6 +6,8 @@ import type {
   CashDiscrepancyData,
 } from "../../pages/opening/types";
 import { client } from "../../helpers/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateDashboardQueries } from "@shared/api";
 
 interface CashCheckStepProps {
   setCurrentStep: React.Dispatch<React.SetStateAction<StoreOpeningStep>>;
@@ -18,6 +20,7 @@ export default function CashCheckStep({
   userId,
   selectedShop,
 }: CashCheckStepProps) {
+  const queryClient = useQueryClient();
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -57,6 +60,10 @@ export default function CashCheckStep({
       if (!response.ok) {
         throw new Error(`Ошибка завершения открытия: ${response.status}`);
       }
+      await Promise.all([
+        invalidateDashboardQueries(queryClient),
+        queryClient.invalidateQueries({ queryKey: ["isOpenStore"] }),
+      ]);
 
       setCurrentStep("initial");
     } catch (error) {

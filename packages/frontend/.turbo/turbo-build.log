@@ -5,47 +5,29 @@
 
 [36mvite v5.4.20 [32mbuilding for production...[36m[39m
 [baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
-[2K[1Gtransforming (1) [2mindex.html[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1GBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2K[1Gtransforming (1) [2mindex.html[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1GBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
   npx update-browserslist-db@latest
   Why you should do it regularly: https://github.com/browserslist/update-db#readme
-[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (26) [2m../../node_modules/react/index.js[22m[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (57) [2msrc/hooks/useTelegramFullscreenLayout.ts[22m[2K[1G[2K[1G[2K[1Gtransforming (83) [2msrc/pages/reports/SalesTodayReport.tsx[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (407) [2m../../node_modules/react-dom/cjs/react-dom.production.min.js[22m[2K[1Gtransforming (409) [2m../../node_modules/hono/dist/client/index.js[22m[2K[1Gtransforming (1427) [2m../../node_modules/lucide-react/dist/esm/icons/layout-panel-left.js[22m[2K[1Gtransforming (2127) [2m../../node_modules/framer-motion/dist/es/value/scroll/use-viewport-scroll.mjs[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2501) [2msrc/components/dashboard/cards/FinancialReportDetails.tsx[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2923) [2m../../node_modules/date-fns/locale/fa-IR/_lib/match.js[22m[2K[1G[2K[1G[2K[1G[32m✓[39m 3233 modules transformed.
-[2K[1Grendering chunks (1)...[2K[1Grendering chunks (2)...[2K[1Grendering chunks (3)...[2K[1Grendering chunks (4)...[2K[1Grendering chunks (5)...[2K[1Grendering chunks (6)...[2K[1Grendering chunks (7)...[2K[1Grendering chunks (8)...[2K[1Grendering chunks (9)...[2K[1Grendering chunks (10)...[2K[1Grendering chunks (11)...[2K[1Grendering chunks (12)...[2K[1Grendering chunks (13)...[2K[1Grendering chunks (14)...[2K[1Grendering chunks (15)...[2K[1Grendering chunks (16)...[2K[1Grendering chunks (17)...[2K[1Grendering chunks (18)...[2K[1Grendering chunks (19)...[2K[1Grendering chunks (20)...[2K[1Grendering chunks (21)...[2K[1Grendering chunks (22)...[2K[1Grendering chunks (23)...[2K[1Grendering chunks (24)...[2K[1G[2K[1Gcomputing gzip size (0)...[2K[1Gcomputing gzip size (1)...[2K[1Gcomputing gzip size (2)...[2K[1Gcomputing gzip size (3)...[2K[1Gcomputing gzip size (4)...[2K[1Gcomputing gzip size (5)...[2K[1Gcomputing gzip size (6)...[2K[1Gcomputing gzip size (7)...[2K[1Gcomputing gzip size (8)...[2K[1Gcomputing gzip size (9)...[2K[1Gcomputing gzip size (10)...[2K[1Gcomputing gzip size (11)...[2K[1Gcomputing gzip size (12)...[2K[1Gcomputing gzip size (13)...[2K[1Gcomputing gzip size (14)...[2K[1Gcomputing gzip size (15)...[2K[1Gcomputing gzip size (16)...[2K[1Gcomputing gzip size (17)...[2K[1Gcomputing gzip size (18)...[2K[1Gcomputing gzip size (19)...[2K[1Gcomputing gzip size (20)...[2K[1Gcomputing gzip size (21)...[2K[1Gcomputing gzip size (22)...[2K[1Gcomputing gzip size (23)...[2K[1Gcomputing gzip size (24)...[2K[1Gcomputing gzip size (25)...[2K[1Gcomputing gzip size (26)...[2K[1G[2mdist/[22m[32mmanifest.webmanifest                            [39m[1m[2m  0.43 kB[22m[1m[22m
-[2mdist/[22m[32mindex.html                                      [39m[1m[2m  0.96 kB[22m[1m[22m[2m │ gzip:   0.58 kB[22m
-[2mdist/[22m[2massets/[22m[35mindex-B0lVGWF2.css                       [39m[1m[2m 94.05 kB[22m[1m[22m[2m │ gzip:  15.51 kB[22m
-[2mdist/[22m[2massets/[22m[36mcheck-DKPqAZkU.js                        [39m[1m[2m  0.30 kB[22m[1m[22m[2m │ gzip:   0.25 kB[22m
-[2mdist/[22m[2massets/[22m[36museSimpleTelegramBackButton-CugGqWLm.js  [39m[1m[2m  0.56 kB[22m[1m[22m[2m │ gzip:   0.38 kB[22m
-[2mdist/[22m[2massets/[22m[36mPlanSalesReport-5Lhv2wZG.js              [39m[1m[2m  2.29 kB[22m[1m[22m[2m │ gzip:   1.13 kB[22m
-[2mdist/[22m[2massets/[22m[36mSchedulesReport-DB-oWR0m.js              [39m[1m[2m  2.33 kB[22m[1m[22m[2m │ gzip:   0.88 kB[22m
-[2mdist/[22m[2massets/[22m[36mSalesTodayReport-DCq-Pa_R.js             [39m[1m[2m  2.36 kB[22m[1m[22m[2m │ gzip:   1.04 kB[22m
-[2mdist/[22m[2massets/[22m[36mStaffRatingsReport-DUpn0Oft.js           [39m[1m[2m  2.87 kB[22m[1m[22m[2m │ gzip:   1.47 kB[22m
-[2mdist/[22m[2massets/[22m[36mQuantityTable-Cfkm_skL.js                [39m[1m[2m  3.12 kB[22m[1m[22m[2m │ gzip:   1.50 kB[22m
-[2mdist/[22m[2massets/[22m[36mDynamicTable-7RdSWPAo.js                 [39m[1m[2m  3.86 kB[22m[1m[22m[2m │ gzip:   1.73 kB[22m
-[2mdist/[22m[2massets/[22m[36mStoreOpeningReport-C-lQm6iw.js           [39m[1m[2m  4.85 kB[22m[1m[22m[2m │ gzip:   1.75 kB[22m
-[2mdist/[22m[2massets/[22m[36mworkbox-window.prod.es5-B9K5rw8f.js      [39m[1m[2m  5.72 kB[22m[1m[22m[2m │ gzip:   2.36 kB[22m
-[2mdist/[22m[2massets/[22m[36mSalaryReport-Bw-aqFK3.js                 [39m[1m[2m  7.84 kB[22m[1m[22m[2m │ gzip:   2.61 kB[22m
-[2mdist/[22m[2massets/[22m[36muse-spring-5Z6UN3hm.js                   [39m[1m[2m  7.92 kB[22m[1m[22m[2m │ gzip:   3.33 kB[22m
-[2mdist/[22m[2massets/[22m[36mSettings-s4U3UKWc.js                     [39m[1m[2m  8.69 kB[22m[1m[22m[2m │ gzip:   2.76 kB[22m
-[2mdist/[22m[2massets/[22m[36mSalestReportForThePeriod-CfMh04vE.js     [39m[1m[2m  8.98 kB[22m[1m[22m[2m │ gzip:   3.02 kB[22m
-[2mdist/[22m[2massets/[22m[36mOrders-CMJqwx4E.js                       [39m[1m[2m  9.07 kB[22m[1m[22m[2m │ gzip:   3.45 kB[22m
-[2mdist/[22m[2massets/[22m[36mStoreOpeningsAdminReport-ksyX0aE9.js     [39m[1m[2m 10.41 kB[22m[1m[22m[2m │ gzip:   3.41 kB[22m
-[2mdist/[22m[2massets/[22m[36mGroupSelector-CZ9mjQJP.js                [39m[1m[2m 10.85 kB[22m[1m[22m[2m │ gzip:   2.47 kB[22m
-[2mdist/[22m[2massets/[22m[36mProfitReportPage-B8KzNeol.js             [39m[1m[2m 12.65 kB[22m[1m[22m[2m │ gzip:   4.14 kB[22m
-[2mdist/[22m[2massets/[22m[36mDeadStock-ChMUpy8J.js                    [39m[1m[2m 13.10 kB[22m[1m[22m[2m │ gzip:   4.75 kB[22m
-[2mdist/[22m[2massets/[22m[36mSaveAsJpegButton-CxVdqpbR.js             [39m[1m[2m 16.36 kB[22m[1m[22m[2m │ gzip:   6.74 kB[22m
-[2mdist/[22m[2massets/[22m[36mSaleRepor-Z86A0A3e.js                    [39m[1m[2m 19.07 kB[22m[1m[22m[2m │ gzip:   5.59 kB[22m
-[2mdist/[22m[2massets/[22m[36mSalarysReport-Dl8FL11N.js                [39m[1m[2m 31.77 kB[22m[1m[22m[2m │ gzip:  10.74 kB[22m
-[2mdist/[22m[2massets/[22m[36mStoreOpeningPage-CylIE117.js             [39m[1m[2m 32.06 kB[22m[1m[22m[2m │ gzip:  10.04 kB[22m
-[2mdist/[22m[2massets/[22m[36mindex-CEytnUwy.js                        [39m[1m[33m680.45 kB[39m[22m[2m │ gzip: 206.96 kB[22m
-[33m
-(!) Some chunks are larger than 500 kB after minification. Consider:
-- Using dynamic import() to code-split the application
-- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
-- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
-[32m✓ built in 2.21s[39m
+[2K[1Gtransforming (36) [2m../../node_modules/@tanstack/query-core/build/modern/focusManager.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (58) [2m../../node_modules/@tanstack/query-core/build/modern/infiniteQueryBehavior.js[22m[2K[1Gtransforming (77) [2m../../node_modules/react-router/dist/index.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (1075) [2m../../node_modules/lucide-react/dist/esm/icons/image-off.js[22m[2K[1Gtransforming (1817) [2m../../node_modules/motion-utils/dist/es/is-object.mjs[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2028) [2m../../node_modules/@tanstack/query-core/build/modern/queriesObserver.js[22m[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2126) [2m../../node_modules/framer-motion/dist/es/render/components/create-proxy.mjs[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2232) [2m../backend/src/contracts/workingByShops.ts[22m[2K[1G[2K[1Gtransforming (2548) [2m../../node_modules/framer-motion/dist/es/render/svg/use-svg-visual-state.mjs[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2828) [2m../../node_modules/date-fns/locale/af/_lib/formatDistance.js[22m[2K[1G[32m✓[39m 3254 modules transformed.
+[2K[1Grendering chunks (1)...[2K[1Grendering chunks (2)...[2K[1Grendering chunks (3)...[2K[1Grendering chunks (4)...[2K[1Grendering chunks (5)...[2K[1Grendering chunks (6)...[2K[1Grendering chunks (7)...[2K[1Grendering chunks (8)...[2K[1Grendering chunks (9)...[2K[1Grendering chunks (10)...[2K[1Grendering chunks (11)...[2K[1G[2K[1Gcomputing gzip size (0)...[2K[1Gcomputing gzip size (1)...[2K[1Gcomputing gzip size (2)...[2K[1Gcomputing gzip size (3)...[2K[1Gcomputing gzip size (4)...[2K[1Gcomputing gzip size (5)...[2K[1Gcomputing gzip size (6)...[2K[1Gcomputing gzip size (7)...[2K[1Gcomputing gzip size (8)...[2K[1Gcomputing gzip size (9)...[2K[1Gcomputing gzip size (10)...[2K[1Gcomputing gzip size (11)...[2K[1Gcomputing gzip size (12)...[2K[1Gcomputing gzip size (13)...[2K[1G[2mdist/[22m[32mmanifest.webmanifest          [39m[1m[2m  0.43 kB[22m[1m[22m
+[2mdist/[22m[32mindex.html                    [39m[1m[2m  1.58 kB[22m[1m[22m[2m │ gzip:   0.72 kB[22m
+[2mdist/[22m[2massets/[22m[35mindex-QBtVa3eK.css     [39m[1m[2m 99.09 kB[22m[1m[22m[2m │ gzip:  16.41 kB[22m
+[2mdist/[22m[2massets/[22m[36mHome-Cdnud2qq.js       [39m[1m[2m 15.86 kB[22m[1m[22m[2m │ gzip:   5.48 kB[22m
+[2mdist/[22m[2massets/[22m[36mindex-BNo-37B0.js      [39m[1m[2m 16.02 kB[22m[1m[22m[2m │ gzip:   5.40 kB[22m
+[2mdist/[22m[2massets/[22m[36mdeadstock-MIRfY-lX.js  [39m[1m[2m 25.98 kB[22m[1m[22m[2m │ gzip:   7.15 kB[22m
+[2mdist/[22m[2massets/[22m[36mopening-9TNcZiny.js    [39m[1m[2m 36.49 kB[22m[1m[22m[2m │ gzip:  11.40 kB[22m
+[2mdist/[22m[2massets/[22m[36mutils-DWgeA8io.js      [39m[1m[2m 37.26 kB[22m[1m[22m[2m │ gzip:  11.58 kB[22m
+[2mdist/[22m[2massets/[22m[36mradix-SQ409NS5.js      [39m[1m[2m 44.09 kB[22m[1m[22m[2m │ gzip:  14.70 kB[22m
+[2mdist/[22m[2massets/[22m[36mai-BATp6lQ2.js         [39m[1m[2m 47.88 kB[22m[1m[22m[2m │ gzip:  11.64 kB[22m
+[2mdist/[22m[2massets/[22m[36mdashboard-BQbOBXSu.js  [39m[1m[2m 96.03 kB[22m[1m[22m[2m │ gzip:  23.76 kB[22m
+[2mdist/[22m[2massets/[22m[36mreports-B9UbHzDY.js    [39m[1m[2m112.06 kB[22m[1m[22m[2m │ gzip:  26.64 kB[22m
+[2mdist/[22m[2massets/[22m[36mmotion-52bVHVhj.js     [39m[1m[2m124.66 kB[22m[1m[22m[2m │ gzip:  41.48 kB[22m
+[2mdist/[22m[2massets/[22m[36mvendor-DQ5p6qdT.js     [39m[1m[2m395.74 kB[22m[1m[22m[2m │ gzip: 120.23 kB[22m
+[32m✓ built in 2.88s[39m
 
 [36mPWA v1.0.3[39m
 mode      [35mgenerateSW[39m
-precache  [32m27 entries[39m [2m(981.79 KiB)[22m
+precache  [32m14 entries[39m [2m(1043.11 KiB)[22m
 files generated
   [2mdist/sw.js[22m
   [2mdist/workbox-1be04862.js[22m

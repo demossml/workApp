@@ -7,9 +7,11 @@ import {
   useState,
 } from "react";
 import { motion, AnimatePresence, useScroll, useSpring } from "framer-motion";
+import { useQueryClient } from "@tanstack/react-query";
 import { useGetShops } from "../../hooks/useApi";
 import { client } from "../../helpers/api";
 import { trackEvent } from "../../helpers/analytics";
+import { invalidateDashboardQueries } from "@shared/api";
 
 /* ===================== TYPES ===================== */
 
@@ -127,6 +129,7 @@ export const DynamicTableDeadStocks = ({
   data,
   shopUuid,
 }: DynamicTableProps) => {
+  const queryClient = useQueryClient();
   const [items, setItems] = useState<DeadStockItem[]>(data);
   const [filter, setFilter] = useState("all");
   const [showSave, setShowSave] = useState(false);
@@ -228,6 +231,7 @@ export const DynamicTableDeadStocks = ({
         shopUuid,
         props: { itemsCount: changedItems.length },
       });
+      await invalidateDashboardQueries(queryClient);
       setShowSave(false);
 
       // ✅ Переход на главную страницу после сохранения

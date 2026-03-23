@@ -170,7 +170,9 @@ export function useAiDirectorPageModel() {
   const [shiftHistoryShopFilter, setShiftHistoryShopFilter] = useState("all");
   const [shiftHistoryDateFilter, setShiftHistoryDateFilter] = useState("");
   const [alertsHistoryShopFilter, setAlertsHistoryShopFilter] = useState("all");
-  const [alertsHistoryTypeFilter, setAlertsHistoryTypeFilter] = useState("all");
+  const [alertsHistoryTypeFilter, setAlertsHistoryTypeFilter] = useState<
+    "all" | "tempo_alert" | "anomaly" | "dead_stock"
+  >("all");
   const [alertsHistoryDateFilter, setAlertsHistoryDateFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

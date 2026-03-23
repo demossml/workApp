@@ -1,16 +1,11 @@
-import { client } from "../helpers/api";
 import { useQuery } from "@tanstack/react-query";
+import { fetchShopNames, queryKeys } from "@shared/api";
 
 export const useGetShopNames = () =>
   useQuery<string[], Error>({
-    queryKey: ["getShopNames"],
-    queryFn: async () => {
-      const res = await client.api.stores["shops-names"].$get();
-      if (!res.ok) {
-        throw new Error("Ошибка загрузки названий магазинов");
-      }
-      const data = await res.json();
-      return data.shopsName || [];
-    },
-    select: (data) => data || [], // на всякий случай
+    queryKey: queryKeys.stores.shopNames(),
+    queryFn: fetchShopNames,
+    select: (data) => data || [],
+    staleTime: 10 * 60_000,
+    placeholderData: (previousData) => previousData,
   });

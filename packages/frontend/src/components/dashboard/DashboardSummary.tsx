@@ -7,8 +7,6 @@ import { useGetReportAndPlan } from "../../hooks/useReportData";
 import {
   BestShopCard,
   type LeaderMode,
-  type ShopLeaderCardData,
-  type LeaderReason,
 } from "./cards/BestShopCard";
 import { ExpensesCard } from "./cards/ExpensesCard";
 import { RevenueCard } from "./cards/RevenueCard";
@@ -21,7 +19,7 @@ import {
   type AccessoriesSalesData,
 } from "../../hooks/dashboard/useAccessoriesSales";
 import { client } from "../../helpers/api";
-import { BestShopDetails, type ShopKpiRow } from "./cards/BestShopDetails";
+import { BestShopDetails } from "./cards/BestShopDetails";
 import { TopProductsDetails } from "./cards/TopProductsDetails";
 import {
   TopProductCard,
@@ -48,7 +46,16 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import type { SalesData } from "./type";
+import {
+  buildAccessoriesSummaryStats,
+  buildLeaderCardData,
+  buildShopKpiRows,
+  clampRange,
+  formatDashboardMoney,
+  formatDashboardPct,
+  getDiffDaysInclusive,
+  shiftIsoDate,
+} from "@features/dashboard/model/dashboardSummaryModel";
 
 type OpeningPhotoDigestResponse = {
   date: string;
@@ -159,92 +166,9 @@ type DashboardSummaryProps = {
   showMainDashboard?: boolean;
 };
 
-const formatMoney = (value: number) =>
-  new Intl.NumberFormat("ru-RU", {
-    maximumFractionDigits: 0,
-  }).format(Math.round(value));
-
-const formatPct = (value: number | null) => {
-  if (value == null || !Number.isFinite(value)) return "н/д";
-  return `${(value * 100).toFixed(1)}%`;
-};
-
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
-
-const shiftIsoDate = (isoDate: string, days: number) => {
-  const date = new Date(`${isoDate}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return isoDate;
-  date.setDate(date.getDate() + days);
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
-
-const getDiffDaysInclusive = (since: string, until: string) => {
-  const from = new Date(`${since}T00:00:00`);
-  const to = new Date(`${until}T00:00:00`);
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return 1;
-  const diffMs = to.getTime() - from.getTime();
-  return Math.max(1, Math.floor(diffMs / (24 * 60 * 60 * 1000)) + 1);
-};
-
-const sumRecordValues = (record?: Record<string, number>) =>
-  Object.values(record || {}).reduce((sum, value) => sum + Number(value || 0), 0);
-
-const buildShopKpiRows = (data: SalesData | null): ShopKpiRow[] => {
-  if (!data) return [];
-  return Object.entries(data.salesDataByShopName).map(([name, shop]) => {
-    const refunds = sumRecordValues(shop.refund);
-    const expenses = sumRecordValues(data.cashOutcomeData?.[name]);
-    const netRevenue = shop.totalSell - refunds - expenses;
-    const averageCheck = shop.checksCount > 0 ? shop.totalSell / shop.checksCount : 0;
-    const refundRate = shop.totalSell > 0 ? (refunds / shop.totalSell) * 100 : 0;
-    return {
-      name,
-      revenue: shop.totalSell,
-      averageCheck,
-      refunds,
-      expenses,
-      netRevenue,
-      checks: shop.checksCount,
-      refundRate,
-    };
-  });
-};
-
-const getLeaderReason = (leader: ShopKpiRow, rows: ShopKpiRow[]): LeaderReason => {
-  if (rows.length === 0) return "чек";
-  const avgCheck =
-    rows.reduce((sum, item) => sum + item.averageCheck, 0) / Math.max(1, rows.length);
-  const avgTraffic =
-    rows.reduce((sum, item) => sum + item.checks, 0) / Math.max(1, rows.length);
-  const avgRefundRate =
-    rows.reduce((sum, item) => sum + item.refundRate, 0) / Math.max(1, rows.length);
-
-  const checkScore = avgCheck > 0 ? leader.averageCheck / avgCheck : 0;
-  const trafficScore = avgTraffic > 0 ? leader.checks / avgTraffic : 0;
-  const conversionScore =
-    avgRefundRate > 0 ? (avgRefundRate - leader.refundRate) / avgRefundRate + 1 : 1;
-
-  if (checkScore >= trafficScore && checkScore >= conversionScore) return "чек";
-  if (trafficScore >= checkScore && trafficScore >= conversionScore) return "трафик";
-  return "конверсия";
-};
-
-const buildLeaderCardData = (rows: ShopKpiRow[]): ShopLeaderCardData | null => {
-  if (rows.length === 0) return null;
-  const sorted = [...rows].sort((a, b) => b.netRevenue - a.netRevenue);
-  const leader = sorted[0];
-  const second = sorted[1];
-  return {
-    name: leader.name,
-    netRevenue: leader.netRevenue,
-    gapToSecond: second ? leader.netRevenue - second.netRevenue : leader.netRevenue,
-    reason: getLeaderReason(leader, rows),
-  };
-};
+const formatMoney = formatDashboardMoney;
+const formatPct = formatDashboardPct;
+const clamp = clampRange;
 
 function LoadingTile({
   title,
@@ -375,26 +299,8 @@ function AccessoriesSummaryStats({
 }: {
   data: AccessoriesSalesData;
 }) {
-  // Сумма по всем магазинам
-  const totalSum = data.total.reduce((sum, item) => sum + item.sum, 0);
-  // Количество проданных аксессуаров
-  const totalQty = data.total.reduce((sum, item) => sum + item.quantity, 0);
-  // Средняя цена
-  const avgPrice =
-    data.total.length > 0 ? Math.round(totalSum / data.total.length) : 0;
-  // Всего видов аксессуаров
-  const totalProducts = data.total.length;
-  // Доля топ-3 аксессуаров
-  const top3Sum = data.total
-    .slice(0, 3)
-    .reduce((sum, item) => sum + item.sum, 0);
-  const topShare = totalSum > 0 ? Math.round((top3Sum / totalSum) * 100) : 0;
-
-  // Суммы по каждому магазину
-  const byShop = data.byShop.map((shop) => ({
-    shopName: shop.shopName,
-    sum: shop.sales.reduce((s, item) => s + item.sum, 0),
-  }));
+  const { totalQty, avgPrice, totalProducts, topShare, byShop } =
+    buildAccessoriesSummaryStats(data);
 
   return (
     <div className="grid grid-cols-2 gap-4 mb-6">

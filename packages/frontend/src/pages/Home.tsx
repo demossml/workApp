@@ -7,6 +7,7 @@ import QuickActions from "../components/QuickActions";
 import { RegisterUser } from "../components/RegisterUser";
 import { useEmployeeRole } from "../hooks/useApi";
 import DashboardSummary2 from "../components/dashboard/DashboardSummary";
+import { buildHomeAccessModel } from "@features/dashboard/model/homePageModel";
 
 export default function Home() {
   const { data, error, isLoading } = useEmployeeRole();
@@ -36,9 +37,8 @@ export default function Home() {
     );
   }
 
-  const isCashier = data.employeeRole === "CASHIER";
-  const isAdmin = data.employeeRole === "ADMIN";
-  const isSuperAdmin = data.employeeRole === "SUPERADMIN";
+  const { isCashier, isAdmin, isSuperAdmin, canSeeMainDashboard } =
+    buildHomeAccessModel(data.employeeRole);
 
   return (
     <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-20 sm:pt-24 px-4 sm:px-6 pb-24">
@@ -50,9 +50,7 @@ export default function Home() {
         {/* {(isCashier || isAdmin) && <PlanSalesFinancialReport />} */}
 
         {/* Сводка за день - для всех ролей */}
-        {(isSuperAdmin || isAdmin || isCashier) && (
-          <DashboardSummary2 showAiDirector={false} />
-        )}
+        {canSeeMainDashboard && <DashboardSummary2 showAiDirector={false} />}
 
         {/* {isSuperAdmin && <DashboardSummary2 />} */}
 

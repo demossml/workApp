@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
+import { invalidateDashboardQueries } from "@shared/api";
 import {
   DEFAULT_ACCESSORY_SHARE_TARGET_PCT,
   getAccessoryShareTargetPct,
@@ -13,6 +15,7 @@ interface GroupOption {
 }
 
 const Settings = () => {
+  const queryClient = useQueryClient();
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [salary, setSalary] = useState("");
   const [bonus, setBonus] = useState("");
@@ -121,6 +124,7 @@ const Settings = () => {
           ? `Группы сохранены: ${names.join(", ")}`
           : "Группы аксессуаров сохранены"
       );
+      await invalidateDashboardQueries(queryClient);
     } catch (err) {
       console.error(err);
       setError("Не удалось сохранить группы аксессуаров");
@@ -157,6 +161,7 @@ const Settings = () => {
       setSavedSalary(String(salaryNumber));
       setSavedBonus(String(bonusNumber));
       setSalaryBonusMessage("Оклад и премия сохранены");
+      await invalidateDashboardQueries(queryClient);
     } catch (err) {
       console.error(err);
       setError("Не удалось сохранить оклад и премию");

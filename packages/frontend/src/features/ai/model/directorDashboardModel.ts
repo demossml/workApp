@@ -34,6 +34,10 @@ export type ShiftSummaryRow = {
   id: number;
   shopUuid: string;
   date: string;
+  summaryText?: string;
+  revenueActual?: number | null;
+  revenuePlan?: number | null;
+  topEmployee?: string | null;
 };
 
 export function buildHeatmap(rows: HeatmapRow[]) {

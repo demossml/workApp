@@ -1,5 +1,5 @@
-import React from "react";
 import type { AiDirectorPageModel } from "@features/ai/hooks/useAiDirectorPageModel";
+import { Badge, Button, Card, Input, Select } from "@shared/ui";
 
 type Props = {
   model: AiDirectorPageModel;
@@ -42,9 +42,21 @@ export function AiDirectorDataSections({ model }: Props) {
     heatmapStops,
   } = model;
 
+  const getHeatCellClass = (value: number) => {
+    if (!heatmap.max || value <= 0) return "bg-gray-100 dark:bg-gray-800";
+    const ratio = value / heatmap.max;
+    if (ratio >= 0.9) return "bg-red-600";
+    if (ratio >= 0.75) return "bg-red-500";
+    if (ratio >= 0.6) return "bg-orange-500";
+    if (ratio >= 0.45) return "bg-amber-400";
+    if (ratio >= 0.3) return "bg-amber-300";
+    if (ratio >= 0.15) return "bg-gray-300 dark:bg-gray-600";
+    return "bg-gray-200 dark:bg-gray-700";
+  };
+
   return (
     <>
-      <section className="order-10 w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-10 w-full min-w-0 p-4 sm:p-5">
         <div className="flex items-center justify-between">
           <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
             Рейтинг магазинов
@@ -90,9 +102,9 @@ export function AiDirectorDataSections({ model }: Props) {
             </table>
           </div>
         </details>
-      </section>
+      </Card>
 
-      <section className="order-11 w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-11 w-full min-w-0 p-4 sm:p-5">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
           Анализ сотрудников
         </h2>
@@ -130,9 +142,9 @@ export function AiDirectorDataSections({ model }: Props) {
             </table>
           </div>
         </details>
-      </section>
+      </Card>
 
-      <section className="order-12 w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-12 w-full min-w-0 p-4 sm:p-5">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
           История итогов смен
         </h2>
@@ -141,10 +153,10 @@ export function AiDirectorDataSections({ model }: Props) {
             Подробнее: история итогов
           </summary>
           <div className="mt-3 flex flex-wrap gap-2">
-            <select
+            <Select
               value={shiftHistoryShopFilter}
               onChange={(e) => setShiftHistoryShopFilter(e.target.value)}
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              className="h-8 w-auto px-2 text-[11px] sm:text-xs"
             >
               <option value="all">Все магазины</option>
               {shiftHistoryShopOptions.map((shopUuid) => (
@@ -152,23 +164,25 @@ export function AiDirectorDataSections({ model }: Props) {
                   {shopUuid}
                 </option>
               ))}
-            </select>
-            <input
+            </Select>
+            <Input
               type="date"
               value={shiftHistoryDateFilter}
               onChange={(e) => setShiftHistoryDateFilter(e.target.value)}
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              className="h-8 w-auto px-2 text-[11px] sm:text-xs"
             />
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 setShiftHistoryShopFilter("all");
                 setShiftHistoryDateFilter("");
               }}
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              className="text-[11px] sm:text-xs"
             >
               Сбросить
-            </button>
+            </Button>
           </div>
           <div className="mt-4 w-full max-w-full overflow-x-auto">
             <table className="w-full min-w-[700px] text-left text-xs sm:text-sm">
@@ -210,9 +224,9 @@ export function AiDirectorDataSections({ model }: Props) {
             </table>
           </div>
         </details>
-      </section>
+      </Card>
 
-      <section className="order-13 w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-13 w-full min-w-0 p-4 sm:p-5">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
           История алертов
         </h2>
@@ -221,10 +235,10 @@ export function AiDirectorDataSections({ model }: Props) {
             Подробнее: журнал алертов
           </summary>
           <div className="mt-3 flex flex-wrap gap-2">
-            <select
+            <Select
               value={alertsHistoryShopFilter}
               onChange={(e) => setAlertsHistoryShopFilter(e.target.value)}
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              className="h-8 w-auto px-2 text-[11px] sm:text-xs"
             >
               <option value="all">Все магазины</option>
               {alertsHistoryShopOptions.map((shopUuid) => (
@@ -232,34 +246,40 @@ export function AiDirectorDataSections({ model }: Props) {
                   {shopUuid}
                 </option>
               ))}
-            </select>
-            <select
+            </Select>
+            <Select
               value={alertsHistoryTypeFilter}
-              onChange={(e) => setAlertsHistoryTypeFilter(e.target.value)}
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              onChange={(e) =>
+                setAlertsHistoryTypeFilter(
+                  e.target.value as "all" | "tempo_alert" | "anomaly" | "dead_stock",
+                )
+              }
+              className="h-8 w-auto px-2 text-[11px] sm:text-xs"
             >
               <option value="all">Все типы</option>
               <option value="tempo_alert">tempo_alert</option>
               <option value="anomaly">anomaly</option>
               <option value="dead_stock">dead_stock</option>
-            </select>
-            <input
+            </Select>
+            <Input
               type="date"
               value={alertsHistoryDateFilter}
               onChange={(e) => setAlertsHistoryDateFilter(e.target.value)}
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              className="h-8 w-auto px-2 text-[11px] sm:text-xs"
             />
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 setAlertsHistoryShopFilter("all");
                 setAlertsHistoryTypeFilter("all");
                 setAlertsHistoryDateFilter("");
               }}
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              className="text-[11px] sm:text-xs"
             >
               Сбросить
-            </button>
+            </Button>
           </div>
           <div className="mt-4 w-full max-w-full overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-xs sm:text-sm">
@@ -278,7 +298,19 @@ export function AiDirectorDataSections({ model }: Props) {
                     <td className="py-2 pr-3">{row.triggeredAt}</td>
                     <td className="py-2 pr-3">{row.shopUuid}</td>
                     <td className="py-2 pr-3">{row.alertType}</td>
-                    <td className="py-2 pr-3">{row.severity}</td>
+                    <td className="py-2 pr-3">
+                      <Badge
+                        tone={
+                          row.severity === "critical"
+                            ? "danger"
+                            : row.severity === "warning"
+                              ? "warning"
+                              : "info"
+                        }
+                      >
+                        {row.severity}
+                      </Badge>
+                    </td>
                     <td className="py-2 pr-3 max-w-[380px]">
                       <div className="line-clamp-3 whitespace-pre-line">{row.message}</div>
                     </td>
@@ -295,9 +327,9 @@ export function AiDirectorDataSections({ model }: Props) {
             </table>
           </div>
         </details>
-      </section>
+      </Card>
 
-      <section className="order-14 w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="order-14 w-full min-w-0 p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
             Глубокий анализ сотрудников
@@ -305,36 +337,38 @@ export function AiDirectorDataSections({ model }: Props) {
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-2 text-[11px] sm:text-xs text-gray-600 dark:text-gray-300">
               Глубина:
-              <select
+              <Select
                 value={deepAnalysisDepth}
                 onChange={(e) => setDeepAnalysisDepth(e.target.value as "lite" | "standard" | "deep")}
-                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                className="h-8 w-auto px-2 text-[11px] sm:text-xs"
               >
                 <option value="lite">Lite (4 недели)</option>
                 <option value="standard">Standard (8 недель)</option>
                 <option value="deep">Deep (16 недель)</option>
-              </select>
+              </Select>
             </label>
             <label className="flex items-center gap-2 text-[11px] sm:text-xs text-gray-600 dark:text-gray-300">
               Чувствительность:
-              <select
+              <Select
                 value={deepRiskSensitivity}
                 onChange={(e) => setDeepRiskSensitivity(e.target.value as "low" | "normal" | "high")}
-                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                className="h-8 w-auto px-2 text-[11px] sm:text-xs"
               >
                 <option value="low">Низкая</option>
                 <option value="normal">Нормальная</option>
                 <option value="high">Высокая</option>
-              </select>
+              </Select>
             </label>
             <div className="relative">
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => setFocusDropdownOpen((prev) => !prev)}
-                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] sm:text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                className="text-[11px] sm:text-xs"
               >
                 Фокусы: {deepFocusAreas.length}
-              </button>
+              </Button>
               {focusDropdownOpen && (
                 <div className="absolute right-0 z-10 mt-1 w-64 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-900">
                   {focusOptions.map((option) => (
@@ -438,9 +472,9 @@ export function AiDirectorDataSections({ model }: Props) {
             </table>
           </div>
         </details>
-      </section>
+      </Card>
 
-      <section className="w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="w-full min-w-0 p-4 sm:p-5">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
           Прогноз спроса
         </h2>
@@ -468,9 +502,9 @@ export function AiDirectorDataSections({ model }: Props) {
                 : forecast.warning}
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/60">
+      <Card className="w-full min-w-0 p-4 sm:p-5">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
           Heatmap продаж
         </h2>
@@ -509,21 +543,12 @@ export function AiDirectorDataSections({ model }: Props) {
                 </div>
                 {Array.from({ length: 24 }, (_, hour) => {
                   const value = heatmap.map.get(`${dayIdx}:${hour}`) || 0;
-                  const intensity = heatmap.max ? Math.min(1, value / heatmap.max) : 0;
-                  const low = { r: 238, g: 238, b: 238 };
-                  const high = { r: 220, g: 38, b: 38 };
-                  const r = Math.round(low.r + (high.r - low.r) * intensity);
-                  const g = Math.round(low.g + (high.g - low.g) * intensity);
-                  const b = Math.round(low.b + (high.b - low.b) * intensity);
                   const tooltip = `${label}, ${String(hour).padStart(2, "0")}:00 — ${Math.round(value)} ₽`;
                   return (
                     <div
                       key={`${dayIdx}-${hour}`}
                       title={tooltip}
-                      className="h-3.5 sm:h-4 rounded-sm border border-transparent transition-colors hover:border-gray-400/80 dark:hover:border-gray-500/80"
-                      style={{
-                        backgroundColor: `rgb(${r}, ${g}, ${b})`,
-                      }}
+                      className={`h-3.5 sm:h-4 rounded-sm border border-transparent transition-colors hover:border-gray-400/80 dark:hover:border-gray-500/80 ${getHeatCellClass(value)}`}
                     />
                   );
                 })}
@@ -531,7 +556,7 @@ export function AiDirectorDataSections({ model }: Props) {
             ))}
           </div>
         </div>
-      </section>
+      </Card>
     </>
   );
 }
