@@ -22,7 +22,7 @@
     "smoke:api": "node scripts/smoke-api-dev.mjs",
     "smoke:api:prepare": "pnpm -C packages/backend db:prepare-local",
     "smoke:api:full": "pnpm smoke:api:prepare && pnpm smoke:api",
-    "test:metrics": "node -r esbuild-register --test packages/backend/src/contracts/revenueMath.test.cjs packages/backend/src/contracts/financialAggregation.test.cjs packages/backend/src/index.scheduled.test.cjs packages/backend/src/services/shiftSummary.test.cjs packages/backend/src/telegram/tempoAlerts.test.cjs packages/backend/src/ai/deadStocksNarrative.test.cjs packages/backend/src/ai/employeeKpiNarrative.test.cjs packages/backend/utils/formatDeadStocksMessage.test.cjs && node -r esbuild-register --test packages/frontend/src/hooks/dashboard/useSalesCalculations.test.cjs",
+    "test:metrics": "node -r esbuild-register --test packages/backend/src/contracts/revenueMath.test.cjs packages/backend/src/contracts/financialAggregation.test.cjs packages/backend/src/index.scheduled.test.cjs packages/backend/src/services/shiftSummary.test.cjs packages/backend/src/telegram/tempoAlerts.test.cjs packages/backend/src/ai/deadStocksNarrative.test.cjs packages/backend/src/ai/employeeKpiNarrative.test.cjs packages/backend/utils/formatDeadStocksMessage.test.cjs && node -r esbuild-register --test packages/frontend/src/hooks/dashboard/useSalesCalculations.test.cjs packages/frontend/src/features/ai/hooks/useAiDirectorPageModel.test.cjs packages/frontend/src/features/ai/ui/aiDirectorSections.smoke.test.cjs",
     "ci:check": "pnpm typecheck && pnpm lint:ci && pnpm smoke:ci && pnpm test:metrics",
     "format": "prettier . --write",
     "lint": "pnpm biome lint --write --unsafe .",
