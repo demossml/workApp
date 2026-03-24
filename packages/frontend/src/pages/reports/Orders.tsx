@@ -2,15 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { DateRange } from "react-day-picker";
 import { motion } from "framer-motion";
-import { PeriodSelector } from "../../components/Period";
-import { ShopSelector } from "../../components/ShopSelector";
 import { useMe } from "../../hooks/useApi";
-import { DynamicTable } from "../../components/DynamicTable";
-import { ErrorDisplay } from "../../components/ErrorDisplay";
-import { GroupSelector } from "../../components/GroupSelector";
-import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { Button, Calendar, Popover, PopoverContent, PopoverTrigger } from "../../components/ui";
+import { ErrorState, LoadingState } from "@shared/ui/states";
+import { DynamicTable, GroupSelector, PeriodSelector, ShopSelector } from "@widgets/reports";
 import {
   fetchEvotorShops,
   fetchGroupsByShop,
@@ -365,8 +361,8 @@ export default function Orders() {
     [reportData]
   );
 
-  if (isLoadingReport) return <LoadingSpinner />;
-  if (error && !reportData) return <ErrorDisplay error={error} />;
+  if (isLoadingReport) return <LoadingState />;
+  if (error && !reportData) return <ErrorState error={error} />;
 
   if (!Object.keys(shopOptions).length && isLoadingShops) {
     return (

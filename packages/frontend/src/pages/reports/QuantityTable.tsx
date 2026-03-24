@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMe } from "../../hooks/useApi";
-import { ShopSelector } from "../../components/ShopSelector";
-import { GroupSelector } from "../../components/GroupSelector";
-import { LoadingSpinner } from "../../components/LoadingSpinner";
-import { ErrorDisplay } from "../../components/ErrorDisplay";
-import { DynamicTable } from "../../components/DynamicTable";
+import { ErrorState, LoadingState } from "@shared/ui/states";
+import { DynamicTable, GroupSelector, ShopSelector } from "@widgets/reports";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
 
@@ -135,11 +132,11 @@ export default function QuantityTableProps() {
   };
 
   if (isLoadingReport) {
-    return <LoadingSpinner />;
+    return <LoadingState />;
   }
 
   if (error) {
-    return <ErrorDisplay error={error} />;
+    return <ErrorState error={error} />;
   }
 
   if (!Object.keys(shopOptions).length) {

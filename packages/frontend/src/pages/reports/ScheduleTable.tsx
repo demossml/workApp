@@ -1,7 +1,7 @@
 import type React from "react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import ScheduleTableView from "../../components/ScheduleTableView";
+import { ScheduleTableView } from "@widgets/reports";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
 import { useQueryClient } from "@tanstack/react-query";

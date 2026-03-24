@@ -1,11 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ShopSelector } from "../../components/ShopSelector";
-import { GroupSelector } from "../../components/GroupSelector";
-import { LoadingSpinner } from "../../components/LoadingSpinner";
-import { ErrorDisplay } from "../../components/ErrorDisplay";
-import { DynamicTable } from "../../components/DynamicTable";
-import AiInsights, { type AiInsightsData } from "../../components/AiInsights";
 import { useMe } from "../../hooks/useApi";
 import { motion } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
@@ -14,6 +8,14 @@ import { client } from "../../helpers/api";
 import type { DateRange } from "react-day-picker";
 import { Popover, PopoverContent, PopoverTrigger, Calendar } from "../../components/ui";
 import { fetchEvotorShops, fetchGroupsByShop, queryKeys } from "@shared/api";
+import { ErrorState, LoadingState } from "@shared/ui/states";
+import {
+  AiInsights,
+  type AiInsightsData,
+  DynamicTable,
+  GroupSelector,
+  ShopSelector,
+} from "@widgets/reports";
 
 interface GroupOption {
   name: string;
@@ -364,8 +366,8 @@ export default function SalesReport() {
   };
 
   // 🔹 Состояния загрузки / ошибки
-  if (isLoadingReport) return <LoadingSpinner />;
-  if (error) return <ErrorDisplay error={error} />;
+  if (isLoadingReport) return <LoadingState />;
+  if (error) return <ErrorState error={error} />;
 
   // 🔹 Нет магазинов
   if (!Object.keys(shopOptions).length) {
@@ -377,7 +379,7 @@ export default function SalesReport() {
           paddingBottom: "calc(var(--app-bottom-clearance) + 0.5rem)",
         }}
       >
-        <LoadingSpinner />
+        <LoadingState />
       </div>
     );
   }

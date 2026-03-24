@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useGetShops } from "../../hooks/useApi";
-import { DynamicTableProfit } from "../../components/DynamicTableProfit"; // поправь путь, если нужно
+import { DynamicTableProfit } from "@widgets/reports";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
 

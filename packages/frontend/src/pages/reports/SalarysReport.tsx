@@ -18,7 +18,7 @@ import {
 import { Button } from "../../components/ui/button";
 import type { DateRange } from "react-day-picker";
 import { Popover, PopoverContent, PopoverTrigger, Calendar } from "../../components/ui";
-import { SaveAsJpegButton } from "../../components/SaveAsJpegButton";
+import { SaveAsJpegButton } from "@widgets/reports";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
 

@@ -1,9 +1,9 @@
 # features/ai
 
 Фича AI-директора:
-- `api/` работа с AI endpoints
-- `model/` трансформации и бизнес-правила
-- `ui/` секции и карточки AI-экрана
+- `model/` state/model (`zustand`)
+- `hooks/` orchestration для страницы
+- `ui/` совместимые обертки для widget-слоя
 
-Чат — вторичный UI-элемент, не центр страницы.
-
+AI-агенты и memory вынесены в слой `src/ai`.
+Крупные UI-секции находятся в `src/widgets/ai-director`.

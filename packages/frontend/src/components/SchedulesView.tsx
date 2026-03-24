@@ -2,7 +2,7 @@ import type React from "react";
 import { useState } from "react";
 import { ShopSelectorNew } from "./ShopSelectorNew";
 import { useMe } from "../hooks/useApi";
-import ScheduleTableView from "./ScheduleTableView";
+import { ScheduleTableView } from "@widgets/reports";
 import { client } from "../helpers/api";
 
 // Определяем тип для данных расписания

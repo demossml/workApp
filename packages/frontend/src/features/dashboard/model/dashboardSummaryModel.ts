@@ -1,6 +1,6 @@
-import type { ShopLeaderCardData, LeaderReason } from "../../../components/dashboard/cards/BestShopCard";
-import type { ShopKpiRow } from "../../../components/dashboard/cards/BestShopDetails";
-import type { SalesData } from "../../../components/dashboard/type";
+import type { ShopLeaderCardData, LeaderReason } from "../../../widgets/dashboard/cards/BestShopCard";
+import type { ShopKpiRow } from "../../../widgets/dashboard/cards/BestShopDetails";
+import type { SalesData } from "../../../widgets/dashboard/type";
 import type { AccessoriesSalesData } from "../../../hooks/dashboard/useAccessoriesSales";
 
 export const formatDashboardMoney = (value: number) =>

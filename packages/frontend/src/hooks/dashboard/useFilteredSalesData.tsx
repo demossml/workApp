@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { SalesData } from "../../components/dashboard/type";
+import type { SalesData } from "../../widgets/dashboard/type";
 import { computeRevenueSummary } from "@work-appt/backend/src/contracts/revenueMath";
 
 export function useFilteredSalesData(

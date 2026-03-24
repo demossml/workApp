@@ -1,15 +1,11 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import ProgressSteps from "../../components/opening/ProgressSteps";
-import ShopStep from "../../components/opening/ShopStep";
-import InitialStep from "../../components/opening/InitialStep";
-import PhotoStep from "../../components/opening/PhotoStep";
-import CashCheckStep from "../../components/opening/CashCheckStep";
 import type { StoreOpeningStep } from "./types";
 import { useUser } from "../../hooks/userProvider";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { isTelegramMiniApp, telegram } from "../../helpers/telegram";
 import { loadProgress, saveProgress } from "../../helpers/openingProgress";
+import { CashCheckStep, InitialStep, PhotoStep, ProgressSteps, ShopStep } from "@widgets/opening";
 
 export default function StoreOpeningPage() {
   const [currentStep, setCurrentStep] = useState<StoreOpeningStep>("shop");

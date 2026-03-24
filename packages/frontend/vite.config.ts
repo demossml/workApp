@@ -50,6 +50,8 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "src"),
       "@app": path.resolve(__dirname, "src/app"),
+      "@ai": path.resolve(__dirname, "src/ai"),
+      "@widgets": path.resolve(__dirname, "src/widgets"),
       "@features": path.resolve(__dirname, "src/features"),
       "@entities": path.resolve(__dirname, "src/entities"),
       "@shared": path.resolve(__dirname, "src/shared"),
@@ -89,7 +91,7 @@ export default defineConfig({
           if (id.includes("/src/pages/ai/")) return "ai";
           if (id.includes("/src/pages/opening/")) return "opening";
           if (id.includes("/src/pages/deadstock/")) return "deadstock";
-          if (id.includes("/src/components/dashboard/")) return "dashboard";
+          if (id.includes("/src/widgets/dashboard/")) return "dashboard";
         },
       },
     },

@@ -1,6 +1,6 @@
 // hooks/dashboard/useSalesCalculations.ts
 
-import type { SalesData } from "../../components/dashboard/type";
+import type { SalesData } from "../../widgets/dashboard/type";
 import { computeRevenueSummary } from "@work-appt/backend/src/contracts/revenueMath";
 
 export function useSalesCalculations(data: SalesData | null) {

@@ -13,8 +13,7 @@ import {
 } from "lucide-react";
 import { useGetReportAndPlan } from "../../hooks/useReportData";
 import { useGetShopNames } from "../../hooks/useGetShopNames";
-import { LoadingSpinner } from "../../components/LoadingSpinner";
-import { ErrorDisplay } from "../../components/ErrorDisplay";
+import { ErrorState, LoadingState } from "@shared/ui/states";
 
 // Форматирование суммы
 const formatAmount = (amount: number): string => {
@@ -121,12 +120,12 @@ export default function PlanMetrics() {
   }, [data]);
 
   if (shopsLoading || loading) {
-    return <LoadingSpinner />;
+    return <LoadingState />;
   }
 
   if (shopsError || error) {
     return (
-      <ErrorDisplay
+      <ErrorState
         error={
           shopsError?.message || error?.message || "Ошибка загрузки данных"
         }

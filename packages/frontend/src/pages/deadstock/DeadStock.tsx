@@ -1,15 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
-import { DateRangePicker } from "../../components/DateRangePicker";
-import { ShopSelector } from "../../components/ShopSelector";
-import { GroupSelector } from "../../components/GroupSelector";
-import { LoadingSpinner } from "../../components/LoadingSpinner";
-import { ErrorDisplay } from "../../components/ErrorDisplay";
 import { useMe } from "../../hooks/useApi";
 import { motion } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { telegram, isTelegramMiniApp } from "../../helpers/telegram";
-import { DynamicTableDeadStocks } from "../../components/deadStocs/DynamicTableDeadStocks";
 import { client } from "../../helpers/api";
+import { ErrorState, LoadingState } from "@shared/ui/states";
+import { DynamicTableDeadStocks } from "@widgets/deadstock";
+import { DateRangePicker, GroupSelector, ShopSelector } from "@widgets/reports";
 
 interface GroupOption {
   name: string;
@@ -255,14 +252,14 @@ export default function DeadSt() {
   };
 
   // 🔹 Состояния загрузки / ошибки
-  if (isLoadingReport) return <LoadingSpinner />;
-  if (error) return <ErrorDisplay error={error} />;
+  if (isLoadingReport) return <LoadingState />;
+  if (error) return <ErrorState error={error} />;
 
   // 🔹 Нет магазинов
   if (!Object.keys(shopOptions).length) {
     return (
       <div className="app-page flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <LoadingSpinner />
+        <LoadingState />
       </div>
     );
   }

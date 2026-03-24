@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger, Calendar } from "../../compone
 // } from "../../components/ui/select";
 import { Button } from "../../components/ui/button";
 import { useEmployeeNameAndUuid } from "../../hooks/useApi";
-import { SaveAsJpegButton } from "../../components/SaveAsJpegButton";
+import { SaveAsJpegButton } from "@widgets/reports";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
 

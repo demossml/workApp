@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import type { SalesData } from "../../components/dashboard/type";
+import type { SalesData } from "../../widgets/dashboard/type";
 import { client } from "../../helpers/api";
 import { FinancialMetricsResponseSchema } from "@work-appt/backend/src/contracts/financialMetrics";
 

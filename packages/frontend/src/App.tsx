@@ -1,6 +1,5 @@
-import { Route, Routes, useLocation } from "react-router";
-import { Suspense, lazy, useEffect, useState } from "react";
-import { BottomNavigation } from "./components/BottomNavigation";
+import { useLocation } from "react-router";
+import { useEffect, useState } from "react";
 import { PWAInstall } from "./pwa";
 import { useEmployeeRole } from "./hooks/useApi";
 import { useTheme } from "./hooks/useTheme";
@@ -11,33 +10,8 @@ import {
 } from "./helpers/backgroundUploader";
 import { trackEvent } from "./helpers/analytics";
 import { useTelegramFullscreenLayout } from "./hooks/useTelegramFullscreenLayout";
-
-const Settings = lazy(() => import("./pages/reports/Settings"));
-const Home = lazy(() => import("./pages/Home"));
-const PlanSalesReport = lazy(() => import("./pages/reports/PlanSalesReport"));
-const SalesReport = lazy(() => import("./pages/reports/SaleRepor"));
-const SalaryReports = lazy(() => import("./pages/reports/SalarysReport"));
-const SalestReportForThePeriod = lazy(
-  () => import("./pages/reports/SalestReportForThePeriod")
-);
-const Orders = lazy(() => import("./pages/reports/Orders"));
-const QuantityTableProps = lazy(() => import("./pages/reports/QuantityTable"));
-const StoreOpeningReport = lazy(
-  () => import("./pages/reports/StoreOpeningReport")
-);
-const ProfitReportPage = lazy(() => import("./pages/reports/ProfitReportPage"));
-const StaffRatingsReport = lazy(
-  () => import("./pages/reports/StaffRatingsReport")
-);
-const SalaryReport = lazy(() => import("./pages/reports/SalaryReport"));
-const SalesTodayReport = lazy(() => import("./pages/reports/SalesTodayReport"));
-const SchedulesReport = lazy(() => import("./pages/reports/SchedulesReport"));
-const StoreOpeningPage = lazy(() => import("./pages/opening/StoreOpeningPage"));
-const DeadStocks = lazy(() => import("./pages/deadstock/DeadStock"));
-const StoreOpeningsAdminReport = lazy(
-  () => import("./pages/reports/StoreOpeningsAdminReport")
-);
-const AiDirectorPage = lazy(() => import("./pages/ai/AiDirector"));
+import { AppRouter } from "@app/router";
+import { BottomNavigation } from "@widgets";
 
 function App() {
   const { data } = useEmployeeRole();
@@ -129,55 +103,7 @@ function App() {
       )}
       {/* <div className="pb-20"> */} {/* отступ снизу под меню */}
       <main className="app-shell-main">
-        <Suspense
-          fallback={
-            <div className="min-h-[50vh] flex items-center justify-center text-gray-500">
-              Загрузка экрана...
-            </div>
-          }
-        >
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/evotor/settings" element={<Settings />} />
-            <Route
-              path="/evotor/plan-for-today"
-              element={<PlanSalesReport />}
-            />
-            <Route path="/evotor/sales-report" element={<SalesReport />} />
-            <Route path="/evotor/salary-report" element={<SalaryReports />} />
-            <Route
-              path="/evotor/sales-for-the-period"
-              element={<SalestReportForThePeriod />}
-            />
-            <Route path="/evotor/orders" element={<Orders />} />
-            <Route
-              path="/evotor/stock-realization-report"
-              element={<QuantityTableProps />}
-            />
-            <Route
-              path="/evotor/store-opening-report"
-              element={<StoreOpeningReport />}
-            />
-            <Route
-              path="/evotor/store-openings-admin"
-              element={<StoreOpeningsAdminReport />}
-            />
-            <Route path="/evotor/profit" element={<ProfitReportPage />} />
-            <Route
-              path="/evotor/staff-analysi"
-              element={<StaffRatingsReport />}
-            />
-            <Route
-              path="/evotor/salary-user-report"
-              element={<SalaryReport />}
-            />
-            <Route path="/evotor/sales-today" element={<SalesTodayReport />} />
-            <Route path="/evotor/schedules" element={<SchedulesReport />} />
-            <Route path="/evotor/open-store" element={<StoreOpeningPage />} />
-            <Route path="evotor/dead-stock" element={<DeadStocks />} />
-            <Route path="/ai/director" element={<AiDirectorPage />} />
-          </Routes>
-        </Suspense>
+        <AppRouter />
       </main>
       {(() => {
         const allowedRoles = ["SUPERADMIN", "CASHIER", "ADMIN"];

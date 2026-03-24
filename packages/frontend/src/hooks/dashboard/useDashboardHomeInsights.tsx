@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { client } from "../../helpers/api";
-import type { DashboardSummaryAiInsights } from "../../components/dashboard/DashboardSummaryAiSection";
-import type { ShopKpiRow } from "../../components/dashboard/cards/BestShopDetails";
-import type { ShopLeaderCardData } from "../../components/dashboard/cards/BestShopCard";
+import type { DashboardSummaryAiInsights } from "../../widgets/dashboard/DashboardSummaryAiSection";
+import type { ShopKpiRow } from "../../widgets/dashboard/cards/BestShopDetails";
+import type { ShopLeaderCardData } from "../../widgets/dashboard/cards/BestShopCard";
 
 type Params = {
   since: string;
