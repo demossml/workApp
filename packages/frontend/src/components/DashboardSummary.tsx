@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { useEmployeeRole } from "../hooks/useApi";
 import { useCurrentWorkShop } from "../hooks/useCurrentWorkShop";
-import { client } from "../helpers/api";
+import { fetchFinancialTodayForUser } from "@shared/api";
 
 interface ProductData {
   productName: string;
@@ -106,14 +106,10 @@ export default function DashboardSummary() {
     const fetchData = async () => {
       setIsUpdating(true);
       try {
-        const response = await client.api.evotor.financial.today.$get({
-          query: {
-            telegramId: localStorage.getItem("telegramId") || "",
-            userId: localStorage.getItem("userId") || "",
-          },
+        const result = await fetchFinancialTodayForUser({
+          telegramId: localStorage.getItem("telegramId") || "",
+          userId: localStorage.getItem("userId") || "",
         });
-
-        const result = await response.json();
         if (
           result &&
           !("error" in result) &&

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { client } from "../helpers/api";
+import { fetchIsOpenStore } from "@features/opening/api";
 
 interface IsOpenStoreResponse {
   exists: boolean;
@@ -13,16 +13,11 @@ export const useIsOpenStore = (
 ) =>
   useQuery<IsOpenStoreResponse>({
     queryKey: ["isOpenStore", userId, date, shopUuid],
-    queryFn: async () => {
-      const res = await client.api.stores["is-open-store"].$post({
-        json: { userId, date, shopUuid: shopUuid ?? "" },
-      });
-
-      if (!res.ok) {
-        return { exists: false, error: "temporary_unavailable" };
-      }
-
-      return res.json();
-    },
+    queryFn: () =>
+      fetchIsOpenStore({
+        userId,
+        date,
+        shopUuid: shopUuid ?? "",
+      }),
     enabled: !!userId && !!date && !!shopUuid,
   });

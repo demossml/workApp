@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import type { SalesData } from "../../widgets/dashboard/type";
-import { client } from "../../helpers/api";
-import { FinancialMetricsResponseSchema } from "@work-appt/backend/src/contracts/financialMetrics";
+import { fetchFinancialMetrics } from "@shared/api";
 
 interface UseSalesDataParams {
   since?: string;
@@ -53,40 +52,15 @@ export function useSalesData(params?: UseSalesDataParams): UseSalesDataReturn {
       setError(null);
 
       try {
-        let res: Response;
-
-        if (params?.since && params?.until) {
-          const query: { since: string; until: string; shopUuid?: string } = {
-            since: params.since,
-            until: params.until,
-          };
-          if (params.shopUuid) {
-            query.shopUuid = params.shopUuid;
-          }
-          res = await client.api.evotor.financial.$get({ query });
-        } else {
-          const query = params?.shopUuid ? { shopUuid: params.shopUuid } : {};
-          res = await client.api.evotor.financial.today.$get({ query });
-        }
+        const json = (await fetchFinancialMetrics({
+          since: params?.since,
+          until: params?.until,
+          shopUuid: params?.shopUuid,
+        })) as SalesData;
 
         if (controller.signal.aborted) {
           return;
         }
-
-        // Проверка HTTP-ошибок
-        if (!res.ok) {
-          const err = await res.json().catch(() => null);
-          throw new Error(
-            err?.error || err?.message || "Ошибка загрузки данных"
-          );
-        }
-
-        const rawJson = await res.json();
-        const parsed = FinancialMetricsResponseSchema.safeParse(rawJson);
-        if (!parsed.success) {
-          throw new Error("Некорректный формат финансовых данных");
-        }
-        const json: SalesData = parsed.data;
 
         if (isMounted) {
           setData(json);

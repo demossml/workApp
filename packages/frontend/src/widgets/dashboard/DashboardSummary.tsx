@@ -18,7 +18,6 @@ import {
   useAccessoriesSales,
   type AccessoriesSalesData,
 } from "../../hooks/dashboard/useAccessoriesSales";
-import { client } from "../../helpers/api";
 import { BestShopDetails } from "./cards/BestShopDetails";
 import { TopProductsDetails } from "./cards/TopProductsDetails";
 import {
@@ -53,6 +52,15 @@ import {
   getDiffDaysInclusive,
   shiftIsoDate,
 } from "@features/dashboard/model/dashboardSummaryModel";
+import {
+  fetchDirectorAlerts,
+  fetchDirectorForecast,
+  fetchDirectorRecommendations,
+  fetchDirectorReport,
+  fetchDirectorSummary,
+  fetchDirectorVelocity,
+  fetchOpeningPhotoDigest,
+} from "@features/dashboard/api";
 
 type OpeningPhotoDigestResponse = {
   date: string;
@@ -664,26 +672,13 @@ export default function DashboardSummary2({
       setDirectorLoading(true);
       setDirectorError(null);
       try {
-        const aiDirector = client.api.ai as any;
         const settled = await Promise.allSettled([
-          aiDirector["director/summary"].$post({
-            json: { date: directorDate },
-          }),
-          aiDirector["director/alerts"].$post({
-            json: { date: directorDate },
-          }),
-          aiDirector["director/forecast"].$post({
-            json: { date: directorDate },
-          }),
-          aiDirector["director/velocity"].$post({
-            json: { since: safeSince, until: safeUntil, limit: 50 },
-          }),
-          aiDirector["director/recommendations"].$post({
-            json: { since: safeSince, until: safeUntil, limit: 50 },
-          }),
-          aiDirector["director/report"].$post({
-            json: { date: directorDate, sendTelegram: false },
-          }),
+          fetchDirectorSummary(directorDate),
+          fetchDirectorAlerts(directorDate),
+          fetchDirectorForecast(directorDate),
+          fetchDirectorVelocity({ since: safeSince, until: safeUntil, limit: 50 }),
+          fetchDirectorRecommendations({ since: safeSince, until: safeUntil, limit: 50 }),
+          fetchDirectorReport({ date: directorDate, sendTelegram: false }),
         ]);
 
         const labels = [
@@ -848,15 +843,9 @@ export default function DashboardSummary2({
     setDigestLoading(true);
     setDigestError(null);
     try {
-      const response = await client.api.ai["opening-photo-digest"].$post({
-        json: { date: digestDate },
-      });
-      const json = (await response.json()) as OpeningPhotoDigestResponse & {
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(json.error || "Ошибка AI-анализа фото");
-      }
+      const json = (await fetchOpeningPhotoDigest(
+        digestDate
+      )) as OpeningPhotoDigestResponse;
       setDigestData(json);
     } catch (error) {
       setDigestError(

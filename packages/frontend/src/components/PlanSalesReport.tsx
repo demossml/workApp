@@ -2,8 +2,7 @@ import type React from "react";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { LoadingSpinner } from "./LoadingSpinner";
-import { client } from "../helpers/api";
-import { PlanForTodayResponseSchema } from "@work-appt/backend/src/contracts/planMetrics";
+import { fetchPlanForToday } from "@shared/api";
 
 interface SalesData {
   [shopName: string]: {
@@ -23,16 +22,8 @@ export const PlanSalesReport: React.FC = () => {
     const fetchSalesData = async () => {
       setIsLoading(false);
       try {
-        const response = await client.api.evotor["plan-for-today"].$get();
-        if (!response.ok) {
-          throw new Error(`Error: ${response.status}`);
-        }
-        const raw = await response.json();
-        const parsed = PlanForTodayResponseSchema.safeParse(raw);
-        if (!parsed.success) {
-          throw new Error("Некорректный формат данных плана");
-        }
-        setSalesData(parsed.data.salesData);
+        const data = await fetchPlanForToday();
+        setSalesData(data.salesData || null);
       } catch (err) {
         console.error(err);
         setError("Не удалось загрузить данные о продажах");

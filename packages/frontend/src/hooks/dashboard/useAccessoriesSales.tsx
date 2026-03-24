@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { client } from "../../helpers/api";
+import { fetchAccessoriesSales } from "@features/dashboard/api";
 
 interface AccessoriesSalesParams {
   role: string;
@@ -53,28 +53,12 @@ export function useAccessoriesSales(params: AccessoriesSalesParams) {
     setError(null);
     (async () => {
       try {
-        const response = await (
-          client.api.evotor.accessoriesSales[":role"][":userId"] as any
-        ).$post({
-          param: {
-            role: params.role,
-            userId: params.userId,
-          },
-          json:
-            params.since && params.until
-              ? { since: params.since, until: params.until }
-              : {},
-        });
-        if (!response.ok) {
-          const err = await response.json().catch(() => null);
-          const apiError = err as { error?: string; message?: string } | null;
-          throw new Error(
-            apiError?.error ||
-              apiError?.message ||
-              "Ошибка загрузки аксессуаров"
-          );
-        }
-        const result = (await response.json()) as AccessoriesSalesData;
+        const result = (await fetchAccessoriesSales({
+          role: params.role,
+          userId: params.userId,
+          since: params.since,
+          until: params.until,
+        })) as AccessoriesSalesData;
         if ("error" in result && result.error) {
           throw new Error(result.error);
         }

@@ -5,9 +5,9 @@ import type {
   StoreOpeningStep,
   CashDiscrepancyData,
 } from "../../../pages/opening/types";
-import { client } from "../../../helpers/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateDashboardQueries } from "@shared/api";
+import { finishOpening } from "@features/opening/api";
 
 interface CashCheckStepProps {
   setCurrentStep: React.Dispatch<React.SetStateAction<StoreOpeningStep>>;
@@ -49,17 +49,12 @@ export default function CashCheckStep({
       if (!selectedShop) {
         throw new Error("Сначала выберите магазин");
       }
-      const response = await client.api.stores["finish-opening"].$post({
-        json: {
-          ok: isCorrect,
-          discrepancy: isCorrect ? null : discrepancy,
-          userId,
-          shopUuid: selectedShop,
-        },
+      await finishOpening({
+        ok: isCorrect,
+        discrepancy: isCorrect ? null : discrepancy,
+        userId,
+        shopUuid: selectedShop,
       });
-      if (!response.ok) {
-        throw new Error(`Ошибка завершения открытия: ${response.status}`);
-      }
       await Promise.all([
         invalidateDashboardQueries(queryClient),
         queryClient.invalidateQueries({ queryKey: ["isOpenStore"] }),

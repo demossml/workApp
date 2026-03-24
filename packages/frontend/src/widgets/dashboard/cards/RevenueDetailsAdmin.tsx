@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { Store, DollarSign, RotateCcw } from "lucide-react";
-import { client } from "../../../helpers/api";
+import {
+  fetchRevenueRefundDocuments,
+  type RefundDocument,
+} from "@features/dashboard/api";
 
 interface RevenueDetailsAdminProps {
   salesDataByShopName: Record<
@@ -21,16 +24,6 @@ interface RevenueDetailsAdminProps {
   until?: string;
   formatCurrency?: (amount: number) => string;
 }
-
-type RefundDocument = {
-  shopName: string;
-  documentNumber: number;
-  closeDate: string;
-  employeeName: string;
-  refundTotal: number;
-  paymentBreakdown: Record<string, number>;
-  items: Array<{ productName: string; quantity: number; sum: number }>;
-};
 
 export const RevenueDetailsAdmin: React.FC<RevenueDetailsAdminProps> = ({
   salesDataByShopName,
@@ -65,16 +58,7 @@ export const RevenueDetailsAdmin: React.FC<RevenueDetailsAdminProps> = ({
       setRefundDocsLoading(true);
       setRefundDocsError(null);
       try {
-        const res = await client.api.analytics.revenue["refund-documents"].$get({
-          query: { since, until, limit: "120" },
-        });
-        const json = (await res.json()) as {
-          documents?: RefundDocument[];
-          error?: string;
-        };
-        if (!res.ok) {
-          throw new Error(json.error || "Не удалось загрузить возвраты");
-        }
+        const json = await fetchRevenueRefundDocuments({ since, until, limit: "120" });
         if (!cancelled) {
           setRefundDocs(Array.isArray(json.documents) ? json.documents : []);
         }

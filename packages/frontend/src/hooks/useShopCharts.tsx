@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { client } from "../helpers/api";
+import { fetchSalesTodayGraph } from "@shared/api";
 
 type ChartPoint = { time: string; value: number };
 type ShopChartData = { shopName: string; data: ChartPoint[] };
@@ -16,10 +16,7 @@ export const useShopCharts = (openedShop: string | null) => {
     queryKey: ["shopCharts", openedShop],
     queryFn: async () => {
       if (!openedShop) throw new Error("openedShop is null");
-      const res = await client.api.evotor["sales-today-graf"].$get();
-
-      if (!res.ok) throw new Error("Ошибка загрузки данных графика");
-      const data = await res.json();
+      const data = await fetchSalesTodayGraph();
 
       return {
         [openedShop]: {

@@ -9,9 +9,9 @@ import {
 import { motion, AnimatePresence, useScroll, useSpring } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetShops } from "../../../hooks/useApi";
-import { client } from "../../../helpers/api";
 import { trackEvent } from "../../../helpers/analytics";
 import { invalidateDashboardQueries } from "@shared/api";
+import { updateDeadStocks } from "@features/deadstock/api";
 
 /* ===================== TYPES ===================== */
 
@@ -214,19 +214,8 @@ export const DynamicTableDeadStocks = ({
         props: { itemsCount: changedItems.length },
       });
 
-      const response = await client.api.deadStocks.update.$post({
-        json: { items: changedItems, shopUuid },
-      });
-
-      if (!response.ok) {
-        void trackEvent("deadstock_save_failed", {
-          shopUuid,
-          props: { status: response.status, reason: "request_failed" },
-        });
-        throw new Error("Сеть ответила с ошибкой");
-      }
-
-      console.log("SAVE успешно:", await response.json());
+      const result = await updateDeadStocks({ items: changedItems, shopUuid });
+      console.log("SAVE успешно:", result);
       void trackEvent("deadstock_save_success", {
         shopUuid,
         props: { itemsCount: changedItems.length },

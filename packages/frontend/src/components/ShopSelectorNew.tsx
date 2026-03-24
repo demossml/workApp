@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { client } from "../helpers/api";
+import { fetchEvotorShops } from "@shared/api";
 
 type ShopSelectorProps = {
   userId: string;
@@ -22,15 +22,7 @@ export const ShopSelectorNew: React.FC<ShopSelectorProps> = ({
       setIsLoadingShops(true);
 
       try {
-        const response = await client.api.evotor.shops.$post({
-          json: { userId },
-        });
-
-        if (!response.ok) {
-          throw new Error(`Ошибка: ${response.status}`);
-        }
-
-        const data = await response.json();
+        const data = await fetchEvotorShops(userId);
         setShopOptions(data.shopOptions);
 
         // Устанавливаем первый магазин как выбранный по умолчанию

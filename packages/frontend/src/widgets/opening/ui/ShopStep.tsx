@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { client } from "../../../helpers/api";
+import {
+  fetchShopsOpeningStatus,
+  type ShopOpeningStatus,
+} from "@features/opening/api";
 
 interface ShopStepProps {
   userId: string;
@@ -10,18 +13,6 @@ interface ShopStepProps {
   onContinue: () => void;
 }
 
-interface ShopOption {
-  uuid: string;
-  name: string;
-  isOpenedToday?: boolean;
-  openedByUserId?: string | null;
-  openedByName?: string | null;
-  openedAt?: string | null;
-  openedTime?: string | null;
-  canSelect?: boolean;
-  blockedReason?: string | null;
-}
-
 export default function ShopStep({
   userId,
   selectedShop,
@@ -29,7 +20,7 @@ export default function ShopStep({
   setSelectedShopName,
   onContinue,
 }: ShopStepProps) {
-  const [shops, setShops] = useState<ShopOption[]>([]);
+  const [shops, setShops] = useState<ShopOpeningStatus[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -44,17 +35,7 @@ export default function ShopStep({
         const year = now.getFullYear();
         const date = `${day}-${month}-${year}`;
 
-        const response = await client.api.stores["shops-opening-status"].$post({
-          json: { date },
-        });
-        if (!response.ok) {
-          throw new Error(`Ошибка загрузки магазинов: ${response.status}`);
-        }
-
-        const data = (await response.json()) as { shopsNameAndUuid?: ShopOption[] };
-        const nextShops = Array.isArray(data.shopsNameAndUuid)
-          ? data.shopsNameAndUuid
-          : [];
+        const nextShops = await fetchShopsOpeningStatus(date);
 
         setShops(nextShops);
 

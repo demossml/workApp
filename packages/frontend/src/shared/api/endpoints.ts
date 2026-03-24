@@ -3,6 +3,11 @@ import {
   FinancialMetricsResponseSchema,
   type FinancialMetricsResponse,
 } from "@work-appt/backend/src/contracts/financialMetrics";
+import {
+  CurrentWorkShopResponseSchema,
+  type CurrentWorkShopResponse,
+} from "@work-appt/backend/src/contracts/currentWorkShop";
+import { OpenTimesResponseSchema } from "@work-appt/backend/src/contracts/openTimes";
 import { PlanForTodayResponseSchema } from "@work-appt/backend/src/contracts/planMetrics";
 import { client } from "./client";
 
@@ -112,6 +117,93 @@ export async function fetchReportAndPlanForToday() {
     reportData,
     planData: planData.salesData ?? {},
   };
+}
+
+export async function fetchCurrentWorkShop(): Promise<CurrentWorkShopResponse> {
+  const res = await client.api.evotor["current-work-shop"].$get();
+  if (!res.ok) {
+    throw new Error("Ошибка загрузки данных о текущем магазине");
+  }
+  const raw = await res.json();
+  const parsed = CurrentWorkShopResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error("Некорректный формат данных текущего магазина");
+  }
+  return parsed.data;
+}
+
+export async function fetchOpenTimes() {
+  const res = await client.api.schedules.schedule.$get();
+  if (!res.ok) {
+    throw new Error("Ошибка загрузки времени открытия магазинов");
+  }
+  const raw = await res.json();
+  const parsed = OpenTimesResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error("Некорректный формат времени открытия магазинов");
+  }
+  return parsed.data.dataReport || {};
+}
+
+export async function fetchSalesTodayGraph() {
+  const res = await client.api.evotor["sales-today-graf"].$get();
+  if (!res.ok) {
+    throw new Error("Ошибка загрузки данных графика");
+  }
+  return res.json();
+}
+
+export async function fetchFinancialMetrics(params?: {
+  since?: string;
+  until?: string;
+  shopUuid?: string;
+}) {
+  let res: Response;
+
+  if (params?.since && params?.until) {
+    const query: { since: string; until: string; shopUuid?: string } = {
+      since: params.since,
+      until: params.until,
+    };
+    if (params.shopUuid) {
+      query.shopUuid = params.shopUuid;
+    }
+    res = await client.api.evotor.financial.$get({ query });
+  } else {
+    const query = params?.shopUuid ? { shopUuid: params.shopUuid } : {};
+    res = await client.api.evotor.financial.today.$get({ query });
+  }
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error || err?.message || "Ошибка загрузки данных");
+  }
+
+  const rawJson = await res.json();
+  const parsed = FinancialMetricsResponseSchema.safeParse(rawJson);
+  if (!parsed.success) {
+    throw new Error("Некорректный формат финансовых данных");
+  }
+  return parsed.data;
+}
+
+export async function fetchFinancialTodayForUser(params: {
+  telegramId?: string;
+  userId?: string;
+}) {
+  const res = await client.api.evotor.financial.today.$get({
+    query: {
+      telegramId: params.telegramId || "",
+      userId: params.userId || "",
+    },
+  });
+
+  const json = await res.json();
+  if (!res.ok) {
+    const err = json as { error?: string; message?: string } | null;
+    throw new Error(err?.error || err?.message || "Ошибка загрузки данных");
+  }
+  return json;
 }
 
 export async function fetchEvotorShops(userId: string) {

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { client } from "../helpers/api";
+import { fetchOpeningPhotoDigest } from "@features/dashboard/api";
 
 type EmployeeRole = "SUPERADMIN" | "ADMIN" | "CASHIER" | "null";
 
@@ -52,16 +52,7 @@ export function OpeningPhotoDigestWidget({ employeeRole }: { employeeRole: Emplo
     setLoading(true);
     setError(null);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const res = await (client.api.ai as any)["opening-photo-digest"].$post({
-        json: { date },
-      });
-      const body = (await res.json()) as DigestResponse & { error?: string };
-
-      if (!res.ok) {
-        throw new Error(body?.error || "Не удалось выполнить AI-анализ");
-      }
-
+      const body = (await fetchOpeningPhotoDigest(date)) as DigestResponse;
       setResult(body);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки AI-дайджеста");

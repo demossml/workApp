@@ -10,7 +10,7 @@ import {
   TrendingDown,
   type LucideIcon,
 } from "lucide-react";
-import { client } from "../../helpers/api";
+import { fetchDashboardSummaryInsights } from "@features/dashboard/api";
 
 export type DashboardSummaryAiInsights = {
   risk: {
@@ -258,17 +258,7 @@ export function DashboardSummaryAiSection({
 
     const run = async () => {
       try {
-        const response = await client.api.ai["dashboard-summary2-insights"].$post({
-          json: cloudflareAiPayload,
-        });
-        const json = await response.json();
-        if (!response.ok) {
-          throw new Error(
-            json && typeof json === "object" && "error" in json
-              ? String((json as { error?: unknown }).error || "Ошибка Cloudflare AI")
-              : "Ошибка Cloudflare AI"
-          );
-        }
+        const json = await fetchDashboardSummaryInsights(cloudflareAiPayload);
         if (!cancelled) {
           setCloudflareAiData(json as DashboardSummary2AiResponse);
         }

@@ -1,24 +1,27 @@
 import { useEffect, useMemo } from "react";
 import {
-  askDirector,
-  loadDirectorDashboard,
-  loadKpiNarrative,
-  loadTopShopKpiNarrative,
-} from "@ai/agents/director";
+  runDirectorChatPipeline,
+  runDirectorDashboardPipeline,
+  runDirectorKpiPipeline,
+} from "@ai/orchestration/directorPipeline";
 import {
   filterAlertsHistory,
   filterShiftSummaries,
 } from "@features/ai/model/directorDashboardModel";
 import { useAiDirectorStore } from "@features/ai/model/aiDirectorStore";
+import { selectAiDirectorActions, selectAiDirectorViewState } from "@features/ai/model/selectors";
+import { useShallow } from "zustand/react/shallow";
 
 export function useAiDirectorPageModel() {
+  const viewState = useAiDirectorStore(useShallow(selectAiDirectorViewState));
+  const actions = useAiDirectorStore(useShallow(selectAiDirectorActions));
+
   const {
     alertsHistory,
     alertsHistoryDateFilter,
     alertsHistoryShopFilter,
     alertsHistoryShopOptions,
     alertsHistoryTypeFilter,
-    applyDashboardData,
     chatError,
     chatLoading,
     chatMessage,
@@ -48,6 +51,16 @@ export function useAiDirectorPageModel() {
     problemsSummary,
     quickActionNote,
     rating,
+    shiftHistoryDateFilter,
+    shiftHistoryShopFilter,
+    shiftHistoryShopOptions,
+    shiftSummariesHistory,
+    systemStatus,
+    topKpi,
+  } = viewState;
+
+  const {
+    applyDashboardData,
     setAlertsHistoryDateFilter,
     setAlertsHistoryShopFilter,
     setAlertsHistoryTypeFilter,
@@ -67,14 +80,8 @@ export function useAiDirectorPageModel() {
     setQuickActionNote,
     setShiftHistoryDateFilter,
     setShiftHistoryShopFilter,
-    shiftHistoryDateFilter,
-    shiftHistoryShopFilter,
-    shiftHistoryShopOptions,
-    shiftSummariesHistory,
-    systemStatus,
     toggleFocus,
-    topKpi,
-  } = useAiDirectorStore();
+  } = actions;
 
   const todayStr = useMemo(() => {
     const today = new Date();
@@ -92,7 +99,7 @@ export function useAiDirectorPageModel() {
       setError(null);
 
       try {
-        const dashboard = await loadDirectorDashboard({
+        const result = await runDirectorDashboardPipeline({
           date: todayStr,
           deepAnalysisDepth,
           deepRiskSensitivity,
@@ -104,26 +111,12 @@ export function useAiDirectorPageModel() {
           alertsHistoryDateFilter,
         });
 
-        const topRatedShop = dashboard.rating[0];
-        const topShopNarrative =
-          topRatedShop?.shopUuid == null
-            ? {
-                narrative: null as string | null,
-                sections: { strengths: [], growth: [], actions: [], raw: "" },
-              }
-            : await loadTopShopKpiNarrative({
-                topShopUuid: topRatedShop.shopUuid,
-                date: todayStr,
-              });
-
         if (cancelled) return;
 
         applyDashboardData({
-          dashboard,
-          topShop: topRatedShop,
-          topShopNarrative: topShopNarrative.sections
-            ? topShopNarrative
-            : { narrative: null, sections: { strengths: [], growth: [], actions: [], raw: "" } },
+          dashboard: result.dashboard,
+          topShop: result.topShop,
+          topShopNarrative: result.topShopNarrative,
         });
 
         setKpiNarrativeError(null);
@@ -166,7 +159,7 @@ export function useAiDirectorPageModel() {
     setChatError(null);
 
     try {
-      const reply = await askDirector({
+      const reply = await runDirectorChatPipeline({
         message: chatMessage,
         date: todayStr,
       });
@@ -185,10 +178,9 @@ export function useAiDirectorPageModel() {
     setKpiNarrativeError(null);
 
     try {
-      const narrative = await loadKpiNarrative({
+      const narrative = await runDirectorKpiPipeline({
         shopUuid: kpiSelectedShopUuid,
-        startDate: todayStr,
-        endDate: todayStr,
+        date: todayStr,
       });
 
       const selectedShopName =

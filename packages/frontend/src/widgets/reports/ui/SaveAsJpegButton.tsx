@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useRef, useState, useEffect } from "react";
 import { Save, Loader } from "lucide-react";
 import { telegram, isTelegramMiniApp } from "@/helpers/telegram.ts";
-import { client } from "@/helpers/api.ts";
+import { uploadReportImage } from "@features/reports/api";
 
 interface SaveAsJpegButtonProps {
   children: React.ReactNode;
@@ -72,31 +72,7 @@ export const SaveAsJpegButton: React.FC<SaveAsJpegButtonProps> = ({
 
       if (isMiniApp) {
         try {
-          const formData = new FormData();
-          formData.append("photos", file);
-
-          const uploadResponse = await client.api.uploads.upload.$post({
-            form: {
-              photos: file,
-            },
-          });
-
-          if (!uploadResponse.ok) {
-            const errorText = await uploadResponse.text();
-            throw new Error(
-              `Ошибка при загрузке: ${uploadResponse.status}. ${errorText}`
-            );
-          }
-
-          const result = (await uploadResponse.json()) as
-            | { url: string; name: string }
-            | { code: string; message: string; details?: unknown };
-
-          if (!("url" in result) || !result.url) {
-            throw new Error("URL не найден в ответе сервера");
-          }
-
-          const uploadUrl = result.url;
+          const uploadUrl = await uploadReportImage(file);
 
           // Успешная тактильная отдача
           telegram.WebApp.HapticFeedback.notificationOccurred("success");

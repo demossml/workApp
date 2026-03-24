@@ -5,7 +5,7 @@ import {
   type MutableRefObject,
 } from "react";
 import { toPng } from "html-to-image";
-import { client } from "../helpers/api";
+import { generatePdfFromFile } from "@features/reports/api";
 
 interface ReportUploaderProps {
   children?: React.ReactNode;
@@ -74,15 +74,7 @@ const ReportUploader = forwardRef<HTMLDivElement, ReportUploaderProps>(
         addLog(`Отправка файла: ${file.name} (${file.size} байт)`);
 
         // Отправка на сервер
-        const response = await client.api.evotor["generate-pdf"].$post({
-          form: {
-            file,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error(`Ошибка сервера: ${response.status}`);
-        }
+        await generatePdfFromFile(file);
 
         addLog("Изображение успешно отправлено!");
       } catch (err) {

@@ -3,11 +3,11 @@ import type { StoreOpeningStep } from "../../../pages/opening/types";
 import { useIsOpenStore } from "../../../hooks/useIsOpenStore";
 import { useMemo, useState } from "react";
 import { Check, Camera, DollarSign, AlertCircle } from "lucide-react";
-import { client } from "../../../helpers/api";
 import { clearProgress } from "../../../helpers/openingProgress";
 import { trackEvent } from "../../../helpers/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateDashboardQueries } from "@shared/api";
+import { openStore } from "@features/opening/api";
 
 interface InitialStepProps {
   setCurrentStep: React.Dispatch<React.SetStateAction<StoreOpeningStep>>;
@@ -62,29 +62,13 @@ export default function InitialStep({
         shopUuid: selectedShop,
         props: { date: today },
       });
-      const response = await client.api.stores["open-store"].$post({
-        json: {
-          timestamp: new Date().toISOString(),
-          userId,
-          shopUuid: selectedShop,
-          date: today,
-          userName,
-        },
+      await openStore({
+        timestamp: new Date().toISOString(),
+        userId,
+        shopUuid: selectedShop,
+        date: today,
+        userName,
       });
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        void trackEvent("open_store_failed", {
-          shopUuid: selectedShop,
-          props: {
-            status: response.status,
-            reason: (errorBody as { error?: string } | null)?.error ?? null,
-          },
-        });
-        throw new Error(
-          (errorBody as { error?: string } | null)?.error ??
-            `Ошибка открытия магазина: ${response.status}`
-        );
-      }
       void trackEvent("open_store_success", {
         shopUuid: selectedShop,
       });

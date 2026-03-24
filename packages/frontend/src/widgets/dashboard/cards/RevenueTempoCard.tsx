@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Clock3, TrendingUp } from "lucide-react";
-import { client } from "../../../helpers/api";
+import {
+  fetchRevenueHourlyPlanFact,
+  type HourlyPlanFactResponse,
+  type HourlyPlanFactRow,
+} from "@features/dashboard/api";
 import type { SalesData } from "../type";
 import type { AccessoriesSalesData } from "../../../hooks/dashboard/useAccessoriesSales";
 import {
@@ -8,28 +12,6 @@ import {
   getAccessoryShareTargetPct,
   getTempoSettingsChangedEventName,
 } from "../../../config/tempoSettings";
-
-type HourlyPlanFactRow = {
-  hour: number;
-  label: string;
-  actualHourly: number;
-  actualCumulative: number;
-  accessoriesHourly?: number;
-  accessoriesCumulative?: number;
-  expectedCumulative: number;
-  gap: number;
-};
-
-type HourlyPlanFactResponse = {
-  rows?: HourlyPlanFactRow[];
-  totalPlan?: number;
-  actualNet?: number;
-  window?: {
-    openHour?: number;
-    closeHour?: number;
-  };
-  error?: string;
-};
 
 type RevenueTempoCardProps = {
   salesDeltaPct: number;
@@ -174,16 +156,10 @@ export function RevenueTempoDetails({
       setHourlyLoading(true);
       setHourlyError(null);
       try {
-        const res = await client.api.analytics.revenue["hourly-plan-fact"].$get({
-          query: {
-            date: since,
-            shopName: shopFilter === "all" ? undefined : shopFilter,
-          },
-        });
-        const json = (await res.json()) as HourlyPlanFactResponse;
-        if (!res.ok) {
-          throw new Error(json.error || "Не удалось загрузить план-факт по часам");
-        }
+        const json = (await fetchRevenueHourlyPlanFact({
+          date: since,
+          shopName: shopFilter === "all" ? undefined : shopFilter,
+        })) as HourlyPlanFactResponse;
         if (!cancelled) {
           setHourlyRows(Array.isArray(json.rows) ? json.rows : []);
           setTotalPlan(Number(json.totalPlan || 0));

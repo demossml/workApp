@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { client } from "../../helpers/api";
+import { fetchDashboardHomeInsights } from "@features/dashboard/api";
 import type { DashboardSummaryAiInsights } from "../../widgets/dashboard/DashboardSummaryAiSection";
 import type { ShopKpiRow } from "../../widgets/dashboard/cards/BestShopDetails";
 import type { ShopLeaderCardData } from "../../widgets/dashboard/cards/BestShopCard";
@@ -46,22 +46,12 @@ export function useDashboardHomeInsights(params: Params) {
 
     const run = async () => {
       try {
-        const response = await (client.api.evotor as any)["dashboard-home-insights"].$post({
-          json: {
+        const json = await fetchDashboardHomeInsights({
             since: params.since,
             until: params.until,
             dateMode: params.dateMode,
             ...(params.shopUuid ? { shopUuid: params.shopUuid } : {}),
-          },
         });
-        const json = await response.json();
-        if (!response.ok) {
-          throw new Error(
-            (json as { error?: string; message?: string } | null)?.error ||
-              (json as { error?: string; message?: string } | null)?.message ||
-              "Не удалось загрузить инсайты",
-          );
-        }
         if (!cancelled) {
           const typed = json as {
             insights?: DashboardSummaryAiInsights;
