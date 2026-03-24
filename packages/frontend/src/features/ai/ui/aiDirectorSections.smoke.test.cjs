@@ -64,7 +64,10 @@ function createModel() {
     handleChat: noop,
     handleQuickAction: noop,
     handleRefreshKpiNarrative: noop,
-    heatmap: { map: new Map(), max: 0 },
+    heatmap: {
+      matrix: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
+      max: 0,
+    },
     heatmapStops: [0, 25, 50, 75, 100],
     kpiNarrative: null,
     kpiNarrativeError: null,

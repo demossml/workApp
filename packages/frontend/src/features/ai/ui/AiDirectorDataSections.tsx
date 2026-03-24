@@ -542,7 +542,7 @@ export function AiDirectorDataSections({ model }: Props) {
                   {label}
                 </div>
                 {Array.from({ length: 24 }, (_, hour) => {
-                  const value = heatmap.map.get(`${dayIdx}:${hour}`) || 0;
+                  const value = heatmap.matrix?.[dayIdx]?.[hour] || 0;
                   const tooltip = `${label}, ${String(hour).padStart(2, "0")}:00 — ${Math.round(value)} ₽`;
                   return (
                     <div

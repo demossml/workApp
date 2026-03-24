@@ -3,8 +3,10 @@ import type { IEnv } from "../types";
 import { logger } from "../logger";
 import {
 	AccessoryGroupsSaveSchema,
+	DashboardHomeInsightsRequestSchema,
 	GroupsByShopSchema,
 	OrderSchema,
+	OrderV2Schema,
 	ProfitReportSchema,
 	ProfitReportSnapshotBodySchema,
 	ProfitReportSnapshotIdSchema,
@@ -68,6 +70,7 @@ import { PlanForTodayResponseSchema } from "../contracts/planMetrics";
 import { WorkingByShopsResponseSchema } from "../contracts/workingByShops";
 import { CurrentWorkShopResponseSchema } from "../contracts/currentWorkShop";
 import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
+import { buildOrderForecastV2 } from "../services/orderForecastV2";
 import { saveNewIndexDocuments } from "../db/repositories/indexDocuments";
 import { getDocumentsByPeriod } from "../db/repositories/documents";
 import { normalizeDocuments } from "../analytics/normalize";
@@ -925,6 +928,27 @@ async function getOrderFromIndexWithFallback(
 
 	return optimalOrder;
 }
+
+const shiftIsoDateKey = (isoDate: string, days: number) => {
+	const date = new Date(`${isoDate}T00:00:00`);
+	if (Number.isNaN(date.getTime())) return isoDate;
+	date.setDate(date.getDate() + days);
+	const yyyy = date.getFullYear();
+	const mm = String(date.getMonth() + 1).padStart(2, "0");
+	const dd = String(date.getDate()).padStart(2, "0");
+	return `${yyyy}-${mm}-${dd}`;
+};
+
+const getDiffDaysInclusive = (since: string, until: string) => {
+	const from = new Date(`${since}T00:00:00`);
+	const to = new Date(`${until}T00:00:00`);
+	if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return 1;
+	const diffMs = to.getTime() - from.getTime();
+	return Math.max(1, Math.floor(diffMs / (24 * 60 * 60 * 1000)) + 1);
+};
+
+const clampRange = (value: number, min: number, max: number) =>
+	Math.min(max, Math.max(min, value));
 
 export const evotorRoutes = new Hono<IEnv>()
 
@@ -1961,6 +1985,571 @@ export const evotorRoutes = new Hono<IEnv>()
 		return c.json({ shopOptions, groups });
 	})
 
+	.post("/dashboard-home-insights", async (c) => {
+		try {
+			const payload = validate(
+				DashboardHomeInsightsRequestSchema,
+				await c.req.json().catch(() => ({})),
+			);
+			const baseUrl = new URL(c.req.url);
+			const headers = new Headers();
+			for (const headerName of ["initData", "telegram-id", "authorization", "cookie"]) {
+				const value = c.req.header(headerName);
+				if (value) headers.set(headerName, value);
+			}
+			const dateMode = payload.dateMode ?? "today";
+			const periodDays = getDiffDaysInclusive(payload.since, payload.until);
+			const prevUntil = shiftIsoDateKey(payload.since, -1);
+			const prevSince = shiftIsoDateKey(prevUntil, -(periodDays - 1));
+			const withShopFilter = (params: URLSearchParams) => {
+				if (payload.shopUuid) params.set("shopUuid", payload.shopUuid);
+				return params;
+			};
+			const currentParams = withShopFilter(
+				new URLSearchParams({ since: payload.since, until: payload.until }),
+			);
+			const previousParams = withShopFilter(
+				new URLSearchParams({ since: prevSince, until: prevUntil }),
+			);
+
+			const weekSince = shiftIsoDateKey(payload.until, -6);
+			const weekParams = withShopFilter(
+				new URLSearchParams({ since: weekSince, until: payload.until }),
+			);
+
+			const [currentRes, previousRes, weekRes, planRes] = await Promise.all([
+				fetch(new URL(`/api/evotor/financial?${currentParams.toString()}`, baseUrl.origin), {
+					method: "GET",
+					headers,
+				}),
+				fetch(new URL(`/api/evotor/financial?${previousParams.toString()}`, baseUrl.origin), {
+					method: "GET",
+					headers,
+				}),
+				fetch(new URL(`/api/evotor/financial?${weekParams.toString()}`, baseUrl.origin), {
+					method: "GET",
+					headers,
+				}),
+				fetch(new URL("/api/evotor/plan-for-today", baseUrl.origin), {
+					method: "GET",
+					headers,
+				}),
+			]);
+
+			if (!currentRes.ok) {
+				return c.json({ error: "DASHBOARD_HOME_CURRENT_FINANCIAL_FAILED" }, 500);
+			}
+			if (!previousRes.ok) {
+				return c.json({ error: "DASHBOARD_HOME_PREVIOUS_FINANCIAL_FAILED" }, 500);
+			}
+			if (!weekRes.ok) {
+				return c.json({ error: "DASHBOARD_HOME_WEEK_FINANCIAL_FAILED" }, 500);
+			}
+			if (!planRes.ok) {
+				return c.json({ error: "DASHBOARD_HOME_PLAN_FAILED" }, 500);
+			}
+
+			const currentData = (await currentRes.json()) as {
+				grandTotalSell: number;
+				grandTotalRefund: number;
+				totalChecks: number;
+				salesDataByShopName: Record<
+					string,
+					{ totalSell: number; checksCount: number; refund: Record<string, number> }
+				>;
+				cashOutcomeData: Record<string, Record<string, number>>;
+				topProducts?: Array<{
+					productName: string;
+					netQuantity: number;
+					quantity?: number;
+					netRevenue?: number;
+					averagePrice?: number;
+				}>;
+			};
+			const previousData = (await previousRes.json()) as {
+				grandTotalSell: number;
+				grandTotalRefund: number;
+				totalChecks: number;
+				salesDataByShopName: Record<
+					string,
+					{ totalSell: number; checksCount: number; refund: Record<string, number> }
+				>;
+			};
+			const weekData = (await weekRes.json()) as {
+				salesDataByShopName: Record<
+					string,
+					{ totalSell: number; checksCount: number; refund: Record<string, number> }
+				>;
+				cashOutcomeData: Record<string, Record<string, number>>;
+			};
+			const planJson = (await planRes.json()) as {
+				salesData?: Record<
+					string,
+					| {
+							datePlan: number;
+							dataSales: number;
+							dataQuantity?: Record<string, number | string> | null;
+					  }
+					| number
+					| null
+				>;
+			};
+			const planData = (planJson.salesData || {}) as Record<
+				string,
+				| {
+						datePlan: number;
+						dataSales: number;
+						dataQuantity?: Record<string, number | string> | null;
+				  }
+				| number
+				| null
+			>;
+
+			const formatMoney = (value: number) =>
+				new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(
+					Math.round(value),
+				);
+			const sumRecordValues = (record?: Record<string, number>) =>
+				Object.values(record || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+			const buildShopKpiRowsFromFinancial = (input: {
+				salesDataByShopName: Record<
+					string,
+					{ totalSell: number; checksCount: number; refund: Record<string, number> }
+				>;
+				cashOutcomeData?: Record<string, Record<string, number>>;
+			}) =>
+				Object.entries(input.salesDataByShopName || {}).map(([name, shop]) => {
+					const refunds = sumRecordValues(shop.refund);
+					const expenses = sumRecordValues(input.cashOutcomeData?.[name]);
+					const netRevenue = Number(shop.totalSell || 0) - refunds - expenses;
+					const averageCheck =
+						Number(shop.checksCount || 0) > 0
+							? Number(shop.totalSell || 0) / Number(shop.checksCount || 0)
+							: 0;
+					const refundRate =
+						Number(shop.totalSell || 0) > 0 ? (refunds / Number(shop.totalSell || 0)) * 100 : 0;
+					return {
+						name,
+						revenue: Number(shop.totalSell || 0),
+						averageCheck,
+						refunds,
+						expenses,
+						netRevenue,
+						checks: Number(shop.checksCount || 0),
+						refundRate,
+					};
+				});
+			const getLeaderReason = (
+				leader: {
+					averageCheck: number;
+					checks: number;
+					refundRate: number;
+				},
+				rows: Array<{ averageCheck: number; checks: number; refundRate: number }>,
+			): "чек" | "трафик" | "конверсия" => {
+				if (rows.length === 0) return "чек";
+				const avgCheck =
+					rows.reduce((sum, item) => sum + item.averageCheck, 0) / Math.max(1, rows.length);
+				const avgTraffic =
+					rows.reduce((sum, item) => sum + item.checks, 0) / Math.max(1, rows.length);
+				const avgRefundRate =
+					rows.reduce((sum, item) => sum + item.refundRate, 0) / Math.max(1, rows.length);
+				const checkScore = avgCheck > 0 ? leader.averageCheck / avgCheck : 0;
+				const trafficScore = avgTraffic > 0 ? leader.checks / avgTraffic : 0;
+				const conversionScore =
+					avgRefundRate > 0 ? (avgRefundRate - leader.refundRate) / avgRefundRate + 1 : 1;
+				if (checkScore >= trafficScore && checkScore >= conversionScore) return "чек";
+				if (trafficScore >= checkScore && trafficScore >= conversionScore) return "трафик";
+				return "конверсия";
+			};
+			const buildLeaderCardData = (
+				rows: Array<{
+					name: string;
+					netRevenue: number;
+					averageCheck: number;
+					checks: number;
+					refundRate: number;
+				}>,
+			) => {
+				if (rows.length === 0) return null;
+				const sorted = [...rows].sort((a, b) => b.netRevenue - a.netRevenue);
+				const leader = sorted[0];
+				const second = sorted[1];
+				return {
+					name: leader.name,
+					netRevenue: leader.netRevenue,
+					gapToSecond: second ? leader.netRevenue - second.netRevenue : leader.netRevenue,
+					reason: getLeaderReason(leader, rows),
+				};
+			};
+			const pctChange = (current: number, previous: number) => {
+				if (previous <= 0) return current > 0 ? 100 : 0;
+				return ((current - previous) / previous) * 100;
+			};
+			const dayShopKpiRows = buildShopKpiRowsFromFinancial(currentData);
+			const weekShopKpiRows = buildShopKpiRowsFromFinancial(weekData);
+			const dayLeader = buildLeaderCardData(dayShopKpiRows);
+			const weekLeader = buildLeaderCardData(weekShopKpiRows);
+
+			const currentNetSales = Number(currentData.grandTotalSell || 0) -
+				Number(currentData.grandTotalRefund || 0);
+			const currentChecks = Number(currentData.totalChecks || 0);
+			const currentAvgCheck = currentChecks > 0 ? currentNetSales / currentChecks : 0;
+			const currentRefundRate =
+				Number(currentData.grandTotalSell || 0) > 0
+					? (Number(currentData.grandTotalRefund || 0) /
+							Number(currentData.grandTotalSell || 0)) *
+						100
+					: 0;
+
+			const previousNetSales = Number(previousData.grandTotalSell || 0) -
+				Number(previousData.grandTotalRefund || 0);
+			const previousChecks = Number(previousData.totalChecks || 0);
+			const previousAvgCheck = previousChecks > 0 ? previousNetSales / previousChecks : 0;
+			const previousRefundRate =
+				Number(previousData.grandTotalSell || 0) > 0
+					? (Number(previousData.grandTotalRefund || 0) /
+							Number(previousData.grandTotalSell || 0)) *
+						100
+					: 0;
+
+			const checksDeltaPct = pctChange(currentChecks, previousChecks);
+			const avgCheckDeltaPct = pctChange(currentAvgCheck, previousAvgCheck);
+			const salesDeltaPct = pctChange(currentNetSales, previousNetSales);
+			const refundDeltaPp = currentRefundRate - previousRefundRate;
+
+			const previousByShop = new Map<
+				string,
+				{ netSales: number; checks: number; avgCheck: number; refundRate: number }
+			>();
+			for (const [shopName, shopData] of Object.entries(
+				previousData.salesDataByShopName || {},
+			)) {
+				const totalRefund = Object.values(shopData.refund || {}).reduce(
+					(sum, val) => sum + Number(val || 0),
+					0,
+				);
+				const netSales = Number(shopData.totalSell || 0) - totalRefund;
+				const checks = Number(shopData.checksCount || 0);
+				previousByShop.set(shopName, {
+					netSales,
+					checks,
+					avgCheck: checks > 0 ? netSales / checks : 0,
+					refundRate:
+						Number(shopData.totalSell || 0) > 0
+							? (totalRefund / Number(shopData.totalSell || 0)) * 100
+							: 0,
+				});
+			}
+
+			const shopMetrics = Object.entries(currentData.salesDataByShopName || {}).map(
+				([shopName, shopData]) => {
+					const totalRefund = Object.values(shopData.refund || {}).reduce(
+						(sum, val) => sum + Number(val || 0),
+						0,
+					);
+					const netSales = Number(shopData.totalSell || 0) - totalRefund;
+					const checks = Number(shopData.checksCount || 0);
+					const avgCheck = checks > 0 ? netSales / checks : 0;
+					const refundRate =
+						Number(shopData.totalSell || 0) > 0
+							? (totalRefund / Number(shopData.totalSell || 0)) * 100
+							: 0;
+					const prev = previousByShop.get(shopName);
+					return {
+						shopName,
+						netSales,
+						checks,
+						avgCheck,
+						refundRate,
+						prevNetSales: prev?.netSales ?? 0,
+						prevChecks: prev?.checks ?? 0,
+						prevAvgCheck: prev?.avgCheck ?? 0,
+					};
+				},
+			);
+
+			const riskRows = shopMetrics
+				.map((shop) => {
+					const planInfo = planData[shop.shopName];
+					const plan =
+						typeof planInfo === "number"
+							? Number(planInfo || 0)
+							: Number(planInfo?.datePlan || 0);
+					const fact = shop.netSales;
+					const progress = plan > 0 ? (fact / plan) * 100 : 0;
+					const risk =
+						plan > 0
+							? clampRange(100 - progress + (shop.refundRate > 8 ? 6 : 0), 0, 99)
+							: 0;
+					return {
+						shopName: shop.shopName,
+						plan,
+						fact,
+						progress,
+						risk,
+						missing: Math.max(0, plan - fact),
+					};
+				})
+				.filter((row) => row.plan > 0)
+				.sort((a, b) => b.risk - a.risk);
+
+			const totalPlan = riskRows.reduce((sum, row) => sum + row.plan, 0);
+			const weightedRisk = totalPlan
+				? riskRows.reduce((sum, row) => sum + row.risk * row.plan, 0) / totalPlan
+				: 0;
+			const redShops = riskRows.filter((row) => row.risk >= 40 || row.progress < 70);
+
+			const topActions: string[] = [];
+			if (redShops.length > 0) {
+				const top = redShops[0];
+				topActions.push(
+					`Фокус на ${top.shopName}: закрыть отставание ${formatMoney(top.missing)} ₽ до конца смены.`,
+				);
+			}
+			const refundRiskShops = shopMetrics
+				.filter((shop) => shop.refundRate > 8)
+				.sort((a, b) => b.refundRate - a.refundRate);
+			if (refundRiskShops.length > 0) {
+				topActions.push(
+					`Снизить возвраты в ${refundRiskShops[0].shopName}: сейчас ${refundRiskShops[0].refundRate.toFixed(1)}%.`,
+				);
+			}
+			if (salesDeltaPct < -5) {
+				topActions.push(
+					`Оперативно восстановить темп: сеть просела на ${Math.abs(salesDeltaPct).toFixed(1)}% к прошлому периоду.`,
+				);
+			}
+			while (topActions.length < 3) {
+				topActions.push("Проверить наличие топ-SKU и усилить продажи в пиковый час.");
+			}
+
+			const checklistShops = (redShops.length > 0 ? redShops : riskRows)
+				.slice(0, 3)
+				.map((shop) => ({
+					shopName: shop.shopName,
+					items: [
+						"Проверить остатки топ-3 SKU.",
+						"Запустить дополнительный upsell на кассе.",
+						"Промониторить возвраты и спорные чеки в реальном времени.",
+					],
+				}));
+
+			const now = new Date();
+			const hour = now.getHours() + now.getMinutes() / 60;
+			const openHour = 10;
+			const closeHour = 22;
+			const elapsed = clampRange((hour - openHour) / (closeHour - openHour), 0.2, 1);
+			const forecastValue =
+				dateMode === "today" ? currentNetSales / Math.max(0.2, elapsed) : currentNetSales;
+			const uncertainty =
+				dateMode === "today"
+					? clampRange(0.45 - elapsed * 0.25, 0.12, 0.4)
+					: 0.2;
+			const forecastLower = forecastValue * (1 - uncertainty);
+			const forecastUpper = forecastValue * (1 + uncertainty);
+			const confidence = Math.round((1 - uncertainty) * 100);
+
+			const forecastFactors: Array<{
+				label: string;
+				value: string;
+				impact: "plus" | "minus" | "neutral";
+			}> = [
+				{
+					label: "Трафик (чеки)",
+					value: `${checksDeltaPct >= 0 ? "+" : ""}${checksDeltaPct.toFixed(1)}%`,
+					impact:
+						checksDeltaPct > 2 ? "plus" : checksDeltaPct < -2 ? "minus" : "neutral",
+				},
+				{
+					label: "Средний чек",
+					value: `${avgCheckDeltaPct >= 0 ? "+" : ""}${avgCheckDeltaPct.toFixed(1)}%`,
+					impact:
+						avgCheckDeltaPct > 2
+							? "plus"
+							: avgCheckDeltaPct < -2
+								? "minus"
+								: "neutral",
+				},
+				{
+					label: "Доля возвратов",
+					value: `${currentRefundRate.toFixed(1)}% (${refundDeltaPp >= 0 ? "+" : ""}${refundDeltaPp.toFixed(1)} п.п.)`,
+					impact:
+						refundDeltaPp > 0.5
+							? "minus"
+							: refundDeltaPp < -0.5
+								? "plus"
+								: "neutral",
+				},
+			];
+
+			const reasonCandidates = [
+				{ reason: "Падение трафика (меньше чеков)", score: Math.max(0, -checksDeltaPct) },
+				{ reason: "Просадка среднего чека", score: Math.max(0, -avgCheckDeltaPct) },
+				{ reason: "Рост возвратов", score: Math.max(0, refundDeltaPp * 2) },
+			];
+			const mainReason =
+				salesDeltaPct >= 0
+					? "Просадки нет, динамика стабильная или положительная."
+					: reasonCandidates.sort((a, b) => b.score - a.score)[0].reason;
+
+			const dropByShop = shopMetrics
+				.filter((shop) => shop.prevNetSales > 0)
+				.map((shop) => ({
+					shopName: shop.shopName,
+					current: shop.netSales,
+					previous: shop.prevNetSales,
+					deltaPct: pctChange(shop.netSales, shop.prevNetSales),
+				}))
+				.sort((a, b) => a.deltaPct - b.deltaPct)
+				.slice(0, 5);
+
+			const incidents: Array<{
+				shopName: string;
+				type: string;
+				details: string;
+				severity: number;
+			}> = [];
+			for (const shop of shopMetrics) {
+				if (shop.refundRate > 10) {
+					incidents.push({
+						shopName: shop.shopName,
+						type: "Возвраты",
+						details: `Высокая доля возвратов: ${shop.refundRate.toFixed(1)}%`,
+						severity: Math.round(shop.refundRate * 3),
+					});
+				}
+				if (shop.prevChecks > 5) {
+					const deltaChecks = pctChange(shop.checks, shop.prevChecks);
+					if (deltaChecks < -30) {
+						incidents.push({
+							shopName: shop.shopName,
+							type: "Чеки",
+							details: `Просадка количества чеков: ${deltaChecks.toFixed(1)}%`,
+							severity: Math.round(Math.abs(deltaChecks)),
+						});
+					}
+				}
+				if (shop.prevAvgCheck > 0) {
+					const deltaAvg = pctChange(shop.avgCheck, shop.prevAvgCheck);
+					if (deltaAvg < -25) {
+						incidents.push({
+							shopName: shop.shopName,
+							type: "Средний чек",
+							details: `Падение среднего чека: ${deltaAvg.toFixed(1)}%`,
+							severity: Math.round(Math.abs(deltaAvg)),
+						});
+					}
+				}
+			}
+			incidents.sort((a, b) => b.severity - a.severity);
+
+			const plannedQtyByProduct = new Map<string, number>();
+			for (const shop of shopMetrics) {
+				const planInfo = planData[shop.shopName];
+				const quantityMap =
+					typeof planInfo === "object" && planInfo?.dataQuantity
+						? planInfo.dataQuantity
+						: undefined;
+				if (!quantityMap) continue;
+				for (const [productName, quantityRaw] of Object.entries(quantityMap)) {
+					const qty = Number(quantityRaw || 0);
+					if (!Number.isFinite(qty) || qty <= 0) continue;
+					plannedQtyByProduct.set(
+						productName,
+						(plannedQtyByProduct.get(productName) || 0) + qty,
+					);
+				}
+			}
+
+			const actualByProduct = new Map(
+				(currentData.topProducts || []).map((item) => [item.productName, item]),
+			);
+			const losses = Array.from(plannedQtyByProduct.entries())
+				.map(([productName, planQty]) => {
+					const actual = actualByProduct.get(productName);
+					const actualQty = Number(actual?.netQuantity ?? actual?.quantity ?? 0);
+					const avgPrice =
+						Number(actual?.averagePrice || 0) > 0
+							? Number(actual?.averagePrice || 0)
+							: actualQty > 0
+								? Number(actual?.netRevenue || 0) / actualQty
+								: 0;
+					const lostQty = Math.max(0, planQty - actualQty);
+					const lostRevenue = lostQty * Math.max(0, avgPrice);
+					return { productName, planQty, actualQty, lostQty, lostRevenue };
+				})
+				.filter((row) => row.lostQty > 0 && row.lostRevenue > 0)
+				.sort((a, b) => b.lostRevenue - a.lostRevenue)
+				.slice(0, 6);
+
+			const fallbackLosses =
+				losses.length > 0
+					? losses
+					: (currentData.topProducts || []).slice(0, 6).map((item) => {
+							const impliedLostQty = Math.max(1, Math.round((item.netQuantity || 1) * 0.15));
+							return {
+								productName: item.productName,
+								planQty: (item.netQuantity || 0) + impliedLostQty,
+								actualQty: item.netQuantity || 0,
+								lostQty: impliedLostQty,
+								lostRevenue: impliedLostQty * Math.max(0, item.averagePrice || 0),
+							};
+						});
+			const totalLoss = fallbackLosses.reduce((sum, row) => sum + row.lostRevenue, 0);
+
+			return c.json({
+				since: payload.since,
+				until: payload.until,
+				previous: { since: prevSince, until: prevUntil },
+				insights: {
+					risk: {
+						networkProbability: weightedRisk,
+						redShops,
+					},
+					actions: {
+						top3: topActions.slice(0, 3),
+						checklist: checklistShops,
+					},
+					forecast: {
+						value: forecastValue,
+						lower: forecastLower,
+						upper: forecastUpper,
+						confidence,
+						factors: forecastFactors,
+					},
+					drop: {
+						salesDeltaPct,
+						mainReason,
+						byShop: dropByShop,
+					},
+					anomalies: {
+						incidents: incidents.slice(0, 8),
+					},
+					losses: {
+						totalLoss,
+						skus: fallbackLosses,
+					},
+					context: {
+						checksDeltaPct,
+						avgCheckDeltaPct,
+						refundRate: currentRefundRate,
+						refundDeltaPp,
+					},
+				},
+				bestShop: {
+					dayRows: dayShopKpiRows,
+					weekRows: weekShopKpiRows,
+					dayLeader,
+					weekLeader,
+				},
+			});
+		} catch (error) {
+			logger.error("Dashboard home insights failed", { error });
+			return c.json({ error: "DASHBOARD_HOME_INSIGHTS_FAILED" }, 500);
+		}
+	})
+
 	.get("/financial", async (c) => {
 		try {
 			const db = c.get("db");
@@ -2467,6 +3056,32 @@ export const evotorRoutes = new Hono<IEnv>()
 			const { status, body } = toApiErrorPayload(error, {
 				code: "ORDER_REPORT_FAILED",
 				message: "Произошла ошибка при обработке запроса.",
+			});
+			return c.json(body, status as 200);
+		}
+	})
+
+	.post("/order-v2", async (c) => {
+		try {
+			const payload = validate(OrderV2Schema, await c.req.json().catch(() => ({})));
+			const result = await buildOrderForecastV2({
+				db: c.get("db"),
+				evotor: c.var.evotor,
+				shopUuid: payload.shopUuid,
+				groups: payload.groups,
+				startDate: payload.startDate,
+				endDate: payload.endDate,
+				forecastHorizonDays: payload.forecastHorizonDays ?? 7,
+				leadTimeDays: payload.leadTimeDays ?? 2,
+				serviceLevel: (payload.serviceLevel ?? 0.95) as 0.8 | 0.9 | 0.95 | 0.98,
+				budgetLimit: payload.budgetLimit ?? null,
+			});
+			return c.json(result);
+		} catch (error) {
+			logger.error("Ошибка при обработке запроса order-v2:", error);
+			const { status, body } = toApiErrorPayload(error, {
+				code: "ORDER_V2_REPORT_FAILED",
+				message: "Произошла ошибка при обработке запроса order-v2.",
 			});
 			return c.json(body, status as 200);
 		}

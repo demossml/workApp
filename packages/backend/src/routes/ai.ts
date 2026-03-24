@@ -24,6 +24,10 @@ import {
 	validate,
 } from "../validation";
 import {
+	AiDirectorDashboardRequestSchema,
+	AiDirectorDashboardResponseSchema,
+} from "../contracts/aiDirectorDashboard";
+import {
 	assert,
 	buildSinceUntilFromDocuments,
 	formatDateWithTime,
@@ -681,6 +685,57 @@ const extractAiText = (result: unknown): string => {
 		return ((asAny.result as Record<string, unknown>).response as string).trim();
 	}
 	return "";
+};
+
+const parseKpiNarrativeSections = (narrative: string | null) => {
+	const source = (narrative || "").trim();
+	if (!source) {
+		return {
+			strengths: [] as string[],
+			growth: [] as string[],
+			actions: [] as string[],
+			raw: "",
+		};
+	}
+
+	const lines = source
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+
+	const normalize = (line: string) =>
+		line
+			.replace(/^[\d\)\.\-\s•]+/, "")
+			.trim();
+
+	const strengths: string[] = [];
+	const growth: string[] = [];
+	const actions: string[] = [];
+
+	let mode: "strengths" | "growth" | "actions" | null = null;
+	for (const line of lines) {
+		const lower = line.toLowerCase();
+		if (lower.includes("сильн")) {
+			mode = "strengths";
+			continue;
+		}
+		if (lower.includes("зон") || lower.includes("рост")) {
+			mode = "growth";
+			continue;
+		}
+		if (lower.includes("действ") || lower.includes("следующ")) {
+			mode = "actions";
+			continue;
+		}
+
+		const item = normalize(line);
+		if (!item) continue;
+		if (mode === "strengths") strengths.push(item);
+		else if (mode === "growth") growth.push(item);
+		else if (mode === "actions") actions.push(item);
+	}
+
+	return { strengths, growth, actions, raw: source };
 };
 
 type DashboardSummary2Metrics = {
@@ -4051,6 +4106,336 @@ export const aiRoutes = new Hono<IEnv>()
 			logger.error("AI director chat failed", { error });
 			return c.json({ error: "AI_DIRECTOR_CHAT_FAILED" }, 500);
 		}
+		})
+
+	.post("/director/dashboard", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const request = validate(AiDirectorDashboardRequestSchema, payload);
+
+			const today = toIsoDate(new Date());
+			const targetDate = request.date ?? today;
+			const since = request.since ?? targetDate;
+			const until = request.until ?? targetDate;
+			const deepAnalysisDepth = request.deepAnalysisDepth ?? "standard";
+			const deepRiskSensitivity = request.deepRiskSensitivity ?? "normal";
+			const deepFocusAreas = request.deepFocusAreas ?? [
+				"revenue_trend",
+				"avg_check",
+				"refunds",
+				"traffic",
+				"peer_comparison",
+				"stability",
+			];
+			const historyLimit = request.historyLimit ?? 50;
+
+			const baseUrl = new URL(c.req.url);
+			const forwardHeaders = new Headers();
+			for (const headerName of ["initData", "telegram-id", "authorization", "cookie"]) {
+				const value = c.req.header(headerName);
+				if (value) forwardHeaders.set(headerName, value);
+			}
+			forwardHeaders.set("content-type", "application/json");
+
+			const postInternal = async (path: string, body: Record<string, unknown>) => {
+				const url = new URL(`/api/ai${path}`, baseUrl.origin);
+				const response = await fetch(url.toString(), {
+					method: "POST",
+					headers: forwardHeaders,
+					body: JSON.stringify(body),
+				});
+				if (!response.ok) {
+					throw new Error(`AI_DASHBOARD_INTERNAL_POST_FAILED:${path}:${response.status}`);
+				}
+				return (await response.json()) as Record<string, any>;
+			};
+
+			const getInternal = async (pathWithQuery: string) => {
+				const url = new URL(`/api/ai${pathWithQuery}`, baseUrl.origin);
+				const response = await fetch(url.toString(), {
+					method: "GET",
+					headers: forwardHeaders,
+				});
+				if (!response.ok) {
+					throw new Error(`AI_DASHBOARD_INTERNAL_GET_FAILED:${pathWithQuery}:${response.status}`);
+				}
+				return (await response.json()) as Record<string, any>;
+			};
+
+			const commonBody = {
+				since,
+				until,
+				...(request.shopUuids ? { shopUuids: request.shopUuids } : {}),
+			};
+
+			const [
+				ratingJson,
+				employeesJson,
+				deepEmployeesJson,
+				forecastJson,
+				heatmapJson,
+				shiftHistoryRaw,
+				alertsHistoryRaw,
+			] = await Promise.all([
+				postInternal("/director/store-rating", commonBody),
+				postInternal("/director/employee-analysis", commonBody),
+				postInternal("/director/employee-deep-analysis", {
+					...commonBody,
+					analysisDepth: deepAnalysisDepth,
+					riskSensitivity: deepRiskSensitivity,
+					focusAreas: deepFocusAreas,
+					limit: 20,
+				}),
+				postInternal("/director/demand-forecast", {
+					date: targetDate,
+					...(request.shopUuids ? { shopUuids: request.shopUuids } : {}),
+				}),
+				postInternal("/director/heatmap", {
+					...(request.shopUuids ? { shopUuids: request.shopUuids } : {}),
+				}),
+				getInternal(`/history/shift-summaries?limit=${historyLimit}`),
+				getInternal(`/history/alerts?limit=${historyLimit}`),
+			]);
+
+			const rating = Array.isArray(ratingJson.rating) ? ratingJson.rating : [];
+			const employees = Array.isArray(employeesJson.employees)
+				? employeesJson.employees
+				: [];
+			const deepEmployees = Array.isArray(deepEmployeesJson.employees)
+				? deepEmployeesJson.employees
+				: [];
+			const deepMeta = {
+				analysisDepth:
+					deepEmployeesJson.analysisDepth === "lite" ||
+					deepEmployeesJson.analysisDepth === "deep"
+						? deepEmployeesJson.analysisDepth
+						: "standard",
+				historyDays: Number(deepEmployeesJson.historyDays || 0),
+				warning:
+					typeof deepEmployeesJson.warning === "string"
+						? deepEmployeesJson.warning
+						: null,
+				comparisonCoverage: deepEmployeesJson.comparisonCoverage || undefined,
+			};
+			const forecast = {
+				forecast: Number(forecastJson.forecast || 0),
+				weather: forecastJson.weather || null,
+				weatherFactor:
+					typeof forecastJson.weatherFactor === "number"
+						? forecastJson.weatherFactor
+						: undefined,
+				warning:
+					typeof forecastJson.warning === "string" ? forecastJson.warning : null,
+				historySource:
+					forecastJson.historySource === "index" ? "index" : "receipts",
+			};
+			const heatmapRows = Array.isArray(heatmapJson.rows) ? heatmapJson.rows : [];
+			const shiftHistoryAllItems = Array.isArray(shiftHistoryRaw.items)
+				? shiftHistoryRaw.items
+				: [];
+			const alertsHistoryAllItems = Array.isArray(alertsHistoryRaw.items)
+				? alertsHistoryRaw.items
+				: [];
+
+			const shiftHistoryItems = shiftHistoryAllItems.filter((row) => {
+				if (
+					request.shiftHistoryShopUuid &&
+					request.shiftHistoryShopUuid !== "all" &&
+					row.shopUuid !== request.shiftHistoryShopUuid
+				) {
+					return false;
+				}
+				if (request.shiftHistoryDate && row.date !== request.shiftHistoryDate) return false;
+				return true;
+			});
+
+			const alertsHistoryItems = alertsHistoryAllItems.filter((row) => {
+				if (
+					request.alertHistoryShopUuid &&
+					request.alertHistoryShopUuid !== "all" &&
+					row.shopUuid !== request.alertHistoryShopUuid
+				) {
+					return false;
+				}
+				if (
+					request.alertHistoryType &&
+					request.alertHistoryType !== "all" &&
+					row.alertType !== request.alertHistoryType
+				) {
+					return false;
+				}
+				if (
+					request.alertHistoryDate &&
+					typeof row.triggeredAt === "string" &&
+					!row.triggeredAt.startsWith(request.alertHistoryDate)
+				) {
+					return false;
+				}
+				return true;
+			});
+
+			const shiftShopOptions = Array.from(
+				new Set(
+					shiftHistoryAllItems
+						.map((row) => (typeof row.shopUuid === "string" ? row.shopUuid : ""))
+						.filter(Boolean),
+				),
+			);
+			const alertShopOptions = Array.from(
+				new Set(
+					alertsHistoryAllItems
+						.map((row) => (typeof row.shopUuid === "string" ? row.shopUuid : ""))
+						.filter(Boolean),
+				),
+			);
+
+			const totalRevenue = rating.reduce(
+				(sum, row) => sum + Number((row as { revenue?: number }).revenue || 0),
+				0,
+			);
+			const totalChecks = rating.reduce(
+				(sum, row) => sum + Number((row as { checks?: number }).checks || 0),
+				0,
+			);
+			const avgCheck = totalChecks > 0 ? totalRevenue / totalChecks : 0;
+			const weakShops = rating.filter(
+				(row) => Number((row as { revenue?: number }).revenue || 0) < avgCheck * 10,
+			).length;
+
+			const criticalAlerts = alertsHistoryItems.filter(
+				(item) => (item as { severity?: string }).severity === "critical",
+			);
+			const warningAlerts = alertsHistoryItems.filter(
+				(item) => (item as { severity?: string }).severity === "warning",
+			);
+			const riskyEmployees = deepEmployees.filter(
+				(item) => Number((item as { riskScore?: number }).riskScore || 0) >= 75,
+			);
+			const highRefundEmployees = deepEmployees.filter(
+				(item) => Number((item as { refundRatePct?: number }).refundRatePct || 0) >= 5,
+			);
+			const systemState =
+				criticalAlerts.length > 0
+					? "critical"
+					: warningAlerts.length > 0 || riskyEmployees.length > 0
+						? "warning"
+						: "stable";
+
+			const maxRevenue = heatmapRows.reduce(
+				(max, row) => Math.max(max, Number((row as { revenue?: number }).revenue || 0)),
+				0,
+			);
+			const heatmapMatrix = Array.from({ length: 7 }, () =>
+				Array.from({ length: 24 }, () => 0),
+			);
+			for (const row of heatmapRows) {
+				const day = Number((row as { dayOfWeek?: number }).dayOfWeek);
+				const hour = Number((row as { hour?: number }).hour);
+				if (!Number.isInteger(day) || day < 0 || day > 6) continue;
+				if (!Number.isInteger(hour) || hour < 0 || hour > 23) continue;
+				heatmapMatrix[day][hour] = Number((row as { revenue?: number }).revenue || 0);
+			}
+
+			const responsePayload = {
+				period: {
+					since,
+					until,
+					date: targetDate,
+				},
+				filters: {
+					deepAnalysisDepth,
+					deepRiskSensitivity,
+					deepFocusAreas,
+				},
+				rating,
+				employees,
+				deepEmployees,
+				deepMeta,
+				forecast,
+				heatmap: {
+					maxRevenue,
+					cells: heatmapRows,
+					matrix: heatmapMatrix,
+					dayLabels: ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"],
+					stops: [0, 25, 50, 75, 100],
+				},
+				shiftHistory: {
+					items: shiftHistoryItems,
+					shopOptions: shiftShopOptions,
+					total: shiftHistoryItems.length,
+				},
+				alertsHistory: {
+					items: alertsHistoryItems,
+					shopOptions: alertShopOptions,
+					total: alertsHistoryItems.length,
+				},
+				uiSummary: {
+					systemStatus: {
+						state: systemState,
+						label:
+							systemState === "critical"
+								? `Критично: ${criticalAlerts.length} сигнал(ов)`
+								: systemState === "warning"
+									? `Есть проблемы: ${warningAlerts.length + riskyEmployees.length}`
+									: "Система стабильна",
+						criticalAlerts: criticalAlerts.length,
+						warningAlerts: warningAlerts.length,
+						riskyEmployees: riskyEmployees.length,
+					},
+					topKpi: {
+						totalRevenue,
+						totalChecks,
+						avgCheck,
+						weakShops,
+					},
+					problemsSummary: {
+						criticalAlerts: criticalAlerts
+							.slice(0, 5)
+							.map((item) => ({ id: Number(item.id || 0), message: String(item.message || "") })),
+						warningAlerts: warningAlerts
+							.slice(0, 5)
+							.map((item) => ({ id: Number(item.id || 0), message: String(item.message || "") })),
+						riskyEmployees: riskyEmployees
+							.slice(0, 10)
+							.map((item) => ({
+								employeeUuid: String(item.employeeUuid || ""),
+								name: String(item.name || "Неизвестный сотрудник"),
+							})),
+						highRefundEmployees: highRefundEmployees
+							.slice(0, 10)
+							.map((item) => ({
+								employeeUuid: String(item.employeeUuid || ""),
+								name: String(item.name || "Неизвестный сотрудник"),
+							})),
+					},
+					directorDecisions: deepEmployees.slice(0, 3).map((employee) => ({
+						employeeName: String(employee.name || "Неизвестный сотрудник"),
+						problem:
+							typeof employee.reasons?.[0] === "string"
+								? employee.reasons[0]
+								: "Падение эффективности смены",
+						action:
+							typeof employee.recommendations?.[0] === "string"
+								? employee.recommendations[0]
+								: "Провести разбор смены и назначить корректирующее действие",
+						risk: clamp(Math.round(Number(employee.riskScore || 0)), 0, 100),
+					})),
+					decisionsLog: alertsHistoryItems.slice(0, 5).map((item) => ({
+						id: Number(item.id || 0),
+						when: String(item.triggeredAt || ""),
+						type: item.alertType,
+						severity: item.severity,
+						text: String(item.message || ""),
+					})),
+				},
+			};
+
+			const validated = AiDirectorDashboardResponseSchema.parse(responsePayload);
+			return c.json(validated);
+		} catch (error) {
+			logger.error("AI director dashboard failed", { error });
+			return c.json({ error: "AI_DIRECTOR_DASHBOARD_FAILED" }, 500);
+		}
 	})
 
 	.get("/documents", async (c) => {
@@ -4738,18 +5123,19 @@ export const aiRoutes = new Hono<IEnv>()
 				});
 			}
 
-			return c.json({
-				period: {
-					startDate: payload.startDate,
-					endDate: payload.endDate,
-					days: periodDays,
-					generatedAt: toIsoDate(new Date()),
-				},
-				overall,
-				employees: sortedEmployees,
-				shifts: shiftSummary,
-				narrative,
-			});
+				return c.json({
+					period: {
+						startDate: payload.startDate,
+						endDate: payload.endDate,
+						days: periodDays,
+						generatedAt: toIsoDate(new Date()),
+					},
+					overall,
+					employees: sortedEmployees,
+					shifts: shiftSummary,
+					narrative,
+					narrativeSections: parseKpiNarrativeSections(narrative),
+				});
 		} catch (error) {
 			logger.error("Employee/shift KPI error:", error);
 			return c.json(

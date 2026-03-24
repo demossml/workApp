@@ -6,10 +6,6 @@ const React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");
 
 const hookModulePath = path.resolve(__dirname, "./useAiDirectorPageModel.ts");
-const modelModulePath = path.resolve(
-  __dirname,
-  "../model/directorDashboardModel.ts",
-);
 
 function withMockedModules(run) {
   const stubs = {
@@ -24,15 +20,42 @@ function withMockedModules(run) {
           warning: null,
         },
         forecast: { forecast: 0 },
-        heatmapRows: [],
+        heatmap: {
+          matrix: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
+          maxRevenue: 0,
+          dayLabels: ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"],
+          stops: [0, 25, 50, 75, 100],
+        },
         shiftSummariesHistory: [],
+        shiftHistoryShopOptions: [],
         alertsHistory: [],
+        alertsHistoryShopOptions: [],
+        uiSummary: {
+          systemStatus: {
+            state: "stable",
+            label: "Система стабильна",
+          },
+          topKpi: { totalRevenue: 0, totalChecks: 0, avgCheck: 0, weakShops: 0 },
+          directorDecisions: [],
+          decisionsLog: [],
+          problemsSummary: {
+            criticalAlerts: [],
+            warningAlerts: [],
+            riskyEmployees: [],
+            highRefundEmployees: [],
+          },
+        },
       }),
-      fetchKpiNarrative: async () => null,
+      fetchKpiNarrative: async () => ({
+        narrative: null,
+        sections: { strengths: [], growth: [], actions: [], raw: "" },
+      }),
       sendAiDirectorChat: async () => "ok",
-      tryFetchKpiNarrativeForTopShop: async () => null,
+      tryFetchKpiNarrativeForTopShop: async () => ({
+        narrative: null,
+        sections: { strengths: [], growth: [], actions: [], raw: "" },
+      }),
     },
-    "@features/ai/model/directorDashboardModel": require(modelModulePath),
   };
 
   const originalLoad = Module._load;

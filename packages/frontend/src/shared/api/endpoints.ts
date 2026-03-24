@@ -163,3 +163,31 @@ export async function fetchOrderForecast(params: {
 
   return response.json();
 }
+
+export async function fetchOrderForecastV2(params: {
+  startDate: string;
+  endDate: string;
+  shopUuid: string;
+  groups: string[];
+  forecastHorizonDays?: number;
+  leadTimeDays?: number;
+  serviceLevel?: 0.8 | 0.9 | 0.95 | 0.98;
+  budgetLimit?: number;
+}) {
+  const response = await client.api.evotor["order-v2"].$post({
+    json: params,
+  });
+
+  if (!response.ok) {
+    const err = (await response.json().catch(() => null)) as
+      | Record<string, unknown>
+      | null;
+    const message =
+      (typeof err?.error === "string" ? err.error : undefined) ||
+      (typeof err?.message === "string" ? err.message : undefined) ||
+      `Ошибка: ${response.status}`;
+    throw new Error(message);
+  }
+
+  return response.json();
+}

@@ -13,6 +13,7 @@ export {
   fetchGroupsByShop,
   fetchMe,
   fetchOrderForecast,
+  fetchOrderForecastV2,
   fetchFinancialForToday,
   fetchPlanForToday,
   fetchReportAndPlanForToday,

@@ -8,18 +8,6 @@ import {
   type DeepFocusArea,
   type DeepRiskSensitivity,
 } from "@features/ai/api";
-import {
-  buildDecisionsLog,
-  buildDirectorDecisions,
-  buildHeatmap,
-  buildProblemsSummary,
-  buildSystemStatus,
-  buildTopKpi,
-  filterAlertsHistory,
-  filterShiftSummaries,
-  getUniqueShopUuids,
-  parseKpiNarrativeSections,
-} from "@features/ai/model/directorDashboardModel";
 
 export function useAiDirectorPageModel() {
   const [rating, setRating] = useState<
@@ -131,16 +119,72 @@ export function useAiDirectorPageModel() {
     warning?: string | null;
     historySource?: "receipts" | "index";
   } | null>(null);
-  const [heatmapRows, setHeatmapRows] = useState<
+  const [heatmap, setHeatmap] = useState<{
+    matrix: number[][];
+    max: number;
+  }>({
+    matrix: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
+    max: 0,
+  });
+  const [heatmapDayLabels, setHeatmapDayLabels] = useState<string[]>([
+    "Вс",
+    "Пн",
+    "Вт",
+    "Ср",
+    "Чт",
+    "Пт",
+    "Сб",
+  ]);
+  const [heatmapStops, setHeatmapStops] = useState<number[]>([0, 25, 50, 75, 100]);
+  const [shiftHistoryShopOptions, setShiftHistoryShopOptions] = useState<string[]>([]);
+  const [alertsHistoryShopOptions, setAlertsHistoryShopOptions] = useState<string[]>([]);
+  const [systemStatus, setSystemStatus] = useState<{
+    icon: string;
+    label: string;
+    tone: string;
+    bg: string;
+  }>({
+    icon: "🟢",
+    label: "Система стабильна",
+    tone: "text-emerald-700 dark:text-emerald-300",
+    bg: "bg-emerald-50 dark:bg-emerald-950/30",
+  });
+  const [topKpi, setTopKpi] = useState({
+    totalRevenue: 0,
+    totalChecks: 0,
+    avgCheck: 0,
+    weakShops: 0,
+  });
+  const [directorDecisions, setDirectorDecisions] = useState<
+    Array<{ employeeName: string; problem: string; action: string; risk: number }>
+  >([]);
+  const [decisionsLog, setDecisionsLog] = useState<
     Array<{
-      shopId: string;
-      dayOfWeek: number;
-      hour: number;
-      revenue: number;
-      checks: number;
+      id: number;
+      when: string;
+      type: "tempo_alert" | "anomaly" | "dead_stock";
+      severity: "info" | "warning" | "critical";
+      text: string;
     }>
   >([]);
+  const [problemsSummary, setProblemsSummary] = useState<{
+    criticalAlerts: Array<{ id: number; message: string }>;
+    warningAlerts: Array<{ id: number; message: string }>;
+    riskyEmployees: Array<{ employeeUuid: string; name: string }>;
+    highRefundEmployees: Array<{ employeeUuid: string; name: string }>;
+  }>({
+    criticalAlerts: [],
+    warningAlerts: [],
+    riskyEmployees: [],
+    highRefundEmployees: [],
+  });
   const [kpiNarrative, setKpiNarrative] = useState<string | null>(null);
+  const [kpiNarrativeSections, setKpiNarrativeSections] = useState<{
+    strengths: string[];
+    growth: string[];
+    actions: string[];
+    raw: string;
+  }>({ strengths: [], growth: [], actions: [], raw: "" });
   const [kpiNarrativeShopName, setKpiNarrativeShopName] = useState<string | null>(null);
   const [kpiSelectedShopUuid, setKpiSelectedShopUuid] = useState("");
   const [kpiNarrativeLoading, setKpiNarrativeLoading] = useState(false);
@@ -202,12 +246,17 @@ export function useAiDirectorPageModel() {
           deepAnalysisDepth,
           deepRiskSensitivity,
           deepFocusAreas,
+          shiftHistoryShopFilter,
+          shiftHistoryDateFilter,
+          alertsHistoryShopFilter,
+          alertsHistoryTypeFilter,
+          alertsHistoryDateFilter,
         });
 
-        const topRatedShop = (data.rating || [])[0];
-        const kpiNarrativeText =
+        const topRatedShop = data.rating[0];
+        const topShopKpiNarrative =
           topRatedShop?.shopUuid == null
-            ? null
+            ? { narrative: null as string | null, sections: { strengths: [], growth: [], actions: [], raw: "" } }
             : await tryFetchKpiNarrativeForTopShop({
                 topShopUuid: topRatedShop.shopUuid,
                 date: todayStr,
@@ -220,10 +269,39 @@ export function useAiDirectorPageModel() {
         setDeepEmployees(data.deepEmployees);
         setDeepMeta(data.deepMeta);
         setForecast(data.forecast);
-        setHeatmapRows(data.heatmapRows);
+        setHeatmap({
+          matrix: data.heatmap.matrix,
+          max: data.heatmap.maxRevenue,
+        });
+        setHeatmapDayLabels(data.heatmap.dayLabels);
+        setHeatmapStops(data.heatmap.stops);
         setShiftSummariesHistory(data.shiftSummariesHistory);
+        setShiftHistoryShopOptions(data.shiftHistoryShopOptions);
         setAlertsHistory(data.alertsHistory);
-        setKpiNarrative(kpiNarrativeText);
+        setAlertsHistoryShopOptions(data.alertsHistoryShopOptions);
+        const state = data.uiSummary.systemStatus.state;
+        setSystemStatus({
+          icon: state === "critical" ? "🔴" : state === "warning" ? "🟡" : "🟢",
+          label: data.uiSummary.systemStatus.label,
+          tone:
+            state === "critical"
+              ? "text-red-700 dark:text-red-300"
+              : state === "warning"
+                ? "text-amber-700 dark:text-amber-300"
+                : "text-emerald-700 dark:text-emerald-300",
+          bg:
+            state === "critical"
+              ? "bg-red-50 dark:bg-red-950/30"
+              : state === "warning"
+                ? "bg-amber-50 dark:bg-amber-950/30"
+                : "bg-emerald-50 dark:bg-emerald-950/30",
+        });
+        setTopKpi(data.uiSummary.topKpi);
+        setDirectorDecisions(data.uiSummary.directorDecisions);
+        setDecisionsLog(data.uiSummary.decisionsLog);
+        setProblemsSummary(data.uiSummary.problemsSummary);
+        setKpiNarrative(topShopKpiNarrative.narrative);
+        setKpiNarrativeSections(topShopKpiNarrative.sections);
         setKpiNarrativeShopName(
           typeof topRatedShop?.shopName === "string" ? topRatedShop.shopName : null,
         );
@@ -242,7 +320,17 @@ export function useAiDirectorPageModel() {
     return () => {
       cancelled = true;
     };
-  }, [todayStr, deepAnalysisDepth, deepRiskSensitivity, deepFocusAreas]);
+  }, [
+    todayStr,
+    deepAnalysisDepth,
+    deepRiskSensitivity,
+    deepFocusAreas,
+    shiftHistoryShopFilter,
+    shiftHistoryDateFilter,
+    alertsHistoryShopFilter,
+    alertsHistoryTypeFilter,
+    alertsHistoryDateFilter,
+  ]);
 
   const handleChat = async () => {
     if (!chatMessage.trim()) return;
@@ -271,7 +359,8 @@ export function useAiDirectorPageModel() {
         startDate: todayStr,
         endDate: todayStr,
       });
-      setKpiNarrative(narrative);
+      setKpiNarrative(narrative.narrative);
+      setKpiNarrativeSections(narrative.sections);
 
       const selectedShopName =
         rating.find((row) => row.shopUuid === kpiSelectedShopUuid)?.shopName ||
@@ -286,46 +375,9 @@ export function useAiDirectorPageModel() {
     }
   };
 
-  const heatmap = useMemo(() => buildHeatmap(heatmapRows), [heatmapRows]);
-
-  const shiftHistoryShopOptions = useMemo(
-    () => getUniqueShopUuids(shiftSummariesHistory),
-    [shiftSummariesHistory],
-  );
-
-  const filteredShiftSummaries = useMemo(
-    () =>
-      filterShiftSummaries(
-        shiftSummariesHistory,
-        shiftHistoryShopFilter,
-        shiftHistoryDateFilter,
-      ),
-    [shiftSummariesHistory, shiftHistoryShopFilter, shiftHistoryDateFilter],
-  );
-
-  const alertsHistoryShopOptions = useMemo(
-    () => getUniqueShopUuids(alertsHistory),
-    [alertsHistory],
-  );
-
-  const filteredAlertsHistory = useMemo(
-    () =>
-      filterAlertsHistory(
-        alertsHistory,
-        alertsHistoryShopFilter,
-        alertsHistoryTypeFilter,
-        alertsHistoryDateFilter,
-      ),
-    [
-      alertsHistory,
-      alertsHistoryShopFilter,
-      alertsHistoryTypeFilter,
-      alertsHistoryDateFilter,
-    ],
-  );
-
-  const dayLabels = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
-  const heatmapStops = [0, 25, 50, 75, 100];
+  const filteredShiftSummaries = shiftSummariesHistory;
+  const filteredAlertsHistory = alertsHistory;
+  const dayLabels = heatmapDayLabels;
   const toggleFocus = (focus: DeepFocusArea) => {
     setDeepFocusAreas((prev) => {
       if (prev.includes(focus)) {
@@ -335,25 +387,6 @@ export function useAiDirectorPageModel() {
       return [...prev, focus];
     });
   };
-
-  const kpiNarrativeSections = useMemo(
-    () => parseKpiNarrativeSections(kpiNarrative),
-    [kpiNarrative],
-  );
-  const systemStatus = useMemo(
-    () => buildSystemStatus(loading, alertsHistory, deepEmployees),
-    [alertsHistory, deepEmployees, loading],
-  );
-  const topKpi = useMemo(() => buildTopKpi(rating), [rating]);
-  const directorDecisions = useMemo(
-    () => buildDirectorDecisions(deepEmployees),
-    [deepEmployees],
-  );
-  const problemsSummary = useMemo(
-    () => buildProblemsSummary(alertsHistory, deepEmployees),
-    [alertsHistory, deepEmployees],
-  );
-  const decisionsLog = useMemo(() => buildDecisionsLog(alertsHistory), [alertsHistory]);
 
   const handleQuickAction = (action: string) => {
     setQuickActionNote(`Действие выбрано: ${action}`);

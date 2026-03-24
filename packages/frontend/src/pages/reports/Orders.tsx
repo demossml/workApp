@@ -14,9 +14,23 @@ import { Button, Calendar, Popover, PopoverContent, PopoverTrigger } from "../..
 import {
   fetchEvotorShops,
   fetchGroupsByShop,
-  fetchOrderForecast,
+  fetchOrderForecastV2,
   queryKeys,
 } from "@shared/api";
+
+const ORDER_TABLE_COLUMNS = [
+  "productName",
+  "smaQuantity",
+  "quantity",
+  "availableStock",
+  "safetyStock",
+  "reorderPoint",
+  "targetStock",
+  "orderQuantity",
+  "sum",
+  "confidencePct",
+  "reasonCodes",
+];
 
 interface GroupOption {
   name: string;
@@ -24,11 +38,45 @@ interface GroupOption {
 }
 
 interface ReportData {
-  order: Record<string, { [key: string]: number }>;
+  order: Record<string, { [key: string]: number | string[] }>;
   startDate: string;
   endDate: string;
   shopName: string;
 }
+
+type OrderV2Response = {
+  period: { startDate: string; endDate: string };
+  assumptions: {
+    forecastHorizonDays: number;
+    leadTimeDays: number;
+    serviceLevel: number;
+  };
+  summary: {
+    totalOrderCost: number;
+    skuCount: number;
+    constrainedByBudget: boolean;
+  };
+  items: Array<{
+    productUuid: string;
+    productName: string;
+    abcClass: "A" | "B" | "C";
+    xyzClass: "X" | "Y" | "Z";
+    currentStock: number;
+    availableStock: number;
+    avgDailyDemand: number;
+    demandStdDev: number;
+    safetyStock: number;
+    reorderPoint: number;
+    targetStock: number;
+    recommendedOrderRaw: number;
+    recommendedOrderRounded: number;
+    unitCost: number;
+    orderCost: number;
+    expectedCoverageDays: number;
+    confidence: number;
+    reasonCodes: string[];
+  }>;
+};
 
 export default function Orders() {
   const queryClient = useQueryClient();
@@ -191,22 +239,43 @@ export default function Orders() {
           userId,
         }),
         queryFn: () =>
-          fetchOrderForecast({
+          fetchOrderForecastV2({
             startDate,
             endDate,
             shopUuid: selectedShop,
             groups: selectedGroups,
-            period: selectedPeriod,
-            userId,
+            forecastHorizonDays: selectedPeriod || 7,
+            leadTimeDays: 2,
+            serviceLevel: 0.95,
           }),
         staleTime: 60_000,
       })) as
-        | ReportData
+        | OrderV2Response
         | { code: string; message: string; details?: unknown };
-      if (!("order" in report)) {
+      if (!("items" in report)) {
         throw new Error(report.message || "Некорректный ответ сервера");
       }
-      setReportData(report);
+      const orderMap: Record<string, { [key: string]: number | string[] }> = {};
+      for (const item of report.items) {
+        orderMap[item.productName] = {
+          smaQuantity: Number(item.avgDailyDemand.toFixed(2)),
+          quantity: Number(item.currentStock.toFixed(2)),
+          availableStock: Number(item.availableStock.toFixed(2)),
+          safetyStock: Number(item.safetyStock.toFixed(2)),
+          reorderPoint: Number(item.reorderPoint.toFixed(2)),
+          targetStock: Number(item.targetStock.toFixed(2)),
+          orderQuantity: Number(item.recommendedOrderRounded.toFixed(2)),
+          sum: Number(item.orderCost.toFixed(2)),
+          confidencePct: Number((item.confidence * 100).toFixed(1)),
+          reasonCodes: item.reasonCodes,
+        };
+      }
+      setReportData({
+        order: orderMap,
+        startDate: report.period.startDate,
+        endDate: report.period.endDate,
+        shopName: shopOptions[selectedShop] || selectedShop,
+      });
     } catch (err) {
       console.error(err);
       setError("Не удалось получить прогноз закупки");
@@ -255,6 +324,12 @@ export default function Orders() {
                   smaQuantity: number;
                   quantity: number;
                   sum: number;
+                  availableStock?: number;
+                  safetyStock?: number;
+                  reorderPoint?: number;
+                  targetStock?: number;
+                  confidencePct?: number;
+                  reasonCodes?: string[];
                 },
               ] => {
                 const product = entry[1];
@@ -272,8 +347,19 @@ export default function Orders() {
               productName,
               smaQuantity: product.smaQuantity,
               quantity: product.quantity,
+              availableStock:
+                typeof product.availableStock === "number" ? product.availableStock : 0,
+              safetyStock:
+                typeof product.safetyStock === "number" ? product.safetyStock : 0,
+              reorderPoint:
+                typeof product.reorderPoint === "number" ? product.reorderPoint : 0,
+              targetStock:
+                typeof product.targetStock === "number" ? product.targetStock : 0,
               orderQuantity: product.orderQuantity,
               sum: product.sum,
+              confidencePct:
+                typeof product.confidencePct === "number" ? product.confidencePct : 0,
+              reasonCodes: Array.isArray(product.reasonCodes) ? product.reasonCodes : [],
             }))
         : [],
     [reportData]
@@ -325,7 +411,7 @@ export default function Orders() {
           </button>
         </div>
 
-        <DynamicTable data={tableData} />
+        <DynamicTable data={tableData} columns={ORDER_TABLE_COLUMNS} />
       </motion.div>
     );
   }
@@ -485,10 +571,10 @@ export default function Orders() {
         <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4 text-sm text-slate-300 space-y-2">
           <p className="font-semibold text-slate-100">Как работает прогноз</p>
           <p>1. Выберите период истории продаж, магазин и группы товаров.</p>
-          <p>2. Укажите количество периодов SMA (скользящее среднее).</p>
+          <p>2. Укажите горизонт прогноза (в днях) через селектор периодов SMA.</p>
           <p>
-            3. Система рассчитает рекомендуемый заказ: спрос по SMA минус
-            текущий остаток.
+            3. Система рассчитает рекомендуемый заказ с учетом страхового запаса,
+            точки заказа и целевого уровня остатков.
           </p>
         </div>
       )}

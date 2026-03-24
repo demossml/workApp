@@ -1,9 +1,9 @@
 import { useFilteredSalesData } from "../../hooks/dashboard/useFilteredSalesData";
 import { useSalesCalculations } from "../../hooks/dashboard/useSalesCalculations";
 import { useSalesData } from "../../hooks/dashboard/useSalesData";
+import { useDashboardHomeInsights } from "../../hooks/dashboard/useDashboardHomeInsights";
 import { useEmployeeRole, useMe } from "../../hooks/useApi";
 import { useCurrentWorkShop } from "../../hooks/useCurrentWorkShop";
-import { useGetReportAndPlan } from "../../hooks/useReportData";
 import {
   BestShopCard,
   type LeaderMode,
@@ -48,9 +48,6 @@ import {
 import { motion } from "framer-motion";
 import {
   buildAccessoriesSummaryStats,
-  buildLeaderCardData,
-  buildShopKpiRows,
-  clampRange,
   formatDashboardMoney,
   formatDashboardPct,
   getDiffDaysInclusive,
@@ -154,12 +151,6 @@ type DirectorReportResponse = {
   };
 };
 
-type PlanInfo = {
-  datePlan: number;
-  dataSales: number;
-  dataQuantity?: Record<string, number | string>;
-};
-
 type DashboardSummaryProps = {
   onAiSectionDataChange?: (data: DashboardSummaryAiSectionProps) => void;
   showAiDirector?: boolean;
@@ -168,7 +159,6 @@ type DashboardSummaryProps = {
 
 const formatMoney = formatDashboardMoney;
 const formatPct = formatDashboardPct;
-const clamp = clampRange;
 
 function LoadingTile({
   title,
@@ -591,7 +581,6 @@ export default function DashboardSummary2({
     shopUuid: scopedShopUuid,
     enabled: salesEnabled,
   });
-  const reportAndPlan = useGetReportAndPlan(showMainDashboard);
 
   const isSuperAdmin = roleData?.employeeRole === "SUPERADMIN";
   const isAdmin = roleData?.employeeRole === "ADMIN";
@@ -643,41 +632,6 @@ export default function DashboardSummary2({
     isSuperAdmin,
     currentWorkShop ?? null
   );
-  const weekRange = React.useMemo(
-    () => ({
-      since: shiftIsoDate(safeUntil, -6),
-      until: safeUntil,
-    }),
-    [safeUntil]
-  );
-  const weekSalesData = useSalesData({
-    since: weekRange.since,
-    until: weekRange.until,
-    shopUuid: scopedShopUuid,
-    enabled: salesEnabled,
-  });
-  const weekFilteredData = useFilteredSalesData(
-    weekSalesData.data,
-    isSuperAdmin,
-    currentWorkShop ?? null
-  );
-  const dayShopKpiRows = React.useMemo(
-    () => buildShopKpiRows(filteredData),
-    [filteredData]
-  );
-  const weekShopKpiRows = React.useMemo(
-    () => buildShopKpiRows(weekFilteredData),
-    [weekFilteredData]
-  );
-  const dayLeaderData = React.useMemo(
-    () => buildLeaderCardData(dayShopKpiRows),
-    [dayShopKpiRows]
-  );
-  const weekLeaderData = React.useMemo(
-    () => buildLeaderCardData(weekShopKpiRows),
-    [weekShopKpiRows]
-  );
-  const activeBestShopRows = bestShopMode === "week" ? weekShopKpiRows : dayShopKpiRows;
   const digestDate = since || new Date().toISOString().slice(0, 10);
 
   const [directorLoading, setDirectorLoading] = React.useState(false);
@@ -857,414 +811,24 @@ export default function DashboardSummary2({
     return filteredAccessoriesData.total.reduce((sum, item) => sum + item.sum, 0);
   }, [filteredAccessoriesData]);
 
-  const planData = React.useMemo(
-    () => (reportAndPlan.data?.planData || {}) as Record<string, PlanInfo | number>,
-    [reportAndPlan.data]
-  );
-
-  const aiInsights = React.useMemo<DashboardSummaryAiInsights>(() => {
-    const fallback = {
-      risk: {
-        networkProbability: 0,
-        redShops: [] as Array<{
-          shopName: string;
-          risk: number;
-          progress: number;
-          plan: number;
-          fact: number;
-          missing: number;
-        }>,
-      },
-      actions: {
-        top3: [] as string[],
-        checklist: [] as Array<{ shopName: string; items: string[] }>,
-      },
-      forecast: {
-        value: 0,
-        lower: 0,
-        upper: 0,
-        confidence: 0,
-        factors: [] as Array<{ label: string; value: string; impact: "plus" | "minus" | "neutral" }>,
-      },
-      drop: {
-        salesDeltaPct: 0,
-        mainReason: "Недостаточно данных",
-        byShop: [] as Array<{ shopName: string; deltaPct: number; current: number; previous: number }>,
-      },
-      anomalies: {
-        incidents: [] as Array<{
-          shopName: string;
-          type: string;
-          details: string;
-          severity: number;
-        }>,
-      },
-      losses: {
-        totalLoss: 0,
-        skus: [] as Array<{
-          productName: string;
-          planQty: number;
-          actualQty: number;
-          lostQty: number;
-          lostRevenue: number;
-        }>,
-      },
-      context: {
-        checksDeltaPct: 0,
-        avgCheckDeltaPct: 0,
-        refundRate: 0,
-        refundDeltaPp: 0,
-      },
-    };
-
-    if (!filteredData) return fallback;
-
-    const currentNetSales = filteredData.grandTotalSell - filteredData.grandTotalRefund;
-    const currentChecks = filteredData.totalChecks || 0;
-    const currentAvgCheck = currentChecks > 0 ? currentNetSales / currentChecks : 0;
-    const currentRefundRate =
-      filteredData.grandTotalSell > 0
-        ? (filteredData.grandTotalRefund / filteredData.grandTotalSell) * 100
-        : 0;
-
-    const previousNetSales = previousFilteredData
-      ? previousFilteredData.grandTotalSell - previousFilteredData.grandTotalRefund
-      : 0;
-    const previousChecks = previousFilteredData?.totalChecks || 0;
-    const previousAvgCheck =
-      previousChecks > 0 ? previousNetSales / previousChecks : 0;
-    const previousRefundRate =
-      previousFilteredData && previousFilteredData.grandTotalSell > 0
-        ? (previousFilteredData.grandTotalRefund / previousFilteredData.grandTotalSell) *
-          100
-        : 0;
-
-    const pctChange = (current: number, previous: number) => {
-      if (previous <= 0) return current > 0 ? 100 : 0;
-      return ((current - previous) / previous) * 100;
-    };
-
-    const checksDeltaPct = pctChange(currentChecks, previousChecks);
-    const avgCheckDeltaPct = pctChange(currentAvgCheck, previousAvgCheck);
-    const salesDeltaPct = pctChange(currentNetSales, previousNetSales);
-    const refundDeltaPp = currentRefundRate - previousRefundRate;
-
-    const previousByShop = new Map<
-      string,
-      { netSales: number; checks: number; avgCheck: number; refundRate: number }
-    >();
-    if (previousFilteredData) {
-      Object.entries(previousFilteredData.salesDataByShopName).forEach(
-        ([shopName, shopData]) => {
-          const totalRefund = Object.values(shopData.refund || {}).reduce(
-            (sum, val) => sum + val,
-            0
-          );
-          const netSales = shopData.totalSell - totalRefund;
-          const checks = shopData.checksCount || 0;
-          previousByShop.set(shopName, {
-            netSales,
-            checks,
-            avgCheck: checks > 0 ? netSales / checks : 0,
-            refundRate: shopData.totalSell > 0 ? (totalRefund / shopData.totalSell) * 100 : 0,
-          });
-        }
-      );
-    }
-
-    const shopMetrics = Object.entries(filteredData.salesDataByShopName).map(
-      ([shopName, shopData]) => {
-        const totalRefund = Object.values(shopData.refund || {}).reduce(
-          (sum, val) => sum + val,
-          0
-        );
-        const netSales = shopData.totalSell - totalRefund;
-        const checks = shopData.checksCount || 0;
-        const avgCheck = checks > 0 ? netSales / checks : 0;
-        const refundRate =
-          shopData.totalSell > 0 ? (totalRefund / shopData.totalSell) * 100 : 0;
-        const prev = previousByShop.get(shopName);
-        return {
-          shopName,
-          totalSell: shopData.totalSell,
-          totalRefund,
-          netSales,
-          checks,
-          avgCheck,
-          refundRate,
-          prevNetSales: prev?.netSales ?? 0,
-          prevChecks: prev?.checks ?? 0,
-          prevAvgCheck: prev?.avgCheck ?? 0,
-        };
-      }
-    );
-
-    const riskRows = shopMetrics
-      .map((shop) => {
-        const planInfo = planData[shop.shopName];
-        const plan =
-          typeof planInfo === "number"
-            ? planInfo
-            : Number(planInfo?.datePlan || 0);
-        const fact = shop.netSales;
-        const progress = plan > 0 ? (fact / plan) * 100 : 0;
-        const risk = plan > 0 ? clamp(100 - progress + (shop.refundRate > 8 ? 6 : 0), 0, 99) : 0;
-        return {
-          shopName: shop.shopName,
-          plan,
-          fact,
-          progress,
-          risk,
-          missing: Math.max(0, plan - fact),
-        };
-      })
-      .filter((row) => row.plan > 0)
-      .sort((a, b) => b.risk - a.risk);
-
-    const totalPlan = riskRows.reduce((sum, row) => sum + row.plan, 0);
-    const weightedRisk = totalPlan
-      ? riskRows.reduce((sum, row) => sum + row.risk * row.plan, 0) / totalPlan
-      : 0;
-    const redShops = riskRows.filter((row) => row.risk >= 40 || row.progress < 70);
-
-    const topActions: string[] = [];
-    if (redShops.length > 0) {
-      const top = redShops[0];
-      topActions.push(
-        `Фокус на ${top.shopName}: закрыть отставание ${formatMoney(top.missing)} ₽ до конца смены.`
-      );
-    }
-    const refundRiskShops = shopMetrics
-      .filter((shop) => shop.refundRate > 8)
-      .sort((a, b) => b.refundRate - a.refundRate);
-    if (refundRiskShops.length > 0) {
-      topActions.push(
-        `Снизить возвраты в ${refundRiskShops[0].shopName}: сейчас ${refundRiskShops[0].refundRate.toFixed(1)}%.`
-      );
-    }
-    if (salesDeltaPct < -5) {
-      topActions.push(
-        `Оперативно восстановить темп: сеть просела на ${Math.abs(salesDeltaPct).toFixed(1)}% к прошлому периоду.`
-      );
-    }
-    while (topActions.length < 3) {
-      topActions.push("Проверить наличие топ-SKU и усилить продажи в пиковый час.");
-    }
-
-    const checklistShops = (redShops.length > 0 ? redShops : riskRows)
-      .slice(0, 3)
-      .map((shop) => ({
-        shopName: shop.shopName,
-        items: [
-          "Проверить остатки топ-3 SKU.",
-          "Запустить дополнительный upsell на кассе.",
-          "Промониторить возвраты и спорные чеки в реальном времени.",
-        ],
-      }));
-
-    const now = new Date();
-    const hour = now.getHours() + now.getMinutes() / 60;
-    const openHour = 10;
-    const closeHour = 22;
-    const elapsed = clamp((hour - openHour) / (closeHour - openHour), 0.2, 1);
-    const forecastValue = dateMode === "today" ? currentNetSales / elapsed : currentNetSales;
-    const uncertainty = dateMode === "today" ? clamp(0.45 - elapsed * 0.25, 0.12, 0.4) : 0.2;
-    const forecastLower = forecastValue * (1 - uncertainty);
-    const forecastUpper = forecastValue * (1 + uncertainty);
-    const confidence = Math.round((1 - uncertainty) * 100);
-
-    const forecastFactors: Array<{
-      label: string;
-      value: string;
-      impact: "plus" | "minus" | "neutral";
-    }> = [
-      {
-        label: "Трафик (чеки)",
-        value: `${checksDeltaPct >= 0 ? "+" : ""}${checksDeltaPct.toFixed(1)}%`,
-        impact: checksDeltaPct > 2 ? "plus" : checksDeltaPct < -2 ? "minus" : "neutral",
-      },
-      {
-        label: "Средний чек",
-        value: `${avgCheckDeltaPct >= 0 ? "+" : ""}${avgCheckDeltaPct.toFixed(1)}%`,
-        impact:
-          avgCheckDeltaPct > 2 ? "plus" : avgCheckDeltaPct < -2 ? "minus" : "neutral",
-      },
-      {
-        label: "Доля возвратов",
-        value: `${currentRefundRate.toFixed(1)}% (${refundDeltaPp >= 0 ? "+" : ""}${refundDeltaPp.toFixed(1)} п.п.)`,
-        impact: refundDeltaPp > 0.5 ? "minus" : refundDeltaPp < -0.5 ? "plus" : "neutral",
-      },
-    ];
-
-    const reasonCandidates = [
-      {
-        reason: "Падение трафика (меньше чеков)",
-        score: Math.max(0, -checksDeltaPct),
-      },
-      {
-        reason: "Просадка среднего чека",
-        score: Math.max(0, -avgCheckDeltaPct),
-      },
-      {
-        reason: "Рост возвратов",
-        score: Math.max(0, refundDeltaPp * 2),
-      },
-    ];
-    const mainReason =
-      salesDeltaPct >= 0
-        ? "Просадки нет, динамика стабильная или положительная."
-        : reasonCandidates.sort((a, b) => b.score - a.score)[0].reason;
-
-    const dropByShop = shopMetrics
-      .filter((shop) => shop.prevNetSales > 0)
-      .map((shop) => ({
-        shopName: shop.shopName,
-        current: shop.netSales,
-        previous: shop.prevNetSales,
-        deltaPct: pctChange(shop.netSales, shop.prevNetSales),
-      }))
-      .sort((a, b) => a.deltaPct - b.deltaPct)
-      .slice(0, 5);
-
-    const incidents: Array<{
-      shopName: string;
-      type: string;
-      details: string;
-      severity: number;
-    }> = [];
-    for (const shop of shopMetrics) {
-      if (shop.refundRate > 10) {
-        incidents.push({
-          shopName: shop.shopName,
-          type: "Возвраты",
-          details: `Высокая доля возвратов: ${shop.refundRate.toFixed(1)}%`,
-          severity: Math.round(shop.refundRate * 3),
-        });
-      }
-      if (shop.prevChecks > 5) {
-        const deltaChecks = pctChange(shop.checks, shop.prevChecks);
-        if (deltaChecks < -30) {
-          incidents.push({
-            shopName: shop.shopName,
-            type: "Чеки",
-            details: `Просадка количества чеков: ${deltaChecks.toFixed(1)}%`,
-            severity: Math.round(Math.abs(deltaChecks)),
-          });
-        }
-      }
-      if (shop.prevAvgCheck > 0) {
-        const deltaAvg = pctChange(shop.avgCheck, shop.prevAvgCheck);
-        if (deltaAvg < -25) {
-          incidents.push({
-            shopName: shop.shopName,
-            type: "Средний чек",
-            details: `Падение среднего чека: ${deltaAvg.toFixed(1)}%`,
-            severity: Math.round(Math.abs(deltaAvg)),
-          });
-        }
-      }
-    }
-    incidents.sort((a, b) => b.severity - a.severity);
-
-    const plannedQtyByProduct = new Map<string, number>();
-    for (const shop of shopMetrics) {
-      const planInfo = planData[shop.shopName];
-      const quantityMap =
-        typeof planInfo === "object" && planInfo?.dataQuantity
-          ? planInfo.dataQuantity
-          : undefined;
-      if (!quantityMap) continue;
-      for (const [productName, quantityRaw] of Object.entries(quantityMap)) {
-        const qty = Number(quantityRaw || 0);
-        if (!Number.isFinite(qty) || qty <= 0) continue;
-        plannedQtyByProduct.set(productName, (plannedQtyByProduct.get(productName) || 0) + qty);
-      }
-    }
-
-    const actualByProduct = new Map(
-      (filteredData.topProducts || []).map((item) => [item.productName, item])
-    );
-
-    const losses = Array.from(plannedQtyByProduct.entries())
-      .map(([productName, planQty]) => {
-        const actual = actualByProduct.get(productName);
-        const actualQty = Number(actual?.netQuantity ?? actual?.quantity ?? 0);
-        const avgPrice =
-          Number(actual?.averagePrice || 0) > 0
-            ? Number(actual?.averagePrice || 0)
-            : actualQty > 0
-            ? Number(actual?.netRevenue || 0) / actualQty
-            : 0;
-        const lostQty = Math.max(0, planQty - actualQty);
-        const lostRevenue = lostQty * Math.max(0, avgPrice);
-        return {
-          productName,
-          planQty,
-          actualQty,
-          lostQty,
-          lostRevenue,
-        };
-      })
-      .filter((row) => row.lostQty > 0 && row.lostRevenue > 0)
-      .sort((a, b) => b.lostRevenue - a.lostRevenue)
-      .slice(0, 6);
-
-    const fallbackLosses =
-      losses.length > 0
-        ? losses
-        : (filteredData.topProducts || []).slice(0, 6).map((item) => {
-            const impliedLostQty = Math.max(1, Math.round((item.netQuantity || 1) * 0.15));
-            return {
-              productName: item.productName,
-              planQty: item.netQuantity + impliedLostQty,
-              actualQty: item.netQuantity,
-              lostQty: impliedLostQty,
-              lostRevenue: impliedLostQty * Math.max(0, item.averagePrice || 0),
-            };
-          });
-    const totalLoss = fallbackLosses.reduce((sum, row) => sum + row.lostRevenue, 0);
-
-    return {
-      risk: {
-        networkProbability: weightedRisk,
-        redShops,
-      },
-      actions: {
-        top3: topActions.slice(0, 3),
-        checklist: checklistShops,
-      },
-      forecast: {
-        value: forecastValue,
-        lower: forecastLower,
-        upper: forecastUpper,
-        confidence,
-        factors: forecastFactors,
-      },
-      drop: {
-        salesDeltaPct,
-        mainReason,
-        byShop: dropByShop,
-      },
-      anomalies: {
-        incidents: incidents.slice(0, 8),
-      },
-      losses: {
-        totalLoss,
-        skus: fallbackLosses,
-      },
-      context: {
-        checksDeltaPct,
-        avgCheckDeltaPct,
-        refundRate: currentRefundRate,
-        refundDeltaPp,
-      },
-    };
-  }, [filteredData, previousFilteredData, planData, dateMode]);
+  const insightsState = useDashboardHomeInsights({
+    since: safeSince,
+    until: safeUntil,
+    dateMode,
+    shopUuid: scopedShopUuid,
+    enabled: showMainDashboard,
+  });
+  const aiInsights: DashboardSummaryAiInsights = insightsState.data;
+  const dayShopKpiRows = insightsState.bestShop.dayRows;
+  const weekShopKpiRows = insightsState.bestShop.weekRows;
+  const dayLeaderData = insightsState.bestShop.dayLeader;
+  const weekLeaderData = insightsState.bestShop.weekLeader;
+  const activeBestShopRows = bestShopMode === "week" ? weekShopKpiRows : dayShopKpiRows;
 
   React.useEffect(() => {
     if (!onAiSectionDataChange) return;
     onAiSectionDataChange({
-      loading,
+      loading: loading || insightsState.loading,
       hasData: Boolean(filteredData),
       since: safeSince,
       until: safeUntil,
@@ -1273,6 +837,7 @@ export default function DashboardSummary2({
   }, [
     onAiSectionDataChange,
     loading,
+    insightsState.loading,
     filteredData,
     safeSince,
     safeUntil,

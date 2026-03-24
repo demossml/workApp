@@ -264,6 +264,13 @@ export const DashboardSummary2InsightsRequestSchema = z.object({
 	}),
 });
 
+export const DashboardHomeInsightsRequestSchema = z.object({
+	since: DateStringSchema,
+	until: DateStringSchema,
+	dateMode: z.enum(["today", "yesterday", "period"]).optional(),
+	shopUuid: UuidSchema.optional(),
+});
+
 /**
  * POST /api/stores/openings-report
  */
@@ -393,6 +400,20 @@ export const OrderSchema = z.object({
 	shopUuid: UuidSchema,
 	groups: z.array(UuidSchema),
 	period: z.number().int().positive(),
+});
+
+/**
+ * POST /api/evotor/order-v2
+ */
+export const OrderV2Schema = z.object({
+	startDate: DateStringSchema,
+	endDate: DateStringSchema,
+	shopUuid: UuidSchema,
+	groups: z.array(UuidSchema).min(1),
+	forecastHorizonDays: z.coerce.number().int().min(1).max(60).optional(),
+	leadTimeDays: z.coerce.number().int().min(1).max(30).optional(),
+	serviceLevel: z.union([z.literal(0.8), z.literal(0.9), z.literal(0.95), z.literal(0.98)]).optional(),
+	budgetLimit: z.coerce.number().min(0).optional(),
 });
 
 /**

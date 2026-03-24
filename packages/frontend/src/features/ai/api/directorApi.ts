@@ -17,67 +17,56 @@ export async function fetchAiDirectorDashboard(params: {
   deepAnalysisDepth: DeepAnalysisDepth;
   deepRiskSensitivity: DeepRiskSensitivity;
   deepFocusAreas: DeepFocusArea[];
+  shiftHistoryShopFilter?: string;
+  shiftHistoryDateFilter?: string;
+  alertsHistoryShopFilter?: string;
+  alertsHistoryTypeFilter?: "all" | "tempo_alert" | "anomaly" | "dead_stock";
+  alertsHistoryDateFilter?: string;
 }) {
-  const [
-    ratingRes,
-    employeesRes,
-    deepEmployeesRes,
-    forecastRes,
-    heatmapRes,
-    shiftSummariesRes,
-    alertsHistoryRes,
-  ] = await Promise.all([
-    aiDirector["director/store-rating"].$post({ json: { date: params.date } }),
-    aiDirector["director/employee-analysis"].$post({
-      json: { until: params.date },
-    }),
-    aiDirector["director/employee-deep-analysis"].$post({
-      json: {
-        until: params.date,
-        limit: 20,
-        analysisDepth: params.deepAnalysisDepth,
-        riskSensitivity: params.deepRiskSensitivity,
-        focusAreas: params.deepFocusAreas,
-      },
-    }),
-    aiDirector["director/demand-forecast"].$post({ json: { date: params.date } }),
-    aiDirector["director/heatmap"].$post({ json: {} }),
-    aiDirector.history["shift-summaries"].$get({
-      query: { limit: "20" },
-    }),
-    aiDirector.history.alerts.$get({
-      query: { limit: "20" },
-    }),
-  ]);
+  const dashboardRes = await aiDirector["director/dashboard"].$post({
+    json: {
+      date: params.date,
+      deepAnalysisDepth: params.deepAnalysisDepth,
+      deepRiskSensitivity: params.deepRiskSensitivity,
+      deepFocusAreas: params.deepFocusAreas,
+      shiftHistoryShopUuid:
+        params.shiftHistoryShopFilter && params.shiftHistoryShopFilter !== "all"
+          ? params.shiftHistoryShopFilter
+          : undefined,
+      shiftHistoryDate: params.shiftHistoryDateFilter || undefined,
+      alertHistoryShopUuid:
+        params.alertsHistoryShopFilter && params.alertsHistoryShopFilter !== "all"
+          ? params.alertsHistoryShopFilter
+          : undefined,
+      alertHistoryType:
+        params.alertsHistoryTypeFilter && params.alertsHistoryTypeFilter !== "all"
+          ? params.alertsHistoryTypeFilter
+          : undefined,
+      alertHistoryDate: params.alertsHistoryDateFilter || undefined,
+      historyLimit: 50,
+    },
+  });
 
-  if (!ratingRes.ok) throw new Error("Не удалось загрузить рейтинг");
-  if (!employeesRes.ok) throw new Error("Не удалось загрузить сотрудников");
-  if (!deepEmployeesRes.ok) throw new Error("Не удалось загрузить глубокий анализ сотрудников");
-  if (!forecastRes.ok) throw new Error("Не удалось загрузить прогноз");
-  if (!heatmapRes.ok) throw new Error("Не удалось загрузить heatmap");
-  if (!shiftSummariesRes.ok) throw new Error("Не удалось загрузить историю итогов смен");
-  if (!alertsHistoryRes.ok) throw new Error("Не удалось загрузить историю алертов");
+  if (!dashboardRes.ok) throw new Error("Не удалось загрузить AI dashboard");
 
-  const ratingJson = await ratingRes.json();
-  const employeesJson = await employeesRes.json();
-  const deepEmployeesJson = await deepEmployeesRes.json();
-  const forecastJson = await forecastRes.json();
-  const heatmapJson = await heatmapRes.json();
-  const shiftSummariesJson = await shiftSummariesRes.json();
-  const alertsHistoryJson = await alertsHistoryRes.json();
+  const dashboardJson = await dashboardRes.json();
+  const heatmap = dashboardJson.heatmap as {
+    cells: Array<{ shopId: string; dayOfWeek: number; hour: number; revenue: number; checks: number }>;
+    matrix: number[][];
+    maxRevenue: number;
+    dayLabels: string[];
+    stops: number[];
+  };
 
   return {
-    rating: ratingJson.rating || [],
-    employees: employeesJson.employees || [],
-    deepEmployees: deepEmployeesJson.employees || [],
+    rating: dashboardJson.rating,
+    employees: dashboardJson.employees,
+    deepEmployees: dashboardJson.deepEmployees,
     deepMeta: {
-      analysisDepth:
-        deepEmployeesJson.analysisDepth === "lite" || deepEmployeesJson.analysisDepth === "deep"
-          ? deepEmployeesJson.analysisDepth
-          : "standard",
-      historyDays: Number(deepEmployeesJson.historyDays || 0),
-      warning: typeof deepEmployeesJson.warning === "string" ? deepEmployeesJson.warning : null,
-      comparisonCoverage: deepEmployeesJson.comparisonCoverage || undefined,
+      analysisDepth: dashboardJson.deepMeta.analysisDepth,
+      historyDays: dashboardJson.deepMeta.historyDays,
+      warning: dashboardJson.deepMeta.warning,
+      comparisonCoverage: dashboardJson.deepMeta.comparisonCoverage || undefined,
     } as {
       analysisDepth: DeepAnalysisDepth;
       historyDays: number;
@@ -88,12 +77,11 @@ export async function fetchAiDirectorDashboard(params: {
       };
     },
     forecast: {
-      forecast: Number(forecastJson.forecast || 0),
-      weather: forecastJson.weather || null,
-      weatherFactor:
-        typeof forecastJson.weatherFactor === "number" ? forecastJson.weatherFactor : undefined,
-      warning: typeof forecastJson.warning === "string" ? forecastJson.warning : null,
-      historySource: forecastJson.historySource === "index" ? "index" : "receipts",
+      forecast: dashboardJson.forecast.forecast,
+      weather: dashboardJson.forecast.weather || null,
+      weatherFactor: dashboardJson.forecast.weatherFactor,
+      warning: dashboardJson.forecast.warning,
+      historySource: dashboardJson.forecast.historySource,
     } as {
       forecast: number;
       weather?: {
@@ -107,9 +95,12 @@ export async function fetchAiDirectorDashboard(params: {
       warning?: string | null;
       historySource?: "receipts" | "index";
     },
-    heatmapRows: heatmapJson.rows || [],
-    shiftSummariesHistory: shiftSummariesJson.items || [],
-    alertsHistory: alertsHistoryJson.items || [],
+    heatmap,
+    shiftSummariesHistory: dashboardJson.shiftHistory.items,
+    shiftHistoryShopOptions: dashboardJson.shiftHistory.shopOptions,
+    alertsHistory: dashboardJson.alertsHistory.items,
+    alertsHistoryShopOptions: dashboardJson.alertsHistory.shopOptions,
+    uiSummary: dashboardJson.uiSummary,
   };
 }
 
@@ -123,7 +114,24 @@ export async function fetchKpiNarrative(params: {
   });
   if (!kpiRes.ok) throw new Error("Не удалось получить KPI narrative");
   const kpiJson = await kpiRes.json();
-  return typeof kpiJson.narrative === "string" ? kpiJson.narrative : null;
+  return {
+    narrative: typeof kpiJson.narrative === "string" ? kpiJson.narrative : null,
+    sections: {
+      strengths: Array.isArray(kpiJson?.narrativeSections?.strengths)
+        ? kpiJson.narrativeSections.strengths
+        : [],
+      growth: Array.isArray(kpiJson?.narrativeSections?.growth)
+        ? kpiJson.narrativeSections.growth
+        : [],
+      actions: Array.isArray(kpiJson?.narrativeSections?.actions)
+        ? kpiJson.narrativeSections.actions
+        : [],
+      raw:
+        typeof kpiJson?.narrativeSections?.raw === "string"
+          ? kpiJson.narrativeSections.raw
+          : "",
+    },
+  };
 }
 
 export async function tryFetchKpiNarrativeForTopShop(params: {
@@ -137,7 +145,10 @@ export async function tryFetchKpiNarrativeForTopShop(params: {
       endDate: params.date,
     });
   } catch {
-    return null;
+    return {
+      narrative: null as string | null,
+      sections: { strengths: [], growth: [], actions: [], raw: "" },
+    };
   }
 }
 
