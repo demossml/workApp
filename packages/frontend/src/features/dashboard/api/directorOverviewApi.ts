@@ -2,68 +2,56 @@ import { client } from "@shared/api";
 
 const aiDirector = client.api.ai as any;
 
-export async function fetchDirectorSummary(date: string) {
-  const response = await aiDirector["director/summary"].$post({
-    json: { date },
-  });
-  return response;
-}
-
-export async function fetchDirectorAlerts(date: string) {
-  const response = await aiDirector["director/alerts"].$post({
-    json: { date },
-  });
-  return response;
-}
-
-export async function fetchDirectorForecast(date: string) {
-  const response = await aiDirector["director/forecast"].$post({
-    json: { date },
-  });
-  return response;
-}
-
-export async function fetchDirectorVelocity(params: {
-  since: string;
-  until: string;
-  limit?: number;
-}) {
-  const response = await aiDirector["director/velocity"].$post({
-    json: {
-      since: params.since,
-      until: params.until,
-      limit: params.limit ?? 50,
-    },
-  });
-  return response;
-}
-
-export async function fetchDirectorRecommendations(params: {
-  since: string;
-  until: string;
-  limit?: number;
-}) {
-  const response = await aiDirector["director/recommendations"].$post({
-    json: {
-      since: params.since,
-      until: params.until,
-      limit: params.limit ?? 50,
-    },
-  });
-  return response;
-}
-
-export async function fetchDirectorReport(params: {
+export async function fetchDirectorOverview(params: {
   date: string;
-  sendTelegram?: boolean;
+  since: string;
+  until: string;
+  limit?: number;
 }) {
-  const response = await aiDirector["director/report"].$post({
+  const response = await aiDirector["director/overview"].$post({
     json: {
       date: params.date,
-      sendTelegram: Boolean(params.sendTelegram),
+      since: params.since,
+      until: params.until,
+      limit: params.limit ?? 50,
     },
   });
-  return response;
+
+  const json = (await response.json()) as {
+    date?: string;
+    since?: string;
+    until?: string;
+    summary?: Record<string, unknown> | null;
+    alerts?: Record<string, unknown> | null;
+    forecast?: Record<string, unknown> | null;
+    velocity?: Record<string, unknown> | null;
+    recommendations?: Record<string, unknown> | null;
+    report?: Record<string, unknown> | null;
+    errors?: string[];
+    error?: string;
+  };
+
+  if (!response.ok) {
+    const reason =
+      json.error ||
+      (Array.isArray(json.errors) && json.errors.length > 0
+        ? json.errors.join(" • ")
+        : "Не удалось загрузить AI-обзор");
+    throw new Error(reason);
+  }
+
+  return {
+    date: json.date || params.date,
+    since: json.since || params.since,
+    until: json.until || params.until,
+    summary: json.summary ?? null,
+    alerts: json.alerts ?? null,
+    forecast: json.forecast ?? null,
+    velocity: json.velocity ?? null,
+    recommendations: json.recommendations ?? null,
+    report: json.report ?? null,
+    errors: Array.isArray(json.errors) ? json.errors : [],
+  };
 }
 
 export async function fetchOpeningPhotoDigest(date: string) {

@@ -1,6 +1,7 @@
 export { ShopSelector } from "./ui/ShopSelector";
 export { GroupSelector } from "./ui/GroupSelector";
 export { DynamicTable } from "./ui/DynamicTable";
+export { DynamicTableSalesReport } from "./ui/DynamicTableSalesReport";
 export { PeriodSelector } from "./ui/PeriodSelector";
 export { DynamicTableProfit } from "./ui/DynamicTableProfit";
 export { DateRangePicker } from "./ui/DateRangePicker";

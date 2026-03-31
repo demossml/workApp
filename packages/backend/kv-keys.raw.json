@@ -1,0 +1,30 @@
+[
+  {
+    "name": "evotor:shopNames",
+    "expiration": 1774517968
+  },
+  {
+    "name": "evotor:shopUuids",
+    "expiration": 1774517969
+  },
+  {
+    "name": "jobs:evotrack:update-products-shope:last",
+    "expiration": 1774587793
+  },
+  {
+    "name": "jobs:evotrack:update-products:last",
+    "expiration": 1774587796
+  },
+  {
+    "name": "sales:store:20251229-316B-40A1-80F7-C59E5B8E6831:day:2026-03-25",
+    "expiration": 1774588680
+  },
+  {
+    "name": "sales:store:20260103-425F-4044-8093-F2008B89A33B:day:2026-03-25",
+    "expiration": 1774588984
+  },
+  {
+    "name": "sales:store:all:day:2026-03-25",
+    "expiration": 1774588170
+  }
+]

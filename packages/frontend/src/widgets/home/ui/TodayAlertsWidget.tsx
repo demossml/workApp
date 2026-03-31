@@ -1,9 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Clock, TrendingDown } from "lucide-react";
-import {
-  fetchFinancialForToday,
-  queryKeys,
-} from "@shared/api";
+import { fetchFinancialForToday, queryKeys } from "@shared/api";
 import {
   buildTodayAlerts,
   getAlertStyle,
@@ -26,6 +23,8 @@ function mapAlertIcon(iconKey: TodayAlertModel["iconKey"]) {
       return <AlertTriangle className="w-5 h-5" />;
     case "clock":
       return <Clock className="w-5 h-5" />;
+    default:
+      return <AlertTriangle className="w-5 h-5" />;
   }
 }
 
@@ -38,7 +37,7 @@ export function TodayAlertsWidget() {
         data.salesDataByShopName as Record<
           string,
           { sell?: Record<string, unknown>; refund?: Record<string, unknown> }
-        >,
+        >
       );
 
       const alertModels = buildTodayAlerts(
@@ -46,7 +45,7 @@ export function TodayAlertsWidget() {
           salesDataByShopName: normalizedSalesDataByShopName,
           grandTotalSell: data.grandTotalSell,
         },
-        new Date(),
+        new Date()
       );
 
       return alertModels.map((item) => ({

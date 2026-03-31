@@ -16,7 +16,7 @@ export function normalizeFinancialSalesData(
   salesDataByShopName: Record<
     string,
     { sell?: Record<string, unknown>; refund?: Record<string, unknown> }
-  >,
+  >
 ): Record<string, NormalizedShopSales> {
   const normalized: Record<string, NormalizedShopSales> = {};
 
@@ -26,7 +26,10 @@ export function normalizeFinancialSalesData(
         ? (Object.values(shopData.sell) as number[]).reduce((a, b) => a + b, 0)
         : 0,
       refund: shopData?.refund
-        ? (Object.values(shopData.refund) as number[]).reduce((a, b) => a + b, 0)
+        ? (Object.values(shopData.refund) as number[]).reduce(
+            (a, b) => a + b,
+            0
+          )
         : 0,
     };
   }
@@ -34,7 +37,10 @@ export function normalizeFinancialSalesData(
   return normalized;
 }
 
-export function buildTodayAlerts(data: TodayAlertsData, now: Date): TodayAlertModel[] {
+export function buildTodayAlerts(
+  data: TodayAlertsData,
+  now: Date
+): TodayAlertModel[] {
   const alerts: TodayAlertModel[] = [];
   const shopCount = Object.keys(data.salesDataByShopName).length;
   if (shopCount === 0) return alerts;
@@ -42,7 +48,7 @@ export function buildTodayAlerts(data: TodayAlertsData, now: Date): TodayAlertMo
   const avgSales = data.grandTotalSell / shopCount;
 
   const lowSalesShops = Object.entries(data.salesDataByShopName).filter(
-    ([, shopData]) => shopData.sell < avgSales * 0.5 && shopData.sell > 0,
+    ([, shopData]) => shopData.sell < avgSales * 0.5 && shopData.sell > 0
   );
   if (lowSalesShops.length > 0) {
     alerts.push({
@@ -57,7 +63,7 @@ export function buildTodayAlerts(data: TodayAlertsData, now: Date): TodayAlertMo
     ([, shopData]) =>
       shopData.refund > 0 &&
       shopData.sell > 0 &&
-      shopData.refund / shopData.sell > 0.1,
+      shopData.refund / shopData.sell > 0.1
   );
   if (highRefundShops.length > 0) {
     alerts.push({
@@ -70,7 +76,7 @@ export function buildTodayAlerts(data: TodayAlertsData, now: Date): TodayAlertMo
 
   const currentHour = now.getHours();
   const noSalesShops = Object.entries(data.salesDataByShopName).filter(
-    ([, shopData]) => shopData.sell === 0,
+    ([, shopData]) => shopData.sell === 0
   );
   if (currentHour >= 12 && noSalesShops.length > 0) {
     alerts.push({
@@ -92,5 +98,7 @@ export function getAlertStyle(type: TodayAlertModel["type"]) {
       return "bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-200";
     case "info":
       return "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200";
+    default:
+      return "bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800 text-gray-800 dark:text-gray-200";
   }
 }

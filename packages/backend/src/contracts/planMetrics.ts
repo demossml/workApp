@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DataModeMetaSchema } from "../dataMode";
 
 export const PlanQuantitySchema = z.record(z.number().finite());
 
@@ -13,6 +14,7 @@ export const PlanShopMetricsSchema = z
 export const PlanForTodayResponseSchema = z
 	.object({
 		salesData: z.record(PlanShopMetricsSchema.nullable()),
+		meta: DataModeMetaSchema.optional(),
 	})
 	.strict();
 

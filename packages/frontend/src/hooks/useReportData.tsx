@@ -13,6 +13,7 @@ export const useGetReportAndPlan = (enabled: boolean) =>
     staleTime: 30_000,
     retry: 2,
     refetchInterval: 60_000,
-    refetchOnWindowFocus: true,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
   });

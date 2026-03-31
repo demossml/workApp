@@ -8,9 +8,4 @@ CREATE INDEX IF NOT EXISTS idx_index_documents_shop_close_date_type
 CREATE INDEX IF NOT EXISTS idx_index_documents_open_user_close_date
   ON index_documents (open_user_uuid, close_date);
 
--- openStors: opening status and latest opening lookups
-CREATE INDEX IF NOT EXISTS idx_openStors_shopUuid_date
-  ON openStors (shopUuid, date DESC);
-
-CREATE INDEX IF NOT EXISTS idx_openStors_user_shop_date
-  ON openStors (userId, shopUuid, date DESC);
+-- openStors indexes are created in Drizzle schema, not needed here

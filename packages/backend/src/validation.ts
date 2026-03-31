@@ -129,6 +129,17 @@ export const AiDirectorReportRequestSchema = z.object({
 });
 
 /**
+ * POST /api/ai/director/overview
+ */
+export const AiDirectorOverviewRequestSchema = z.object({
+	date: DateStringSchema.optional(),
+	since: DateStringSchema.optional(),
+	until: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+	limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+/**
  * POST /api/ai/director/chat
  */
 export const AiDirectorChatRequestSchema = z.object({
@@ -369,8 +380,8 @@ export const SalaryBonusSaveSchema = z.object({
 export const SalesResultSchema = z.object({
 	startDate: DateStringSchema,
 	endDate: DateStringSchema,
-	shopUuid: UuidSchema,
-	groups: z.array(UuidSchema),
+	shopUuid: z.string().min(1, "shopUuid обязателен"),
+	groups: z.array(z.string().min(1, "Некорректный идентификатор группы")).min(1),
 });
 
 /**

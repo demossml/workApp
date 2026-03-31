@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DataModeMetaSchema } from "../dataMode";
 
 export const WorkingByShopEntrySchema = z
 	.object({
@@ -12,6 +13,7 @@ export const WorkingByShopEntrySchema = z
 export const WorkingByShopsResponseSchema = z
 	.object({
 		byShop: z.record(WorkingByShopEntrySchema),
+		meta: DataModeMetaSchema.optional(),
 	})
 	.strict();
 

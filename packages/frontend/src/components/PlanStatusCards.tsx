@@ -1,3 +1,3 @@
-import { PlanStatusWidget } from "@widgets";
+import { PlanStatusWidget } from "@widgets/home";
 
 export default PlanStatusWidget;

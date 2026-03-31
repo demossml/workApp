@@ -1,33 +1,58 @@
 
-
 > @work-appt/frontend@0.0.0 build /Users/dmitrijsuvalov/Documents/testapp2/packages/frontend
 > tsc -b && vite build && rm -rf ../backend/dist && cp -R dist ../backend/
 
-[36mvite v5.4.20 [32mbuilding for production...[36m[39m
+vite v5.4.20 building for production...
 [baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
-[2K[1Gtransforming (1) [2mindex.html[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1GBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+transforming...
+Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
   npx update-browserslist-db@latest
   Why you should do it regularly: https://github.com/browserslist/update-db#readme
-[2K[1Gtransforming (36) [2m../../node_modules/@tanstack/query-core/build/modern/focusManager.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (58) [2m../../node_modules/@tanstack/query-core/build/modern/infiniteQueryBehavior.js[22m[2K[1Gtransforming (77) [2m../../node_modules/react-router/dist/index.js[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (1075) [2m../../node_modules/lucide-react/dist/esm/icons/image-off.js[22m[2K[1Gtransforming (1817) [2m../../node_modules/motion-utils/dist/es/is-object.mjs[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2028) [2m../../node_modules/@tanstack/query-core/build/modern/queriesObserver.js[22m[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2126) [2m../../node_modules/framer-motion/dist/es/render/components/create-proxy.mjs[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2232) [2m../backend/src/contracts/workingByShops.ts[22m[2K[1G[2K[1Gtransforming (2548) [2m../../node_modules/framer-motion/dist/es/render/svg/use-svg-visual-state.mjs[22m[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1G[2K[1Gtransforming (2828) [2m../../node_modules/date-fns/locale/af/_lib/formatDistance.js[22m[2K[1G[32m✓[39m 3254 modules transformed.
-[2K[1Grendering chunks (1)...[2K[1Grendering chunks (2)...[2K[1Grendering chunks (3)...[2K[1Grendering chunks (4)...[2K[1Grendering chunks (5)...[2K[1Grendering chunks (6)...[2K[1Grendering chunks (7)...[2K[1Grendering chunks (8)...[2K[1Grendering chunks (9)...[2K[1Grendering chunks (10)...[2K[1Grendering chunks (11)...[2K[1G[2K[1Gcomputing gzip size (0)...[2K[1Gcomputing gzip size (1)...[2K[1Gcomputing gzip size (2)...[2K[1Gcomputing gzip size (3)...[2K[1Gcomputing gzip size (4)...[2K[1Gcomputing gzip size (5)...[2K[1Gcomputing gzip size (6)...[2K[1Gcomputing gzip size (7)...[2K[1Gcomputing gzip size (8)...[2K[1Gcomputing gzip size (9)...[2K[1Gcomputing gzip size (10)...[2K[1Gcomputing gzip size (11)...[2K[1Gcomputing gzip size (12)...[2K[1Gcomputing gzip size (13)...[2K[1G[2mdist/[22m[32mmanifest.webmanifest          [39m[1m[2m  0.43 kB[22m[1m[22m
-[2mdist/[22m[32mindex.html                    [39m[1m[2m  1.58 kB[22m[1m[22m[2m │ gzip:   0.72 kB[22m
-[2mdist/[22m[2massets/[22m[35mindex-QBtVa3eK.css     [39m[1m[2m 99.09 kB[22m[1m[22m[2m │ gzip:  16.41 kB[22m
-[2mdist/[22m[2massets/[22m[36mHome-Cdnud2qq.js       [39m[1m[2m 15.86 kB[22m[1m[22m[2m │ gzip:   5.48 kB[22m
-[2mdist/[22m[2massets/[22m[36mindex-BNo-37B0.js      [39m[1m[2m 16.02 kB[22m[1m[22m[2m │ gzip:   5.40 kB[22m
-[2mdist/[22m[2massets/[22m[36mdeadstock-MIRfY-lX.js  [39m[1m[2m 25.98 kB[22m[1m[22m[2m │ gzip:   7.15 kB[22m
-[2mdist/[22m[2massets/[22m[36mopening-9TNcZiny.js    [39m[1m[2m 36.49 kB[22m[1m[22m[2m │ gzip:  11.40 kB[22m
-[2mdist/[22m[2massets/[22m[36mutils-DWgeA8io.js      [39m[1m[2m 37.26 kB[22m[1m[22m[2m │ gzip:  11.58 kB[22m
-[2mdist/[22m[2massets/[22m[36mradix-SQ409NS5.js      [39m[1m[2m 44.09 kB[22m[1m[22m[2m │ gzip:  14.70 kB[22m
-[2mdist/[22m[2massets/[22m[36mai-BATp6lQ2.js         [39m[1m[2m 47.88 kB[22m[1m[22m[2m │ gzip:  11.64 kB[22m
-[2mdist/[22m[2massets/[22m[36mdashboard-BQbOBXSu.js  [39m[1m[2m 96.03 kB[22m[1m[22m[2m │ gzip:  23.76 kB[22m
-[2mdist/[22m[2massets/[22m[36mreports-B9UbHzDY.js    [39m[1m[2m112.06 kB[22m[1m[22m[2m │ gzip:  26.64 kB[22m
-[2mdist/[22m[2massets/[22m[36mmotion-52bVHVhj.js     [39m[1m[2m124.66 kB[22m[1m[22m[2m │ gzip:  41.48 kB[22m
-[2mdist/[22m[2massets/[22m[36mvendor-DQ5p6qdT.js     [39m[1m[2m395.74 kB[22m[1m[22m[2m │ gzip: 120.23 kB[22m
-[32m✓ built in 2.88s[39m
+✓ 3309 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/manifest.webmanifest                              0.43 kB
+dist/index.html                                        1.10 kB │ gzip:   0.60 kB
+dist/assets/index-CTCSvCAn.css                       104.10 kB │ gzip:  17.14 kB
+dist/assets/tempoSettings-BQ7DIuEk.js                  0.50 kB │ gzip:   0.31 kB
+dist/assets/useSimpleTelegramBackButton-C2FcgnEv.js    0.56 kB │ gzip:   0.39 kB
+dist/assets/invalidate-BgZi2Pw4.js                     0.58 kB │ gzip:   0.25 kB
+dist/assets/card-DPI7sncO.js                           1.01 kB │ gzip:   0.38 kB
+dist/assets/button-DiLP2p7W.js                         1.31 kB │ gzip:   0.65 kB
+dist/assets/ErrorState-yU4sifhb.js                     1.60 kB │ gzip:   0.77 kB
+dist/assets/PlanSalesReport-4Yk6qu_w.js                2.38 kB │ gzip:   1.18 kB
+dist/assets/SchedulesReport-Ck_yZm9K.js                2.43 kB │ gzip:   0.93 kB
+dist/assets/SalesTodayReport-BRZnYhcA.js               2.45 kB │ gzip:   1.09 kB
+dist/assets/SaveAsJpegButton-B6sj1BYV.js               2.56 kB │ gzip:   1.39 kB
+dist/assets/StaffRatingsReport-CRXXn2G-.js             2.96 kB │ gzip:   1.52 kB
+dist/assets/QuantityTable-JZTN3b2f.js                  3.27 kB │ gzip:   1.57 kB
+dist/assets/StoreOpeningReport-ZBY5NwIA.js             4.95 kB │ gzip:   1.79 kB
+dist/assets/popover-BpWIPNGx.js                        5.25 kB │ gzip:   1.91 kB
+dist/assets/SalaryReport-B7wVQbzr.js                   8.06 kB │ gzip:   2.70 kB
+dist/assets/DynamicTable-BG-EEjih.js                   8.53 kB │ gzip:   3.24 kB
+dist/assets/Settings-D7UVfMJj.js                       8.91 kB │ gzip:   2.86 kB
+dist/assets/SalestReportForThePeriod-BiEsphfK.js       9.17 kB │ gzip:   3.11 kB
+dist/assets/Orders-BMrjYBSO.js                        10.29 kB │ gzip:   3.90 kB
+dist/assets/StoreOpeningsAdminReport-B6dLRtz_.js      10.59 kB │ gzip:   3.50 kB
+dist/assets/GroupSelector-BVZFVTbE.js                 10.88 kB │ gzip:   2.49 kB
+dist/assets/SalarysReport-DxR2bfXp.js                 12.03 kB │ gzip:   3.98 kB
+dist/assets/ProfitReportPage-CXPfymJd.js              12.79 kB │ gzip:   4.21 kB
+dist/assets/DeadStock-DPNNwuvx.js                     14.08 kB │ gzip:   5.13 kB
+dist/assets/Home-muXYNi9l.js                          18.61 kB │ gzip:   6.39 kB
+dist/assets/SaleRepor-KFZp748T.js                     22.05 kB │ gzip:   6.12 kB
+dist/assets/StoreOpeningPage-Dcpapq_E.js              31.19 kB │ gzip:   9.73 kB
+dist/assets/index-C6-BGEWR.js                         32.04 kB │ gzip:  10.92 kB
+dist/assets/utils-DJPApWMn.js                         37.39 kB │ gzip:  11.65 kB
+dist/assets/radix-CqXe5XdF.js                         44.09 kB │ gzip:  14.70 kB
+dist/assets/AiDirector-DfbdCSlK.js                    45.76 kB │ gzip:  10.53 kB
+dist/assets/DashboardSummary-CH4qM2oU.js              82.57 kB │ gzip:  18.65 kB
+dist/assets/motion-BVme23dC.js                       124.66 kB │ gzip:  41.48 kB
+dist/assets/vendor-BGB6SH-M.js                       400.10 kB │ gzip: 121.71 kB
+✓ built in 9.20s
 
-[36mPWA v1.0.3[39m
-mode      [35mgenerateSW[39m
-precache  [32m14 entries[39m [2m(1043.11 KiB)[22m
+PWA v1.0.3
+mode      generateSW
+precache  37 entries (1070.25 KiB)
 files generated
-  [2mdist/sw.js[22m
-  [2mdist/workbox-1be04862.js[22m
+  dist/sw.js
+  dist/workbox-1be04862.js

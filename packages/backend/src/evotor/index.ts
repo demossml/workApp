@@ -1,6 +1,6 @@
 import {
 	calculateDateRanges,
-	// formatDateTime,
+	formatDateTime,
 	formatDateWithTime,
 	generateDateRanges,
 	getDateRangesForWeeks,
@@ -522,8 +522,11 @@ export class Evotor {
 		const intervals = generateDateRanges(since, until, "days", 30);
 		// console.log("intervals ->", intervals);
 		const fetchPromises = intervals.map(async ([startDate, endDate]) => {
-			const start = formatDateWithTime(new Date(startDate), false);
-			const end = formatDateWithTime(new Date(endDate), true);
+			// Важно: сохраняем точные границы интервала.
+			// Раньше здесь принудительно ставились 00:00/23:59 UTC, что расширяло период
+			// и могло подмешивать чеки из соседнего дня.
+			const start = formatDateTime(new Date(startDate));
+			const end = formatDateTime(new Date(endDate));
 			const baseUrl = this._replacePlaceholders(this.urls.getDoc, [
 				shopId,
 				start,
@@ -1686,6 +1689,50 @@ export class Evotor {
 			);
 			this._logError(
 				`Ошибка при получении и расчете количества продаж для магазина с ID: ${shopId}`,
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Прямой вариант расчета аксессуаров из Evotor API (без index_documents).
+	 */
+	async getSalesSumQuantitySumDirect(
+		shopId: string,
+		since: string,
+		until: string,
+		productUuids: string[],
+	): Promise<Record<string, { quantitySale: number; sum: number }>> {
+		try {
+			const documents = await this.getDocumentsBySellPayback(shopId, since, until);
+			const salesSummary: Record<string, { quantitySale: number; sum: number }> = {};
+
+			for (const doc of documents) {
+				if (!["SELL", "PAYBACK"].includes(doc.type)) continue;
+				for (const trans of doc.transactions) {
+					if (
+						trans.type === "REGISTER_POSITION" &&
+						productUuids.includes(trans.commodityUuid)
+					) {
+						const productName = trans.commodityName;
+						const quantity = trans.quantity;
+						const sum = trans.sum;
+
+						if (!salesSummary[productName]) {
+							salesSummary[productName] = { quantitySale: 0, sum: 0 };
+						}
+
+						salesSummary[productName].quantitySale += quantity;
+						salesSummary[productName].sum += sum;
+					}
+				}
+			}
+
+			return salesSummary;
+		} catch (error) {
+			logger.error(
+				`Ошибка при выполнении getSalesSumQuantitySumDirect для магазина ${shopId}`,
 				error,
 			);
 			throw error;

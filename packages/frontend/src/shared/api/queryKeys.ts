@@ -46,4 +46,7 @@ export const queryKeys = {
   alerts: {
     todayFinancial: () => ["alerts", "today-financial"] as const,
   },
+  admin: {
+    dataMode: () => ["admin", "data-mode"] as const,
+  },
 };

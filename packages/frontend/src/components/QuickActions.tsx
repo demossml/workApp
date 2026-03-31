@@ -1,3 +1,3 @@
-import { QuickActionsWidget } from "@widgets";
+import { QuickActionsWidget } from "@widgets/home";
 
 export default QuickActionsWidget;

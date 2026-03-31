@@ -25,6 +25,8 @@ export type IEnv = {
 		AI_MODEL?: string;
 		AI_MAX_TOKENS?: string;
 		ONEC_API_KEY?: string;
+		DISABLE_EVOTOR_DOCUMENTS_INDEXING?: string;
+		DISABLE_AI_DIRECTOR?: string;
 	};
 	Variables: {
 		userId: string;

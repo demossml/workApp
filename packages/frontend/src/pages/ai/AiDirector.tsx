@@ -1,6 +1,6 @@
 import { useAiDirectorPageModel } from "@features/ai/hooks";
 import { AiDirectorDataWidget, AiDirectorTopWidget } from "@widgets/ai-director";
-import { DashboardSummaryWidget } from "@widgets";
+import { DashboardSummaryWidget } from "@widgets/dashboard";
 
 export default function AiDirectorPage() {
   const model = useAiDirectorPageModel();

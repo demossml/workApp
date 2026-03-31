@@ -39,5 +39,6 @@ export const useShopCharts = (openedShop: string | null) => {
     staleTime: 5 * 60 * 1000, // кешировать 5 минут
     refetchOnWindowFocus: false,
     refetchInterval: 60000, // обновлять каждую минуту (опционально)
+    refetchIntervalInBackground: false,
   });
 };

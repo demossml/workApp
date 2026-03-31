@@ -24,6 +24,7 @@ export function useProductDashboard() {
     queryKey: ["analytics", "product"],
     queryFn: fetchProductDashboard,
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -32,6 +33,7 @@ export function useReliabilityDashboard() {
     queryKey: ["analytics", "reliability"],
     queryFn: fetchReliabilityDashboard,
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -39,6 +41,7 @@ export function useBusinessDashboard(filter?: ShopFilter) {
   return useQuery({
     queryKey: ["analytics", "business", filter?.shopUuid || "", filter?.shopName || ""],
     queryFn: () => fetchBusinessDashboard(filter),
-		refetchInterval: 60_000,
-	});
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
 }

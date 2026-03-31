@@ -4,7 +4,6 @@ import {
   forwardRef,
   type MutableRefObject,
 } from "react";
-import { toPng } from "html-to-image";
 import { generatePdfFromFile } from "@features/reports/api";
 
 interface ReportUploaderProps {
@@ -40,6 +39,7 @@ const ReportUploader = forwardRef<HTMLDivElement, ReportUploaderProps>(
       addLog("Создание изображения...");
 
       try {
+        const { toPng } = await import("html-to-image");
         // Добавляем задержку для завершения рендеринга
         await new Promise((resolve) => setTimeout(resolve, 300));
 

@@ -1,5 +1,6 @@
 import { useLocation } from "react-router";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { PWAInstall } from "./pwa";
 import { useEmployeeRole } from "./hooks/useApi";
 import { useTheme } from "./hooks/useTheme";
@@ -11,7 +12,8 @@ import {
 import { trackEvent } from "./helpers/analytics";
 import { useTelegramFullscreenLayout } from "./hooks/useTelegramFullscreenLayout";
 import { AppRouter } from "@app/router";
-import { BottomNavigation } from "@widgets";
+import { BottomNavigation } from "@widgets/navigation";
+import { fetchDataMode, queryKeys } from "@shared/api";
 
 function App() {
   const { data } = useEmployeeRole();
@@ -21,6 +23,15 @@ function App() {
 
   useTheme();
   useTelegramFullscreenLayout();
+
+  useQuery({
+    queryKey: queryKeys.admin.dataMode(),
+    queryFn: fetchDataMode,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    retry: 1,
+  });
 
   const [uploadStatus, setUploadStatus] = useState<{
     isUploading: boolean;

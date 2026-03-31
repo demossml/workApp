@@ -19,6 +19,7 @@ import {
   getRenderShopNames,
   type PlanInfo,
 } from "@features/dashboard/model/planStatusModel";
+import { DataSourceSwitcher } from "@features/data-source/ui/DataSourceSwitcher";
 
 export function PlanStatusWidget() {
   const { data: shopNames = [], isLoading: shopsLoading } = useGetShopNames();
@@ -79,6 +80,12 @@ export function PlanStatusWidget() {
 
   return (
     <div className="w-full mb-8">
+      <div className="mb-2 inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
+        SWITCHER_V2
+      </div>
+      <div className="mb-4">
+        <DataSourceSwitcher />
+      </div>
       {/* Сетка карточек по магазинам */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {cards.map((card, index) => {

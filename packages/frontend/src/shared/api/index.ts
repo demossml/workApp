@@ -14,6 +14,7 @@ export {
   fetchFinancialTodayForUser,
   fetchFinancialMetrics,
   fetchGroupsByShop,
+  fetchDataMode,
   fetchMe,
   fetchOpenTimes,
   fetchOrderForecast,
@@ -26,4 +27,5 @@ export {
   fetchShopNames,
   fetchShops,
   fetchWorkingByShops,
+  updateDataMode,
 } from "./endpoints";

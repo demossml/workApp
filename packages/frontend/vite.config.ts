@@ -7,8 +7,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // Временно выключаем кэширование SW, чтобы гарантированно убрать старые бандлы у пользователей.
+      selfDestroying: true,
       registerType: "autoUpdate", // автообновление SW
       workbox: {
+        cacheId: "work-app-v2",
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
@@ -16,7 +19,7 @@ export default defineConfig({
       devOptions: {
         enabled: true, // ⚡️ чтобы PWA работал и в dev-режиме
       },
-      includeAssets: ["favicon.ico", "apple-touch-icon.png"],
+      includeAssets: ["favicon.svg", "apple-touch-icon.svg"],
       manifest: {
         name: "Evo App",
         short_name: "Evo",
@@ -27,19 +30,19 @@ export default defineConfig({
         start_url: "/",
         icons: [
           {
-            src: "/pwa-192x192.png",
+            src: "/pwa-192x192.svg",
             sizes: "192x192",
-            type: "image/png",
+            type: "image/svg+xml",
           },
           {
-            src: "/pwa-512x512.png",
+            src: "/pwa-512x512.svg",
             sizes: "512x512",
-            type: "image/png",
+            type: "image/svg+xml",
           },
           {
-            src: "/pwa-512x512.png",
+            src: "/pwa-512x512.svg",
             sizes: "512x512",
-            type: "image/png",
+            type: "image/svg+xml",
             purpose: "any maskable",
           },
         ],
@@ -87,11 +90,6 @@ export default defineConfig({
             }
             return "vendor";
           }
-          if (id.includes("/src/pages/reports/")) return "reports";
-          if (id.includes("/src/pages/ai/")) return "ai";
-          if (id.includes("/src/pages/opening/")) return "opening";
-          if (id.includes("/src/pages/deadstock/")) return "deadstock";
-          if (id.includes("/src/widgets/dashboard/")) return "dashboard";
         },
       },
     },

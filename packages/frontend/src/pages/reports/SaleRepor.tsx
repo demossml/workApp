@@ -12,7 +12,7 @@ import { ErrorState, LoadingState } from "@shared/ui/states";
 import {
   AiInsights,
   type AiInsightsData,
-  DynamicTable,
+  DynamicTableSalesReport,
   GroupSelector,
   ShopSelector,
 } from "@widgets/reports";
@@ -160,7 +160,18 @@ export default function SalesReport() {
         },
       });
       if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
-      const report: ReportData = await response.json();
+      const json = await response.json();
+      if (
+        !json ||
+        typeof json !== "object" ||
+        !("salesData" in json) ||
+        !("shopName" in json) ||
+        !("startDate" in json) ||
+        !("endDate" in json)
+      ) {
+        throw new Error("Некорректный формат отчёта");
+      }
+      const report = json as ReportData;
       setReportData(report);
     } catch (err) {
       console.error(err);
@@ -463,7 +474,7 @@ export default function SalesReport() {
           </div>
 
           <div className="flex-1 min-h-0 w-full">
-            <DynamicTable data={tableData} />
+            <DynamicTableSalesReport data={tableData} />
           </div>
 
           {/* AI Insights Section */}

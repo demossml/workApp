@@ -53,12 +53,7 @@ import {
   shiftIsoDate,
 } from "@features/dashboard/model/dashboardSummaryModel";
 import {
-  fetchDirectorAlerts,
-  fetchDirectorForecast,
-  fetchDirectorRecommendations,
-  fetchDirectorReport,
-  fetchDirectorSummary,
-  fetchDirectorVelocity,
+  fetchDirectorOverview,
   fetchOpeningPhotoDigest,
 } from "@features/dashboard/api";
 
@@ -583,7 +578,7 @@ export default function DashboardSummary2({
     roleData?.employeeRole === "SUPERADMIN"
       ? undefined
       : currentWorkShop?.uuid || undefined;
-  const { data, loading, lastUpdate } = useSalesData({
+  const { data, loading, error: salesError, lastUpdate } = useSalesData({
     since: safeSince,
     until: safeUntil,
     shopUuid: scopedShopUuid,
@@ -634,6 +629,7 @@ export default function DashboardSummary2({
     until: comparisonRange.prevUntil,
     shopUuid: scopedShopUuid,
     enabled: salesEnabled,
+    pollIntervalMs: 0,
   });
   const previousFilteredData = useFilteredSalesData(
     previousPeriodData.data,
@@ -672,74 +668,38 @@ export default function DashboardSummary2({
       setDirectorLoading(true);
       setDirectorError(null);
       try {
-        const settled = await Promise.allSettled([
-          fetchDirectorSummary(directorDate),
-          fetchDirectorAlerts(directorDate),
-          fetchDirectorForecast(directorDate),
-          fetchDirectorVelocity({ since: safeSince, until: safeUntil, limit: 50 }),
-          fetchDirectorRecommendations({ since: safeSince, until: safeUntil, limit: 50 }),
-          fetchDirectorReport({ date: directorDate, sendTelegram: false }),
-        ]);
-
-        const labels = [
-          "summary",
-          "alerts",
-          "forecast",
-          "velocity",
-          "recommendations",
-          "report",
-        ] as const;
-
-        const errors: string[] = [];
-
-        const parseFailedResponse = async (res: Response, label: string) => {
-          try {
-            const body = await res.json();
-            const reason =
-              (body as { error?: string; message?: string })?.error ||
-              (body as { error?: string; message?: string })?.message;
-            return reason
-              ? `Не удалось загрузить ${label}: ${reason}`
-              : `Не удалось загрузить ${label}`;
-          } catch {
-            return `Не удалось загрузить ${label}`;
-          }
-        };
-
-        const parseData = async <T,>(index: number): Promise<T | null> => {
-          const entry = settled[index];
-          const label = labels[index];
-          if (entry.status === "rejected") {
-            errors.push(`Не удалось загрузить ${label}`);
-            return null;
-          }
-          const res = entry.value;
-          if (!res.ok) {
-            errors.push(await parseFailedResponse(res, label));
-            return null;
-          }
-          return (await res.json()) as T;
-        };
-
-        const [summary, alerts, forecast, velocity, recommendations, report] =
-          await Promise.all([
-            parseData<DirectorSummaryResponse>(0),
-            parseData<DirectorAlertsResponse>(1),
-            parseData<DirectorForecastResponse>(2),
-            parseData<DirectorVelocityResponse>(3),
-            parseData<DirectorRecommendationsResponse>(4),
-            parseData<DirectorReportResponse>(5),
-          ]);
+        const overview = await fetchDirectorOverview({
+          date: directorDate,
+          since: safeSince,
+          until: safeUntil,
+          limit: 50,
+        });
 
         if (cancelled) return;
-        if (summary) setDirectorSummary(summary);
-        if (alerts) setDirectorAlerts(alerts);
-        if (forecast) setDirectorForecast(forecast);
-        if (velocity) setDirectorVelocity(velocity);
-        if (recommendations) setDirectorRecommendations(recommendations);
-        if (report) setDirectorReport(report);
+        if (overview.summary) {
+          setDirectorSummary(overview.summary as DirectorSummaryResponse);
+        }
+        if (overview.alerts) {
+          setDirectorAlerts(overview.alerts as DirectorAlertsResponse);
+        }
+        if (overview.forecast) {
+          setDirectorForecast(overview.forecast as DirectorForecastResponse);
+        }
+        if (overview.velocity) {
+          setDirectorVelocity(overview.velocity as DirectorVelocityResponse);
+        }
+        if (overview.recommendations) {
+          setDirectorRecommendations(
+            overview.recommendations as DirectorRecommendationsResponse
+          );
+        }
+        if (overview.report) {
+          setDirectorReport(overview.report as DirectorReportResponse);
+        }
 
-        setDirectorError(errors.length > 0 ? errors.join(" • ") : null);
+        setDirectorError(
+          overview.errors.length > 0 ? overview.errors.join(" • ") : null
+        );
       } catch (error) {
         if (cancelled) return;
         setDirectorError(
@@ -906,6 +866,14 @@ export default function DashboardSummary2({
 
   const topAlerts = (directorAlerts?.alerts || []).slice(0, 5);
   const topRecommendations = (directorRecommendations?.recommendations || []).slice(0, 5);
+
+  if (showMainDashboard && !loading && salesError) {
+    return (
+      <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
+        Ошибка загрузки данных: {salesError}
+      </div>
+    );
+  }
 
   if (showMainDashboard && !loading && !filteredData) return <EmptyWorkDay />;
 

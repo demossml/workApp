@@ -1,6 +1,13 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import type { IndexDocument, Transaction } from "../../evotor/types";
 
+function normalizeIsoOffset(value: string): string {
+	return value
+		.replace("+00:00", "+0000")
+		.replace(/([+-]\d{2}):(\d{2})$/, "$1$2")
+		.replace(/Z$/, "+0000");
+}
+
 function parseTransactions(value: unknown): Transaction[] {
 	if (!value) return [];
 	try {
@@ -23,16 +30,16 @@ export async function getDocumentsByPeriod(
 	until: string,
 ): Promise<IndexDocument[]> {
 	try {
-		const normalizedSince = since.replace(/Z$/, "+0000");
-		const normalizedUntil = until.replace(/Z$/, "+0000");
+		const normalizedSince = normalizeIsoOffset(since);
+		const normalizedUntil = normalizeIsoOffset(until);
 
 		const stmt = await db
 			.prepare(
 				`
 			SELECT * FROM index_documents
 			WHERE shop_id = ? 
-			AND close_date BETWEEN ? AND ?
-			ORDER BY close_date ASC
+			AND REPLACE(close_date, '+00:00', '+0000') BETWEEN ? AND ?
+			ORDER BY REPLACE(close_date, '+00:00', '+0000') ASC
 		`,
 			)
 			.bind(shopId, normalizedSince, normalizedUntil);
@@ -62,8 +69,8 @@ export async function getDocumentsByCashOutcomeByPeriod(
 	until: string,
 ): Promise<IndexDocument[]> {
 	try {
-		const normalizedSince = since.replace(/Z$/, "+0000");
-		const normalizedUntil = until.replace(/Z$/, "+0000");
+		const normalizedSince = normalizeIsoOffset(since);
+		const normalizedUntil = normalizeIsoOffset(until);
 
 		const stmt = await db
 			.prepare(
@@ -71,9 +78,9 @@ export async function getDocumentsByCashOutcomeByPeriod(
 			SELECT close_date, number, open_user_uuid, shop_id, type, transactions
 			FROM index_documents
 			WHERE shop_id = ? 
-			AND close_date BETWEEN ? AND ?
+			AND REPLACE(close_date, '+00:00', '+0000') BETWEEN ? AND ?
 			AND type = 'CASH_OUTCOME'
-			ORDER BY close_date ASC		
+			ORDER BY REPLACE(close_date, '+00:00', '+0000') ASC		
 		`,
 			)
 			.bind(shopId, normalizedSince, normalizedUntil);
@@ -103,8 +110,8 @@ export async function getDocumentsBySalesPeriod(
 	until: string,
 ): Promise<IndexDocument[]> {
 	try {
-		const normalizedSince = since.replace(/Z$/, "+0000");
-		const normalizedUntil = until.replace(/Z$/, "+0000");
+		const normalizedSince = normalizeIsoOffset(since);
+		const normalizedUntil = normalizeIsoOffset(until);
 
 		const stmt = await db
 			.prepare(
@@ -112,9 +119,9 @@ export async function getDocumentsBySalesPeriod(
 			SELECT close_date, number, open_user_uuid, shop_id, type, transactions
 			FROM index_documents
 			WHERE shop_id = ? 
-			AND close_date BETWEEN ? AND ?
+			AND REPLACE(close_date, '+00:00', '+0000') BETWEEN ? AND ?
 			AND type IN ('SELL', 'PAYBACK')
-			ORDER BY close_date ASC		
+			ORDER BY REPLACE(close_date, '+00:00', '+0000') ASC		
 		`,
 			)
 			.bind(shopId, normalizedSince, normalizedUntil);
@@ -144,8 +151,8 @@ export async function getDocumentsBySales(
 	until: string,
 ): Promise<IndexDocument[]> {
 	try {
-		const normalizedSince = since.replace(/Z$/, "+0000");
-		const normalizedUntil = until.replace(/Z$/, "+0000");
+		const normalizedSince = normalizeIsoOffset(since);
+		const normalizedUntil = normalizeIsoOffset(until);
 
 		const stmt = await db
 			.prepare(
@@ -153,9 +160,9 @@ export async function getDocumentsBySales(
 			SELECT close_date, number, open_user_uuid, shop_id, type, transactions
 			FROM index_documents
 			WHERE shop_id = ? 
-			AND close_date BETWEEN ? AND ?
+			AND REPLACE(close_date, '+00:00', '+0000') BETWEEN ? AND ?
 			AND type IN ('SELL')
-			ORDER BY close_date ASC		
+			ORDER BY REPLACE(close_date, '+00:00', '+0000') ASC		
 		`,
 			)
 			.bind(shopId, normalizedSince, normalizedUntil);

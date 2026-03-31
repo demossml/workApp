@@ -33,7 +33,7 @@ preview_bucket_name = "evotor"
 # KV cache namespace (replace ids after creation)
 [[kv_namespaces]]
 binding = "KV"
-id = "8d62cde8fea340bdbe646b60c76a9cd5"
+id = "e63ab03b9ff0495cbd0f4e9d1875f2a0"
 preview_id = "043bde4a321349bea43c2c223c6fec4f"
 
 # Секретные переменные вынесены в .dev.vars (для разработки) и Cloudflare Secrets (для production)
@@ -53,7 +53,10 @@ ONEC_API_KEY = "секретный_ключ_минимум_32_символа"
 WEATHER_DEFAULT_LAT = "54.7826"
 WEATHER_DEFAULT_LON = "32.0453"
 WEATHER_DEFAULT_NAME = "Smolensk"
+# Аварийные флаги экономии D1 (по умолчанию выключены)
+DISABLE_EVOTOR_DOCUMENTS_INDEXING = "false"
+DISABLE_AI_DIRECTOR = "false"
 
 [triggers]
-# Mixed schedule: каждые 3 минуты + в 08:00 и 11:00 UTC.
-crons = ["*/3 * * * *", "0 8 * * *", "0 11 * * *"]
+# Mixed schedule: каждые 15 минут + в 08:00 и 11:00 UTC.
+crons = ["*/15 * * * *", "0 8 * * *", "0 11 * * *"]

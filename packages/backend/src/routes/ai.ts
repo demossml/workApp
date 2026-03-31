@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Next } from "hono";
 import type { IEnv } from "../types";
 import { logger } from "../logger";
 import {
@@ -12,6 +12,7 @@ import {
 	AiDirectorDemandForecastRequestSchema,
 	AiDirectorExplainSalesRequestSchema,
 	AiDirectorHeatmapRequestSchema,
+	AiDirectorOverviewRequestSchema,
 	AiDirectorReportRequestSchema,
 	AiDirectorRecommendationsRequestSchema,
 	AiDirectorSummaryRequestSchema,
@@ -69,6 +70,10 @@ import {
 	listAiAlerts,
 	listAiShiftSummaries,
 } from "../db/repositories/aiHistory";
+import {
+	buildDataModeMeta,
+	getDataModeOrDefault,
+} from "../dataMode";
 
 const toIsoDate = (date: Date) => date.toISOString().split("T")[0];
 
@@ -995,7 +1000,69 @@ const summarizeShopPhotos = async (
 	return extractAiText(result);
 };
 
+const ensureAiAvailable = async (
+	c: {
+		env: IEnv["Bindings"];
+		json: (
+			body: unknown,
+			status?: number,
+			headers?: Record<string, string>,
+		) => Response;
+	},
+	next: Next,
+) => {
+	const mode = await getDataModeOrDefault(c.env);
+	if (mode === "ELVATOR") {
+		return c.json(
+			{
+				code: "AI_UNAVAILABLE_FOR_DATA_MODE",
+				message: "AI недоступен при работе через ELVATOR",
+				meta: buildDataModeMeta(mode),
+			},
+			503,
+			{
+				"x-error-code": "AI_UNAVAILABLE_FOR_DATA_MODE",
+			},
+		);
+	}
+	return next();
+};
+
+const isFlagEnabled = (value?: string): boolean => {
+	if (!value) return false;
+	const normalized = value.trim().toLowerCase();
+	return normalized === "1" || normalized === "true" || normalized === "yes";
+};
+
+const ensureAiDirectorEnabled = async (
+	c: {
+		env: IEnv["Bindings"];
+		json: (
+			body: unknown,
+			status?: number,
+			headers?: Record<string, string>,
+		) => Response;
+	},
+	next: Next,
+) => {
+	if (isFlagEnabled(c.env.DISABLE_AI_DIRECTOR)) {
+		return c.json(
+			{
+				code: "AI_DIRECTOR_DISABLED",
+				message: "AI Director временно отключен",
+			},
+			503,
+			{
+				"x-error-code": "AI_DIRECTOR_DISABLED",
+			},
+		);
+	}
+	return next();
+};
+
 export const aiRoutes = new Hono<IEnv>()
+	.use("/*", ensureAiAvailable)
+	.use("/director/*", ensureAiDirectorEnabled)
 
 	.post("/director/alerts", async (c) => {
 		try {
@@ -2098,6 +2165,153 @@ export const aiRoutes = new Hono<IEnv>()
 		} catch (error) {
 			logger.error("AI director report failed", { error });
 			return c.json({ error: "AI_DIRECTOR_REPORT_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/overview", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { date, since, until, shopUuids, limit } = validate(
+				AiDirectorOverviewRequestSchema,
+				payload,
+			);
+
+			const targetDate = date ?? toIsoDate(new Date());
+			const resolvedSince = since ?? targetDate;
+			const resolvedUntil = until ?? targetDate;
+			const resolvedLimit = limit ?? 50;
+
+			const baseUrl = new URL(c.req.url);
+			const forwardHeaders = new Headers();
+			for (const headerName of [
+				"initData",
+				"telegram-id",
+				"authorization",
+				"cookie",
+			]) {
+				const value = c.req.header(headerName);
+				if (value) forwardHeaders.set(headerName, value);
+			}
+			forwardHeaders.set("content-type", "application/json");
+
+			const postInternal = async (path: string, body: Record<string, unknown>) => {
+				const url = new URL(`/api/ai${path}`, baseUrl.origin);
+				const response = await fetch(url.toString(), {
+					method: "POST",
+					headers: forwardHeaders,
+					body: JSON.stringify(body),
+				});
+				const json = (await response.json().catch(() => null)) as
+					| Record<string, unknown>
+					| null;
+				if (!response.ok) {
+					const reason =
+						typeof json?.error === "string"
+							? json.error
+							: typeof json?.message === "string"
+								? json.message
+								: `HTTP_${response.status}`;
+					throw new Error(`${path}:${reason}`);
+				}
+				return (json || {}) as Record<string, unknown>;
+			};
+
+			const scopedShops = shopUuids ? { shopUuids } : {};
+
+			const jobs = [
+				{
+					key: "summary",
+					label: "summary",
+					path: "/director/summary",
+					body: { date: targetDate, ...scopedShops },
+				},
+				{
+					key: "alerts",
+					label: "alerts",
+					path: "/director/alerts",
+					body: { date: targetDate, ...scopedShops },
+				},
+				{
+					key: "forecast",
+					label: "forecast",
+					path: "/director/forecast",
+					body: { date: targetDate, ...scopedShops },
+				},
+				{
+					key: "velocity",
+					label: "velocity",
+					path: "/director/velocity",
+					body: {
+						since: resolvedSince,
+						until: resolvedUntil,
+						limit: resolvedLimit,
+						...scopedShops,
+					},
+				},
+				{
+					key: "recommendations",
+					label: "recommendations",
+					path: "/director/recommendations",
+					body: {
+						since: resolvedSince,
+						until: resolvedUntil,
+						limit: resolvedLimit,
+						...scopedShops,
+					},
+				},
+				{
+					key: "report",
+					label: "report",
+					path: "/director/report",
+					body: { date: targetDate, sendTelegram: false, ...scopedShops },
+				},
+			] as const;
+
+			const settled = await Promise.allSettled(
+				jobs.map((job) => postInternal(job.path, job.body)),
+			);
+
+			const responsePayload: {
+				date: string;
+				since: string;
+				until: string;
+				summary: Record<string, unknown> | null;
+				alerts: Record<string, unknown> | null;
+				forecast: Record<string, unknown> | null;
+				velocity: Record<string, unknown> | null;
+				recommendations: Record<string, unknown> | null;
+				report: Record<string, unknown> | null;
+				errors: string[];
+			} = {
+				date: targetDate,
+				since: resolvedSince,
+				until: resolvedUntil,
+				summary: null,
+				alerts: null,
+				forecast: null,
+				velocity: null,
+				recommendations: null,
+				report: null,
+				errors: [],
+			};
+
+			for (let index = 0; index < jobs.length; index += 1) {
+				const job = jobs[index];
+				const entry = settled[index];
+				if (entry.status === "fulfilled") {
+					responsePayload[job.key] = entry.value;
+					continue;
+				}
+				responsePayload.errors.push(
+					`Не удалось загрузить ${job.label}`,
+				);
+			}
+
+			const status = responsePayload.errors.length === jobs.length ? 500 : 200;
+			return c.json(responsePayload, status);
+		} catch (error) {
+			logger.error("AI director overview failed", { error });
+			return c.json({ error: "AI_DIRECTOR_OVERVIEW_FAILED" }, 500);
 		}
 	})
 

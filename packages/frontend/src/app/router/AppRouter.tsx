@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
-import { Route, Routes } from "react-router";
+import { Navigate, Route, Routes } from "react-router";
+import { useDataSourceStore } from "@shared/model/dataSourceStore";
 
 const Settings = lazy(() => import("@/pages/reports/Settings"));
 const Home = lazy(() => import("@/pages/Home"));
@@ -21,6 +22,8 @@ const StoreOpeningsAdminReport = lazy(() => import("@/pages/reports/StoreOpening
 const AiDirectorPage = lazy(() => import("@/pages/ai/AiDirector"));
 
 export function AppRouter() {
+  const aiAvailable = useDataSourceStore((state) => state.aiAvailable);
+
   return (
     <Suspense
       fallback={
@@ -47,7 +50,10 @@ export function AppRouter() {
         <Route path="/evotor/schedules" element={<SchedulesReport />} />
         <Route path="/evotor/open-store" element={<StoreOpeningPage />} />
         <Route path="evotor/dead-stock" element={<DeadStocks />} />
-        <Route path="/ai/director" element={<AiDirectorPage />} />
+        <Route
+          path="/ai/director"
+          element={aiAvailable ? <AiDirectorPage /> : <Navigate to="/" replace />}
+        />
       </Routes>
     </Suspense>
   );

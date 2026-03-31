@@ -592,6 +592,7 @@ export default function PhotoStep({
   useEffect(() => {
     let mounted = true;
     let interval: number | undefined;
+    const QUEUE_POLL_MS = 15_000;
 
     const refreshQueue = async () => {
       try {
@@ -624,21 +625,47 @@ export default function PhotoStep({
       await refreshQueue();
     };
 
+    const stopPolling = () => {
+      if (interval) {
+        window.clearInterval(interval);
+        interval = undefined;
+      }
+    };
+
+    const startPolling = () => {
+      if (interval || !userId) return;
+      interval = window.setInterval(() => {
+        void refreshQueue();
+      }, QUEUE_POLL_MS);
+    };
+
     if (userId) {
       void refreshQueue();
       void runBackgroundUpload();
-      interval = window.setInterval(refreshQueue, 10000);
+      if (document.visibilityState === "visible") {
+        startPolling();
+      }
     }
 
     const onOnline = () => {
       void runBackgroundUpload();
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshQueue();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
     window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       mounted = false;
-      if (interval) window.clearInterval(interval);
+      stopPolling();
       window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [userId]);
 

@@ -19,7 +19,7 @@ import {
 	SubmitGroupsSchema,
 	validate,
 } from "../validation";
-import type { IndexDocument, ShopUuidName } from "../evotor/types";
+import type { ShopUuidName } from "../evotor/types";
 import {
 	assert,
 	calculateDateRanges,
@@ -62,13 +62,21 @@ import {
 	type StockSnapshotData,
 } from "../db/repositories/stockSnapshots";
 import { jsonError, toApiErrorPayload } from "../errors";
-import { FinancialMetricsResponseSchema } from "../contracts/financialMetrics";
+import {
+	FinancialMetricsResponseSchema,
+	type FinancialMetricsResponse,
+} from "../contracts/financialMetrics";
 import { aggregateShopFinancialFromDocuments } from "../contracts/financialAggregation";
 import { runEvotorDocumentsIndexingJob } from "../jobs/indexEvotorDocuments";
 import { computeRevenueSummary } from "../contracts/revenueMath";
 import { PlanForTodayResponseSchema } from "../contracts/planMetrics";
 import { WorkingByShopsResponseSchema } from "../contracts/workingByShops";
 import { CurrentWorkShopResponseSchema } from "../contracts/currentWorkShop";
+import {
+	buildDataModeMeta,
+	getDataModeOrDefault,
+	type DataMode,
+} from "../dataMode";
 import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
 import { buildOrderForecastV2 } from "../services/orderForecastV2";
 import { saveNewIndexDocuments } from "../db/repositories/indexDocuments";
@@ -262,7 +270,9 @@ async function getFinancialDataDirectFromEvotor(
 	shopUuids: string[],
 	since: string,
 	until: string,
+	options?: { includeTopProducts?: boolean },
 ) {
+	const includeTopProducts = options?.includeTopProducts ?? true;
 	const byShop = await Promise.all(
 		shopUuids.map(async (shopUuid) => {
 			const [shopName, documents] = await Promise.all([
@@ -311,7 +321,9 @@ async function getFinancialDataDirectFromEvotor(
 
 	const [cashOutcomeData, topProducts, cashBalanceByShop] = await Promise.all([
 		evo.getDocumentsByCashOutcomeData(shopUuids, since, until),
-		getTopProductsData(evo, shopUuids, since, until),
+		includeTopProducts
+			? getTopProductsData(evo, shopUuids, since, until)
+			: Promise.resolve([]),
 		evo.getCashByShops(),
 	]);
 	const grandTotalCashOutcome = calculateTotalSum(cashOutcomeData);
@@ -352,99 +364,6 @@ function isStockSnapshotFresh(updatedAt: string): boolean {
 	const updatedAtTs = new Date(updatedAt).getTime();
 	if (!Number.isFinite(updatedAtTs)) return false;
 	return Date.now() - updatedAtTs <= STOCK_SNAPSHOT_TTL_MS;
-}
-
-function buildTopProductsFromIndexedDocuments(
-	documentsByShop: Array<{ shopUuid: string; docs: IndexDocument[] }>,
-	until: string,
-) {
-	const endDate = new Date(until);
-	const dayKeys: string[] = [];
-	for (let i = 6; i >= 0; i--) {
-		const d = new Date(endDate);
-		d.setDate(endDate.getDate() - i);
-		dayKeys.push(d.toISOString().slice(0, 10));
-	}
-	const dayIndex = new Map(dayKeys.map((key, idx) => [key, idx]));
-
-	const productStats = new Map<
-		string,
-		{
-			revenue: number;
-			quantity: number;
-			refundRevenue: number;
-			refundQuantity: number;
-			cost: number;
-			refundCost: number;
-			dailyNetRevenue7: number[];
-		}
-	>();
-
-	for (const { docs } of documentsByShop) {
-		for (const doc of docs) {
-			if (!["SELL", "PAYBACK"].includes(doc.type)) continue;
-			const isRefund = doc.type === "PAYBACK";
-			for (const trans of doc.transactions || []) {
-				if (trans.type !== "REGISTER_POSITION") continue;
-
-				const productName = trans.commodityName || "Неизвестный товар";
-				const existing = productStats.get(productName) || {
-					revenue: 0,
-					quantity: 0,
-					refundRevenue: 0,
-					refundQuantity: 0,
-					cost: 0,
-					refundCost: 0,
-					dailyNetRevenue7: [0, 0, 0, 0, 0, 0, 0],
-				};
-				const lineCost =
-					Number(trans.costPrice || 0) * Number(trans.quantity || 0);
-				const dayKey = new Date(doc.closeDate).toISOString().slice(0, 10);
-				const idx = dayIndex.get(dayKey);
-
-				if (isRefund) {
-					existing.refundRevenue += Number(trans.sum || 0);
-					existing.refundQuantity += Number(trans.quantity || 0);
-					existing.refundCost += lineCost;
-					if (typeof idx === "number") {
-						existing.dailyNetRevenue7[idx] -= Number(trans.sum || 0);
-					}
-				} else {
-					existing.revenue += Number(trans.sum || 0);
-					existing.quantity += Number(trans.quantity || 0);
-					existing.cost += lineCost;
-					if (typeof idx === "number") {
-						existing.dailyNetRevenue7[idx] += Number(trans.sum || 0);
-					}
-				}
-
-				productStats.set(productName, existing);
-			}
-		}
-	}
-
-	return Array.from(productStats.entries())
-		.map(([productName, stats]) => {
-			const netRevenue = stats.revenue - stats.refundRevenue;
-			const grossProfit = netRevenue - (stats.cost - stats.refundCost);
-			return {
-				productName,
-				revenue: stats.revenue,
-				quantity: stats.quantity,
-				refundRevenue: stats.refundRevenue,
-				refundQuantity: stats.refundQuantity,
-				netRevenue,
-				netQuantity: stats.quantity - stats.refundQuantity,
-				grossProfit,
-				marginPct: netRevenue > 0 ? (grossProfit / netRevenue) * 100 : 0,
-				averagePrice: stats.quantity > 0 ? stats.revenue / stats.quantity : 0,
-				refundRate:
-					stats.revenue > 0 ? (stats.refundRevenue / stats.revenue) * 100 : 0,
-				dailyNetRevenue7: stats.dailyNetRevenue7,
-			};
-		})
-		.filter((item) => item.netRevenue > 0)
-		.sort((a, b) => b.netRevenue - a.netRevenue);
 }
 
 async function buildTopProductsFromDbAggregates(
@@ -576,116 +495,6 @@ async function buildTopProductsFromDbAggregates(
 		.sort((a, b) => b.netRevenue - a.netRevenue);
 }
 
-async function getFinancialDataFromIndexWithFallback(
-	db: IEnv["Bindings"]["DB"],
-	evo: IEnv["Variables"]["evotor"],
-	shopUuids: string[],
-	since: string,
-	until: string,
-) {
-	const shopNamesMap = await evo.getShopNamesByUuids(shopUuids);
-	const paymentCategory: Record<number, string> = {
-		1: "Инкассация",
-		2: "Оплата поставщику",
-		3: "Оплата услуг",
-		4: "Аренда",
-		5: "Заработная плата",
-		6: "Прочее",
-	};
-
-	const docsByShop = await Promise.all(
-		shopUuids.map(async (shopUuid) => ({
-			shopUuid,
-			docs: await getDocumentsFromIndexFirst(
-				db,
-				evo,
-				shopUuid,
-				since,
-				until,
-				{ skipFetchIfStale: true },
-			),
-		})),
-	);
-
-	const salesDataByShopName: Record<
-		string,
-		{
-			sell: Record<string, number>;
-			refund: Record<string, number>;
-			totalSell: number;
-			checksCount: number;
-		}
-	> = {};
-	const cashOutcomeData: Record<string, Record<string, number>> = {};
-
-	let grandTotalSell = 0;
-	let grandTotalRefund = 0;
-	let totalChecks = 0;
-
-	for (const { shopUuid, docs } of docsByShop) {
-		const shopName = shopNamesMap[shopUuid] || shopUuid;
-		const salesDocs = docs.filter((doc) =>
-			["SELL", "PAYBACK"].includes(doc.type),
-		);
-		const { sell, refund, totalSell, totalRefund, checksCount } =
-			aggregateShopFinancialFromDocuments(salesDocs, paymentTypeLabels);
-
-		salesDataByShopName[shopName] = {
-			sell,
-			refund,
-			totalSell,
-			checksCount,
-		};
-		grandTotalSell += totalSell;
-		grandTotalRefund += totalRefund;
-		totalChecks += checksCount;
-
-		const cashByCategory: Record<string, number> = {};
-		for (const doc of docs) {
-			if (doc.type !== "CASH_OUTCOME") continue;
-			for (const trans of doc.transactions || []) {
-				if (trans.type !== "CASH_OUTCOME") continue;
-				const category = paymentCategory[trans.paymentCategoryId];
-				if (!category) continue;
-				cashByCategory[category] =
-					(cashByCategory[category] || 0) + Number(trans.sum || 0);
-			}
-		}
-		cashOutcomeData[shopName] = cashByCategory;
-	}
-
-	const [topProducts, cashBalanceByShop] = await Promise.all([
-		Promise.resolve(buildTopProductsFromIndexedDocuments(docsByShop, until)),
-		evo.getCashByShops(),
-	]);
-	const grandTotalCashOutcome = calculateTotalSum(cashOutcomeData);
-	const totalCashBalance = Object.values(cashBalanceByShop).reduce(
-		(sum, value) => sum + Number(value || 0),
-		0,
-	);
-	const { netRevenue, averageCheck } = computeRevenueSummary(
-		grandTotalSell,
-		grandTotalRefund,
-		totalChecks,
-	);
-
-	return {
-		...FinancialMetricsResponseSchema.parse({
-			salesDataByShopName,
-			grandTotalSell,
-			grandTotalRefund,
-			netRevenue,
-			averageCheck,
-			grandTotalCashOutcome,
-			cashOutcomeData,
-			cashBalanceByShop,
-			totalCashBalance,
-			totalChecks,
-			topProducts,
-		}),
-	};
-}
-
 async function getFinancialDataFromDbAggregates(
 	db: IEnv["Bindings"]["DB"],
 	evo: IEnv["Variables"]["evotor"],
@@ -694,7 +503,9 @@ async function getFinancialDataFromDbAggregates(
 	until: string,
 	shopNamesMap: Record<string, string>,
 	cashBalanceMode: "current" | "period" = "period",
+	options?: { includeTopProducts?: boolean },
 ) {
+	const includeTopProducts = options?.includeTopProducts ?? true;
 	if (shopUuids.length === 0) {
 		return FinancialMetricsResponseSchema.parse({
 			salesDataByShopName: {},
@@ -769,8 +580,12 @@ async function getFinancialDataFromDbAggregates(
 		grandTotalRefund,
 		totalChecks,
 	);
+	const topProductsPromise = includeTopProducts
+		? buildTopProductsFromDbAggregates(db, shopUuids, since, until)
+		: Promise.resolve([]);
+
 	const [topProductsResult, cashOutcomeResult, cashBalanceResult] = await Promise.allSettled([
-		buildTopProductsFromDbAggregates(db, shopUuids, since, until),
+		topProductsPromise,
 		evo.getDocumentsByCashOutcomeData(shopUuids, since, until, db),
 		cashBalanceMode === "current"
 			? evo.getCashByShops()
@@ -778,7 +593,7 @@ async function getFinancialDataFromDbAggregates(
 	]);
 
 	let topProducts = topProductsResult.status === "fulfilled" ? topProductsResult.value : [];
-	if (topProductsResult.status === "rejected") {
+	if (includeTopProducts && topProductsResult.status === "rejected") {
 		logger.warn("Financial: failed to load top products from DB aggregates", {
 			error:
 				topProductsResult.reason instanceof Error
@@ -950,26 +765,89 @@ const getDiffDaysInclusive = (since: string, until: string) => {
 const clampRange = (value: number, min: number, max: number) =>
 	Math.min(max, Math.max(min, value));
 
+async function loadFinancialDataByMode(input: {
+	c: {
+		get: (key: "db") => IEnv["Bindings"]["DB"];
+		var: IEnv["Variables"];
+		env: IEnv["Bindings"];
+	};
+	mode: DataMode;
+	effectiveShopUuid: string;
+	since: string;
+	until: string;
+	startDate: string;
+	endDate: string;
+	todayKey: string;
+	includeTopProducts?: boolean;
+}): Promise<FinancialMetricsResponse> {
+	const db = input.c.get("db");
+	const evo = input.c.var.evotor;
+
+	if (input.mode === "DB") {
+		const allShopUuids = await getShopUuidsFromDb(input.c);
+		const shopUuids = input.effectiveShopUuid
+			? allShopUuids.includes(input.effectiveShopUuid)
+				? [input.effectiveShopUuid]
+				: []
+			: allShopUuids;
+		const shopNamesMap = await getShopNamesFromDb(input.c);
+		return await getFinancialDataFromDbAggregates(
+			db,
+			evo,
+			shopUuids,
+			input.since,
+			input.until,
+			shopNamesMap,
+			input.startDate === input.todayKey && input.endDate === input.todayKey
+				? "current"
+				: "period",
+			{ includeTopProducts: input.includeTopProducts },
+		);
+	}
+
+	const allShopUuids = await getShopUuidsWithFallback(input.c, evo);
+	const shopUuids = input.effectiveShopUuid
+		? allShopUuids.includes(input.effectiveShopUuid)
+			? [input.effectiveShopUuid]
+			: []
+		: allShopUuids;
+	return await getFinancialDataDirectFromEvotor(
+		evo,
+		shopUuids,
+		input.since,
+		input.until,
+		{ includeTopProducts: input.includeTopProducts },
+	);
+}
+
 export const evotorRoutes = new Hono<IEnv>()
 
 	.get("/sales-today", async (c) => {
+		const mode = await getDataModeOrDefault(c.env);
 		const salesData = await c.var.evotor.getSalesToday(c.get("db"));
 		assert(salesData, "No sales data found");
-		return c.json({ salesData });
+		c.header("x-data-source", mode);
+		return c.json({
+			salesData,
+			meta: buildDataModeMeta(mode),
+		});
 	})
 
 	.get("/current-work-shop", async (c) => {
+		const mode = await getDataModeOrDefault(c.env);
 		try {
 			const userId =
 				String(c.var.userId || "").trim() ||
 				String(c.req.header("telegram-id") || "").trim() ||
 				String(c.req.query("telegram-id") || "").trim();
 			if (!userId) {
+				c.header("x-data-source", mode);
 				return c.json(
 					CurrentWorkShopResponseSchema.parse({
 						uuid: "",
 						name: "",
 						isWorkingToday: false,
+						meta: buildDataModeMeta(mode),
 					}),
 				);
 			}
@@ -1005,11 +883,13 @@ export const evotorRoutes = new Hono<IEnv>()
 			}
 
 			if (!employeeUuid) {
+				c.header("x-data-source", mode);
 				return c.json(
 					CurrentWorkShopResponseSchema.parse({
 						uuid: "",
 						name: "",
 						isWorkingToday: false,
+						meta: buildDataModeMeta(mode),
 					}),
 				);
 			}
@@ -1023,11 +903,13 @@ export const evotorRoutes = new Hono<IEnv>()
 				});
 			}
 			if (!shopUuid) {
+				c.header("x-data-source", mode);
 				return c.json(
 					CurrentWorkShopResponseSchema.parse({
 						uuid: "",
 						name: "",
 						isWorkingToday: false,
+						meta: buildDataModeMeta(mode),
 					}),
 				);
 			}
@@ -1048,25 +930,30 @@ export const evotorRoutes = new Hono<IEnv>()
 				}
 			}
 
+			c.header("x-data-source", mode);
 			return c.json(
 				CurrentWorkShopResponseSchema.parse({
 					uuid: shopUuid,
 					name: shopName,
 					isWorkingToday: true,
+					meta: buildDataModeMeta(mode),
 				}),
 			);
 		} catch (error) {
 			logger.error("Ошибка при получении текущего магазина:", error);
+			c.header("x-data-source", mode);
 			return c.json(
 				CurrentWorkShopResponseSchema.parse({
 					uuid: "",
 					name: "",
 					isWorkingToday: false,
+					meta: buildDataModeMeta(mode),
 				}),
 			);
 		}
 	})
 	.get("/working-by-shops", async (c) => {
+		const mode = await getDataModeOrDefault(c.env);
 		try {
 			const evo = c.var.evotor;
 			const today = new Date();
@@ -1131,17 +1018,27 @@ export const evotorRoutes = new Hono<IEnv>()
 				>,
 			);
 
+			c.header("x-data-source", mode);
 			return c.json(
 				WorkingByShopsResponseSchema.parse({
 					byShop,
+					meta: buildDataModeMeta(mode),
 				}),
 			);
 		} catch (error) {
 			logger.error("Ошибка при получении сотрудников по открытиям смен:", error);
-			return c.json({ byShop: {} }, 200);
+			c.header("x-data-source", mode);
+			return c.json(
+				WorkingByShopsResponseSchema.parse({
+					byShop: {},
+					meta: buildDataModeMeta(mode),
+				}),
+				200,
+			);
 		}
 	})
 	.get("/sales-today-graf", async (c) => {
+		const mode = await getDataModeOrDefault(c.env);
 		const db = c.get("db");
 		const evo = c.var.evotor;
 		const shopUuids = await getShopUuidsWithFallback(c, c.var.evotor);
@@ -1167,12 +1064,19 @@ export const evotorRoutes = new Hono<IEnv>()
 		);
 		assert(sevenDaysDataSales, "No sales data found");
 
-		return c.json({ nowDataSales, sevenDaysDataSales });
+		c.header("x-data-source", mode);
+		return c.json({
+			nowDataSales,
+			sevenDaysDataSales,
+			meta: buildDataModeMeta(mode),
+		});
 	})
 	.post("/accessoriesSales/:role/:userId", async (c) => {
 		try {
 			const db = c.get("db");
 			const evo = c.var.evotor;
+			const mode = await getDataModeOrDefault(c.env);
+			const useDirectEvotor = mode === "ELVATOR";
 
 			const { role, userId } = c.req.param();
 			const data = await c.req.json().catch(() => null);
@@ -1206,14 +1110,16 @@ export const evotorRoutes = new Hono<IEnv>()
 					shopId: string,
 					accessoryProductUuids: string[],
 				): Promise<Record<string, { quantity: number; sum: number }>> => {
-					const docs = await getDocumentsFromIndexFirst(
-						db,
-						evo,
-						shopId,
-						since,
-						until,
-						{ types: ["SELL", "PAYBACK"] },
-					);
+					const docs = useDirectEvotor
+						? await evo.getDocumentsBySellPayback(shopId, since, until)
+						: await getDocumentsFromIndexFirst(
+								db,
+								evo,
+								shopId,
+								since,
+								until,
+								{ types: ["SELL", "PAYBACK"] },
+							);
 					const accessorySet = new Set(accessoryProductUuids);
 					const result: Record<string, { quantity: number; sum: number }> = {};
 					for (const doc of docs) {
@@ -1248,7 +1154,20 @@ export const evotorRoutes = new Hono<IEnv>()
 					const salesPromises = shopUuids.map(async (shopId, idx) => {
 						const productUuids = shopProductsResults[idx];
 						const [salesData, nonAccessoriesData] = await Promise.all([
-							evo.getSalesSumQuantitySum(db, shopId, since, until, productUuids),
+							useDirectEvotor
+								? evo.getSalesSumQuantitySumDirect(
+										shopId,
+										since,
+										until,
+										productUuids,
+									)
+								: evo.getSalesSumQuantitySum(
+										db,
+										shopId,
+										since,
+										until,
+										productUuids,
+									),
 							buildNonAccessoriesSales(shopId, productUuids),
 						]);
 						return {
@@ -1334,10 +1253,12 @@ export const evotorRoutes = new Hono<IEnv>()
 						"[accessories-sales] Не найден магазин для пользователя",
 						{ userId: telegramUserId, employeeUuid },
 					);
-					return c.json(
-						{ error: "Не найден магазин для пользователя" },
-						404,
-					);
+					return c.json({
+						byShop: [],
+						total: [],
+						nonAccessoriesByShop: [],
+						nonAccessoriesTotal: [],
+					});
 				}
 				const shopName = await evo.getShopName(shopUuid);
 				const productUuids = await getProductsByGroup(
@@ -1346,7 +1267,20 @@ export const evotorRoutes = new Hono<IEnv>()
 					groupIdsAks,
 				);
 					const [salesData, nonAccessoriesData] = await Promise.all([
-						evo.getSalesSumQuantitySum(db, shopUuid, since, until, productUuids),
+						useDirectEvotor
+							? evo.getSalesSumQuantitySumDirect(
+									shopUuid,
+									since,
+									until,
+									productUuids,
+								)
+							: evo.getSalesSumQuantitySum(
+									db,
+									shopUuid,
+									since,
+									until,
+									productUuids,
+								),
 						buildNonAccessoriesSales(shopUuid, productUuids),
 					]);
 					response.byShop = [
@@ -1375,13 +1309,16 @@ export const evotorRoutes = new Hono<IEnv>()
 					response.nonAccessoriesTotal = response.nonAccessoriesByShop[0].sales;
 				}
 
+			c.header("x-data-source", mode);
 			return c.json(response);
 		} catch (error) {
 			logger.error("Ошибка при получении данных о продажах аксессуаров", error);
-			return c.json(
-				{ error: "Ошибка при получении данных о продажах аксессуаров" },
-				500,
-			);
+			return c.json({
+				byShop: [],
+				total: [],
+				nonAccessoriesByShop: [],
+				nonAccessoriesTotal: [],
+			});
 		}
 	})
 	.post("/generate-pdf", async (c) => {
@@ -1530,10 +1467,67 @@ export const evotorRoutes = new Hono<IEnv>()
 				} | null;
 			}
 
+			const mode = await getDataModeOrDefault(c.env);
 			const db = c.get("db");
 			const newDate: Date = new Date();
 			const datePlan: string = formatDate(newDate);
 			let salesData: SalesData = {};
+
+			if (mode === "DB") {
+				await createPlanTable(db);
+				const plan = await getPlan(datePlan, db);
+				const datPlan: Record<string, number> = plan || {};
+
+				const tzOffsetMinutes = Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180);
+				const localTodayKey = getLocalDateKey(new Date(), tzOffsetMinutes);
+				const { since, until } = buildUtcRangeForLocalDates(
+					localTodayKey,
+					localTodayKey,
+					tzOffsetMinutes,
+				);
+
+				const salesRows = await db
+					.prepare(
+						`SELECT shop_id as shopUuid, SUM(total) as totalSell
+						FROM receipts
+						WHERE type = 'SELL' AND close_date >= ? AND close_date <= ?
+						GROUP BY shop_id`,
+					)
+					.bind(since, until)
+					.all<{ shopUuid: string; totalSell: number | null }>();
+
+				const salesByShopUuid: Record<string, number> = {};
+				for (const row of salesRows.results || []) {
+					salesByShopUuid[row.shopUuid] = Number(row.totalSell || 0);
+				}
+
+				const shopNamesMap = await getShopNamesFromDb(c);
+				const shopUuids = Array.from(
+					new Set([
+						...Object.keys(shopNamesMap),
+						...Object.keys(datPlan),
+						...Object.keys(salesByShopUuid),
+					]),
+				);
+
+				salesData = {};
+				for (const shopUuid of shopUuids) {
+					const shopName = shopNamesMap[shopUuid] || shopUuid;
+					salesData[shopName] = {
+						datePlan: Number(datPlan[shopUuid] || 0),
+						dataSales: Number(salesByShopUuid[shopUuid] || 0),
+						dataQuantity: {},
+					};
+				}
+
+				c.header("x-data-source", mode);
+				return c.json(
+					PlanForTodayResponseSchema.parse({
+						salesData,
+						meta: buildDataModeMeta(mode),
+					}),
+				);
+			}
 
 			const since = formatDateWithTime(newDate, false);
 			const until = formatDateWithTime(newDate, true);
@@ -1627,9 +1621,11 @@ export const evotorRoutes = new Hono<IEnv>()
 				};
 			}
 
+			c.header("x-data-source", mode);
 			return c.json(
 				PlanForTodayResponseSchema.parse({
 					salesData,
+					meta: buildDataModeMeta(mode),
 				}),
 			);
 		} catch (err) {
@@ -1987,6 +1983,7 @@ export const evotorRoutes = new Hono<IEnv>()
 
 	.post("/dashboard-home-insights", async (c) => {
 		try {
+			const mode = await getDataModeOrDefault(c.env);
 			const payload = validate(
 				DashboardHomeInsightsRequestSchema,
 				await c.req.json().catch(() => ({})),
@@ -1997,62 +1994,75 @@ export const evotorRoutes = new Hono<IEnv>()
 				const value = c.req.header(headerName);
 				if (value) headers.set(headerName, value);
 			}
-			const dateMode = payload.dateMode ?? "today";
-			const periodDays = getDiffDaysInclusive(payload.since, payload.until);
-			const prevUntil = shiftIsoDateKey(payload.since, -1);
-			const prevSince = shiftIsoDateKey(prevUntil, -(periodDays - 1));
-			const withShopFilter = (params: URLSearchParams) => {
-				if (payload.shopUuid) params.set("shopUuid", payload.shopUuid);
-				return params;
-			};
-			const currentParams = withShopFilter(
-				new URLSearchParams({ since: payload.since, until: payload.until }),
-			);
-			const previousParams = withShopFilter(
-				new URLSearchParams({ since: prevSince, until: prevUntil }),
-			);
+				const dateMode = payload.dateMode ?? "today";
+				const periodDays = getDiffDaysInclusive(payload.since, payload.until);
+				const prevUntil = shiftIsoDateKey(payload.since, -1);
+				const prevSince = shiftIsoDateKey(prevUntil, -(periodDays - 1));
+				const weekSince = shiftIsoDateKey(payload.until, -6);
+				const requestedShopUuid = payload.shopUuid?.trim() || "";
+				const scopedShopUuid = await resolveScopedShopUuidForFinancial(c);
+				const effectiveShopUuid = requestedShopUuid || scopedShopUuid || "";
+				const tzOffsetMinutes = Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180);
+				const { todayKey } = getLocalTodayAndYesterdayKeys(tzOffsetMinutes);
+				const currentRange = buildUtcRangeForLocalDates(
+					payload.since,
+					payload.until,
+					tzOffsetMinutes,
+				);
+				const previousRange = buildUtcRangeForLocalDates(
+					prevSince,
+					prevUntil,
+					tzOffsetMinutes,
+				);
+				const weekRange = buildUtcRangeForLocalDates(
+					weekSince,
+					payload.until,
+					tzOffsetMinutes,
+				);
 
-			const weekSince = shiftIsoDateKey(payload.until, -6);
-			const weekParams = withShopFilter(
-				new URLSearchParams({ since: weekSince, until: payload.until }),
-			);
-
-			const [currentRes, previousRes, weekRes, planRes] = await Promise.all([
-				fetch(new URL(`/api/evotor/financial?${currentParams.toString()}`, baseUrl.origin), {
-					method: "GET",
-					headers,
-				}),
-				fetch(new URL(`/api/evotor/financial?${previousParams.toString()}`, baseUrl.origin), {
-					method: "GET",
-					headers,
-				}),
-				fetch(new URL(`/api/evotor/financial?${weekParams.toString()}`, baseUrl.origin), {
-					method: "GET",
-					headers,
-				}),
-				fetch(new URL("/api/evotor/plan-for-today", baseUrl.origin), {
-					method: "GET",
-					headers,
-				}),
-			]);
-
-			if (!currentRes.ok) {
-				return c.json({ error: "DASHBOARD_HOME_CURRENT_FINANCIAL_FAILED" }, 500);
-			}
-			if (!previousRes.ok) {
-				return c.json({ error: "DASHBOARD_HOME_PREVIOUS_FINANCIAL_FAILED" }, 500);
-			}
-			if (!weekRes.ok) {
-				return c.json({ error: "DASHBOARD_HOME_WEEK_FINANCIAL_FAILED" }, 500);
-			}
-			if (!planRes.ok) {
-				return c.json({ error: "DASHBOARD_HOME_PLAN_FAILED" }, 500);
-			}
-
-			const currentData = (await currentRes.json()) as {
-				grandTotalSell: number;
-				grandTotalRefund: number;
-				totalChecks: number;
+				const [currentFinancial, previousFinancial, weekFinancial, planRes] = await Promise.all([
+					loadFinancialDataByMode({
+						c,
+						mode,
+						effectiveShopUuid,
+						since: currentRange.since,
+						until: currentRange.until,
+						startDate: payload.since,
+						endDate: payload.until,
+						todayKey,
+						includeTopProducts: true,
+					}),
+					loadFinancialDataByMode({
+						c,
+						mode,
+						effectiveShopUuid,
+						since: previousRange.since,
+						until: previousRange.until,
+						startDate: prevSince,
+						endDate: prevUntil,
+						todayKey,
+						includeTopProducts: false,
+					}),
+					loadFinancialDataByMode({
+						c,
+						mode,
+						effectiveShopUuid,
+						since: weekRange.since,
+						until: weekRange.until,
+						startDate: weekSince,
+						endDate: payload.until,
+						todayKey,
+						includeTopProducts: false,
+					}),
+					fetch(new URL("/api/evotor/plan-for-today", baseUrl.origin), {
+						method: "GET",
+						headers,
+					}),
+				]);
+				const currentData = currentFinancial as {
+					grandTotalSell: number;
+					grandTotalRefund: number;
+					totalChecks: number;
 				salesDataByShopName: Record<
 					string,
 					{ totalSell: number; checksCount: number; refund: Record<string, number> }
@@ -2063,26 +2073,26 @@ export const evotorRoutes = new Hono<IEnv>()
 					netQuantity: number;
 					quantity?: number;
 					netRevenue?: number;
-					averagePrice?: number;
-				}>;
-			};
-			const previousData = (await previousRes.json()) as {
-				grandTotalSell: number;
-				grandTotalRefund: number;
-				totalChecks: number;
+						averagePrice?: number;
+					}>;
+				};
+				const previousData = previousFinancial as {
+					grandTotalSell: number;
+					grandTotalRefund: number;
+					totalChecks: number;
 				salesDataByShopName: Record<
 					string,
-					{ totalSell: number; checksCount: number; refund: Record<string, number> }
-				>;
-			};
-			const weekData = (await weekRes.json()) as {
-				salesDataByShopName: Record<
-					string,
-					{ totalSell: number; checksCount: number; refund: Record<string, number> }
-				>;
-				cashOutcomeData: Record<string, Record<string, number>>;
-			};
-			const planJson = (await planRes.json()) as {
+						{ totalSell: number; checksCount: number; refund: Record<string, number> }
+					>;
+				};
+				const weekData = weekFinancial as {
+					salesDataByShopName: Record<
+						string,
+						{ totalSell: number; checksCount: number; refund: Record<string, number> }
+					>;
+					cashOutcomeData: Record<string, Record<string, number>>;
+				};
+				const planJson = ((await planRes.json().catch(() => ({}))) || {}) as {
 				salesData?: Record<
 					string,
 					| {
@@ -2498,6 +2508,7 @@ export const evotorRoutes = new Hono<IEnv>()
 						});
 			const totalLoss = fallbackLosses.reduce((sum, row) => sum + row.lostRevenue, 0);
 
+			c.header("x-data-source", mode);
 			return c.json({
 				since: payload.since,
 				until: payload.until,
@@ -2543,22 +2554,70 @@ export const evotorRoutes = new Hono<IEnv>()
 					dayLeader,
 					weekLeader,
 				},
+				meta: buildDataModeMeta(mode),
 			});
 		} catch (error) {
 			logger.error("Dashboard home insights failed", { error });
-			return c.json({ error: "DASHBOARD_HOME_INSIGHTS_FAILED" }, 500);
+			return c.json({
+				since: "",
+				until: "",
+				previous: { since: "", until: "" },
+				insights: {
+					risk: {
+						networkProbability: 0,
+						redShops: [],
+					},
+					actions: {
+						top3: [],
+						checklist: [],
+					},
+					forecast: {
+						value: 0,
+						lower: 0,
+						upper: 0,
+						confidence: 0,
+						factors: [],
+					},
+					drop: {
+						salesDeltaPct: 0,
+						mainReason: "Недостаточно данных",
+						byShop: [],
+					},
+					anomalies: {
+						incidents: [],
+					},
+					losses: {
+						totalLoss: 0,
+						skus: [],
+					},
+					context: {
+						checksDeltaPct: 0,
+						avgCheckDeltaPct: 0,
+						refundRate: 0,
+						refundDeltaPp: 0,
+					},
+				},
+				bestShop: {
+					dayRows: [],
+					weekRows: [],
+					dayLeader: null,
+					weekLeader: null,
+				},
+				meta: buildDataModeMeta("DB"),
+				error: "DASHBOARD_HOME_INSIGHTS_FAILED",
+			});
 		}
 	})
 
 	.get("/financial", async (c) => {
 		try {
-			const db = c.get("db");
 			const startDate = c.req.query("since");
 			const endDate = c.req.query("until");
 			const requestedShopUuid = c.req.query("shopUuid")?.trim() || "";
 			const scopedShopUuid = await resolveScopedShopUuidForFinancial(c);
 			const effectiveShopUuid = requestedShopUuid || scopedShopUuid || "";
 			const kv = c.env.KV;
+			const mode = await getDataModeOrDefault(c.env);
 
 			if (!startDate || !endDate) {
 				return c.json({ error: "since и until обязательны" }, 400);
@@ -2568,106 +2627,69 @@ export const evotorRoutes = new Hono<IEnv>()
 			const { todayKey, yesterdayKey } =
 				getLocalTodayAndYesterdayKeys(tzOffsetMinutes);
 			const isSingleDay = startDate === endDate;
-			const useDbAggregatesOnly = true;
 			const scopeShopId = effectiveShopUuid || "all";
+			const financialCacheVersion = "v3";
 			const cacheKey = isSingleDay
-				? buildSalesDayKey(scopeShopId, startDate)
-				: `sales:store:${scopeShopId}:day:${startDate}-${endDate}`;
+				? `sales:${financialCacheVersion}:mode:${mode}:${buildSalesDayKey(scopeShopId, startDate)}`
+				: `sales:${financialCacheVersion}:mode:${mode}:store:${scopeShopId}:day:${startDate}-${endDate}`;
 			const ttlSeconds = isSingleDay
 				? startDate === todayKey
-					? 300
+					? 120
 					: startDate === yesterdayKey
-						? 86400
-						: 1800
-				: 1800;
+						? 900
+						: 600
+				: 600;
 
 			const { data: financialData, cacheHit } = await getCachedJson(
 				kv,
 				cacheKey,
 				ttlSeconds,
 				async () => {
-					const evo = c.var.evotor;
-					// Конвертируем YYYY-MM-DD в формат Evotor API
 					const { since, until } = buildUtcRangeForLocalDates(
 						startDate,
 						endDate,
 						tzOffsetMinutes,
 					);
-					if (useDbAggregatesOnly) {
-						const allShopUuids = await getShopUuidsFromDb(c);
-						const shopUuids = effectiveShopUuid
-							? allShopUuids.includes(effectiveShopUuid)
-								? [effectiveShopUuid]
-								: []
-							: allShopUuids;
-						const shopNamesMap = await getShopNamesFromDb(c);
-						return await getFinancialDataFromDbAggregates(
-							db,
-							evo,
-							shopUuids,
-							since,
-							until,
-							shopNamesMap,
-							startDate === todayKey && endDate === todayKey
-								? "current"
-								: "period",
-						);
-					}
-					const shopUuids = await getShopUuidsWithFallback(c, evo);
-					try {
-						return await getFinancialDataFromIndexWithFallback(
-							db,
-							evo,
-							shopUuids,
-							since,
-							until,
-						);
-					} catch (indexedError) {
-						logger.warn(
-							"Financial: indexed source failed, fallback to Evotor direct",
-							{
-								error:
-									indexedError instanceof Error
-										? indexedError.message
-										: String(indexedError),
-							},
-						);
-						return await getFinancialDataDirectFromEvotor(
-							evo,
-							shopUuids,
-							since,
-							until,
-						);
-					}
+					return await loadFinancialDataByMode({
+						c,
+						mode,
+						effectiveShopUuid,
+						since,
+						until,
+						startDate,
+						endDate,
+						todayKey,
+					});
 				},
 			);
-
-			if (cacheHit) {
-				c.header("x-cache", "hit");
-			}
+			c.header("x-cache", cacheHit ? "hit" : "miss");
+			c.header("x-data-source", mode);
 
 				if (isSingleDay && kv) {
-				const period =
-					startDate === todayKey
-						? "today"
-						: startDate === yesterdayKey
-							? "yesterday"
-							: "custom";
+					const period =
+						startDate === todayKey
+							? "today"
+							: startDate === yesterdayKey
+								? "yesterday"
+								: "custom";
 					const topKey = buildTopProductsKey(scopeShopId, period);
-				const topProducts = (financialData as { topProducts?: unknown })
-					.topProducts;
-				if (topProducts) {
-					try {
-						await kv.put(topKey, JSON.stringify(topProducts), {
-							expirationTtl: 1800,
-						});
-					} catch (error) {
-						logger.warn("KV put failed for top products", { error, key: topKey });
+					const topProducts = (financialData as { topProducts?: unknown })
+						.topProducts;
+					if (topProducts) {
+						try {
+							await kv.put(topKey, JSON.stringify(topProducts), {
+								expirationTtl: 1800,
+							});
+						} catch (error) {
+							logger.warn("KV put failed for top products", { error, key: topKey });
+						}
 					}
 				}
-			}
 
-			return c.json(financialData);
+			return c.json({
+				...financialData,
+				meta: buildDataModeMeta(mode),
+			});
 		} catch (error) {
 			logger.error("Ошибка при обработке запроса:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
@@ -2675,19 +2697,20 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 	.get("/financial/today", async (c) => {
 		try {
-			const db = c.get("db");
 			const kv = c.env.KV;
 			const requestedShopUuid = c.req.query("shopUuid")?.trim() || "";
 			const scopedShopUuid = await resolveScopedShopUuidForFinancial(c);
 			const effectiveShopUuid = requestedShopUuid || scopedShopUuid || "";
+			const mode = await getDataModeOrDefault(c.env);
 
 			const tzOffsetMinutes = Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180);
 			const todayKey = getLocalDateKey(new Date(), tzOffsetMinutes);
 			const scopeShopId = effectiveShopUuid || "all";
+			const financialCacheVersion = "v3";
 			const { data: financialData, cacheHit } = await getCachedJson(
 				kv,
-				buildSalesDayKey(scopeShopId, todayKey),
-				300,
+				`sales:${financialCacheVersion}:mode:${mode}:${buildSalesDayKey(scopeShopId, todayKey)}`,
+				120,
 				async () => {
 					const localTodayKey = getLocalDateKey(new Date(), tzOffsetMinutes);
 					const { since, until } = buildUtcRangeForLocalDates(
@@ -2695,42 +2718,38 @@ export const evotorRoutes = new Hono<IEnv>()
 						localTodayKey,
 						tzOffsetMinutes,
 					);
-					const allShopUuids = await getShopUuidsFromDb(c);
-					const shopUuids = effectiveShopUuid
-						? allShopUuids.includes(effectiveShopUuid)
-							? [effectiveShopUuid]
-							: []
-						: allShopUuids;
-					const shopNamesMap = await getShopNamesFromDb(c);
-					return await getFinancialDataFromDbAggregates(
-						db,
-						c.var.evotor,
-						shopUuids,
+					return await loadFinancialDataByMode({
+						c,
+						mode,
+						effectiveShopUuid,
 						since,
 						until,
-						shopNamesMap,
-						"current",
-					);
+						startDate: localTodayKey,
+						endDate: localTodayKey,
+						todayKey: localTodayKey,
+					});
 				},
 			);
-			if (cacheHit) {
-				c.header("x-cache", "hit");
-			}
+				c.header("x-cache", cacheHit ? "hit" : "miss");
+				c.header("x-data-source", mode);
 				if (kv) {
 					const topProducts = (financialData as { topProducts?: unknown })
 						.topProducts;
 					if (topProducts) {
 						const key = buildTopProductsKey(scopeShopId, "today");
-					try {
-						await kv.put(key, JSON.stringify(topProducts), {
-							expirationTtl: 1800,
-						});
-					} catch (error) {
-						logger.warn("KV put failed for top products", { error, key });
+						try {
+							await kv.put(key, JSON.stringify(topProducts), {
+								expirationTtl: 1800,
+							});
+						} catch (error) {
+							logger.warn("KV put failed for top products", { error, key });
+						}
 					}
 				}
-			}
-			return c.json(financialData);
+				return c.json({
+					...financialData,
+					meta: buildDataModeMeta(mode),
+				});
 		} catch (error) {
 			logger.error("Ошибка при обработке запроса:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
@@ -2748,15 +2767,19 @@ export const evotorRoutes = new Hono<IEnv>()
 			const now = new Date();
 			const since = formatDateWithTime(now, false);
 			const until = formatDateWithTime(now, true);
-			const shopUuids = await getShopUuidsWithFallback(c, evo);
-			const financialData = await getFinancialDataDirectFromEvotor(
-				evo,
-				shopUuids,
+				const shopUuids = await getShopUuidsWithFallback(c, evo);
+				const mode: DataMode = "ELVATOR";
+				const financialData = await getFinancialDataDirectFromEvotor(
+					evo,
+					shopUuids,
 				since,
 				until,
 			);
 
-			return c.json(financialData);
+			return c.json({
+				...financialData,
+				meta: buildDataModeMeta(mode),
+			});
 		} catch (error) {
 			logger.error("Ошибка при прямом запросе финансовых данных:", error);
 			return c.json({ message: "Ошибка обработки данных" }, 400);
@@ -3291,25 +3314,46 @@ export const evotorRoutes = new Hono<IEnv>()
 			const since = formatDateWithTime(sincetDate, false); // Форматируем начальную дату
 			const until = formatDateWithTime(untilDate, true); // Форматируем конечную дату
 
-			const productUuids = await getProductsByGroup(
-				c.get("db"),
-				shopUuid,
-				groups,
-			);
+			let productUuids = await c.var.evotor.getProductsByGroup(shopUuid, groups);
 
-			// const productUuids = await c.var.evotor.getProductsByGroup(
-			// 	shopUuid,
-			// 	groups,
-			// );
+			if (!productUuids || productUuids.length === 0) {
+				logger.warn("salesResult: Evotor products empty, fallback to DB", {
+					shopUuid,
+					groupsCount: groups.length,
+				});
+				productUuids = await getProductsByGroup(c.get("db"), shopUuid, groups);
+			}
 
-			// Продукты по группам
-			const salesData = await c.var.evotor.getSalesSumQuantitySum(
-				c.env.DB,
-				shopUuid,
-				since,
-				until,
-				productUuids,
-			); // Получаем данные по продажам
+			if (!productUuids || productUuids.length === 0) {
+				return c.json(
+					{
+						error:
+							"По выбранным группам не найдены товары. Проверьте магазин/группы.",
+						code: "SALES_RESULT_PRODUCTS_NOT_FOUND",
+					},
+					422,
+				);
+			}
+
+			const allowed = new Set(productUuids);
+			const documents = await c.var.evotor.getDocuments(shopUuid, since, until);
+			const salesData: Record<string, { quantitySale: number; sum: number }> = {};
+
+			for (const doc of documents) {
+				if (!["SELL", "PAYBACK"].includes(doc.type)) continue;
+
+				for (const trans of doc.transactions || []) {
+					if (trans.type !== "REGISTER_POSITION") continue;
+					if (!allowed.has(trans.commodityUuid)) continue;
+
+					const productName = trans.commodityName || trans.commodityUuid;
+					if (!salesData[productName]) {
+						salesData[productName] = { quantitySale: 0, sum: 0 };
+					}
+					salesData[productName].quantitySale += Number(trans.quantity || 0);
+					salesData[productName].sum += Number(trans.sum || 0);
+				}
+			}
 
 			// const sortedSalesDataByValue = sortSalesSummary(salesData, sortCriteria);
 
@@ -3317,8 +3361,12 @@ export const evotorRoutes = new Hono<IEnv>()
 
 			return c.json({ salesData, shopName, startDate, endDate });
 		} catch (error) {
-			logger.error("Ошибка при разборе JSON:", error);
-			return c.json({ message: "Ошибка обработки данных" }, 400);
+			logger.error("SalesResult failed:", error);
+			const { status, body } = toApiErrorPayload(error, {
+				code: "SALES_RESULT_FAILED",
+				message: "Не удалось сформировать отчёт по продажам",
+			});
+			return c.json(body, status as 200);
 		}
 	})
 

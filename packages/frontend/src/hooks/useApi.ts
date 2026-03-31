@@ -38,6 +38,7 @@ export const useWorkingByShops = () =>
     queryKey: queryKeys.evotor.workingByShops(),
     queryFn: fetchWorkingByShops,
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
 type ShopBrief = { uuid: string; name: string };

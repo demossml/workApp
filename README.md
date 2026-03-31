@@ -55,6 +55,12 @@ pnpm smoke:api:full
 BACKEND_BASE_URL=http://127.0.0.1:8787 SMOKE_TELEGRAM_ID=123 pnpm smoke:api
 ```
 
+### Data Mode Smoke (DB / ELVATOR)
+
+Ручной e2e smoke-сценарий переключения источника данных и блокировки AI:
+
+`docs/SMOKE_DATA_MODE.md`
+
 ### Financial reconciliation endpoint
 
 Для сверки итогов API с контрольной суммой по документам:

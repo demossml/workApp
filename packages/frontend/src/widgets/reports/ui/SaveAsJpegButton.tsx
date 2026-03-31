@@ -1,4 +1,3 @@
-import * as htmlToImage from "html-to-image";
 import { Button } from "@/components/ui/button";
 import { useRef, useState, useEffect } from "react";
 import { Save, Loader } from "lucide-react";
@@ -59,8 +58,9 @@ export const SaveAsJpegButton: React.FC<SaveAsJpegButtonProps> = ({
         telegram.WebApp.MainButton.showProgress();
       }
 
+      const { toJpeg } = await import("html-to-image");
       // Генерируем изображение
-      const dataUrl = await htmlToImage.toJpeg(contentRef.current, {
+      const dataUrl = await toJpeg(contentRef.current, {
         quality: 0.95,
         backgroundColor: "#ffffff",
       });

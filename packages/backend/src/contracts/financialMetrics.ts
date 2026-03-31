@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DataModeMetaSchema } from "../dataMode";
 
 const AmountByPaymentTypeSchema = z.record(z.number().finite().nonnegative());
 
@@ -41,6 +42,7 @@ export const FinancialMetricsResponseSchema = z
 		totalCashBalance: z.number().finite(),
 		totalChecks: z.number().int().nonnegative(),
 		topProducts: z.array(TopProductSchema),
+		meta: DataModeMetaSchema.optional(),
 	})
 	.strict();
 

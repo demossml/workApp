@@ -1,0 +1,23 @@
+[
+  {
+    "name": "evotor:shopNames"
+  },
+  {
+    "name": "evotor:shopUuids"
+  },
+  {
+    "name": "jobs:evotrack:update-products-shope:last"
+  },
+  {
+    "name": "jobs:evotrack:update-products:last"
+  },
+  {
+    "name": "sales:store:20251229-316B-40A1-80F7-C59E5B8E6831:day:2026-03-25"
+  },
+  {
+    "name": "sales:store:20260103-425F-4044-8093-F2008B89A33B:day:2026-03-25"
+  },
+  {
+    "name": "sales:store:all:day:2026-03-25"
+  }
+]

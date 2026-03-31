@@ -1,5 +1,6 @@
 import {
   Fragment,
+  type UIEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -46,6 +47,8 @@ const tableN: Record<string, string> = {
   sold: "Продано",
   lastSaleDate: "Последняя продажа",
 };
+const INITIAL_VISIBLE_ROWS = 120;
+const LOAD_MORE_STEP = 120;
 
 /* ===================== QUANTITY PICKER ===================== */
 
@@ -138,6 +141,7 @@ export const DynamicTableDeadStocks = ({
     key: keyof DeadStockItem | null;
     direction: "asc" | "desc" | null;
   }>({ key: null, direction: null });
+  const [visibleRowsCount, setVisibleRowsCount] = useState(INITIAL_VISIBLE_ROWS);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -149,14 +153,16 @@ export const DynamicTableDeadStocks = ({
   const shopsQuery = useGetShops();
 
   const sortedData = useMemo(() => {
-    let filtered = [...items];
-    if (filter !== "all") filtered = filtered.filter((i) => i.mark === filter);
+    let filtered = items.map((item, sourceIndex) => ({ item, sourceIndex }));
+    if (filter !== "all") {
+      filtered = filtered.filter((entry) => entry.item.mark === filter);
+    }
 
     if (sortConfig.key) {
       filtered.sort((a, b) => {
         const dir = sortConfig.direction === "asc" ? 1 : -1;
-        const aVal = a[sortConfig.key!] ?? "";
-        const bVal = b[sortConfig.key!] ?? "";
+        const aVal = a.item[sortConfig.key!] ?? "";
+        const bVal = b.item[sortConfig.key!] ?? "";
         if (aVal < bVal) return -1 * dir;
         if (aVal > bVal) return 1 * dir;
         return 0;
@@ -165,6 +171,32 @@ export const DynamicTableDeadStocks = ({
 
     return filtered;
   }, [items, filter, sortConfig]);
+
+  useEffect(() => {
+    setVisibleRowsCount(INITIAL_VISIBLE_ROWS);
+  }, [sortedData.length, sortConfig.key, sortConfig.direction, filter]);
+
+  const hasMoreRows = visibleRowsCount < sortedData.length;
+  const renderedRows = useMemo(
+    () => sortedData.slice(0, visibleRowsCount),
+    [sortedData, visibleRowsCount]
+  );
+
+  const loadMoreRows = useCallback(() => {
+    setVisibleRowsCount((prev) => Math.min(prev + LOAD_MORE_STEP, sortedData.length));
+  }, [sortedData.length]);
+
+  const handleTableScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (!hasMoreRows) return;
+      const el = event.currentTarget;
+      const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distanceToBottom < 220) {
+        loadMoreRows();
+      }
+    },
+    [hasMoreRows, loadMoreRows]
+  );
 
   const handleSort = (key: keyof DeadStockItem) => {
     setSortConfig((prev) => ({
@@ -266,7 +298,11 @@ export const DynamicTableDeadStocks = ({
         )}
       </div>
 
-      <div ref={scrollRef} className="max-h-[calc(100vh-6rem)] overflow-y-auto">
+      <div
+        ref={scrollRef}
+        onScroll={handleTableScroll}
+        className="max-h-[calc(100vh-6rem)] overflow-y-auto"
+      >
         <table className="w-full table-auto">
           <thead className="sticky top-0 bg-gray-100 dark:bg-gray-700 z-10">
             <tr>
@@ -284,8 +320,8 @@ export const DynamicTableDeadStocks = ({
           </thead>
 
           <tbody>
-            {sortedData.map((row, index) => (
-              <Fragment key={index}>
+            {renderedRows.map(({ item: row, sourceIndex }) => (
+              <Fragment key={`${sourceIndex}-${row.name}`}>
                 <tr>
                   <td colSpan={5} className="px-2 py-1 text-xs font-medium">
                     {row.name}
@@ -306,7 +342,7 @@ export const DynamicTableDeadStocks = ({
                       value={row.mark ?? ""}
                       onChange={(e) =>
                         updateMark(
-                          index,
+                          sourceIndex,
                           e.target.value as DeadStockItem["mark"]
                         )
                       }
@@ -322,7 +358,7 @@ export const DynamicTableDeadStocks = ({
                       <div className="flex flex-col gap-3 mt-3 text-[9px]">
                         <button
                           onClick={() => {
-                            setActiveIndex(index);
+                            setActiveIndex(sourceIndex);
                             setPickerOpen(true);
                           }}
                           className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-left"
@@ -334,7 +370,7 @@ export const DynamicTableDeadStocks = ({
                           className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800"
                           value={row.moveToStore ?? ""}
                           onChange={(e) =>
-                            updateMoveToStore(index, e.target.value)
+                            updateMoveToStore(sourceIndex, e.target.value)
                           }
                         >
                           <option value="">Магазин</option>
@@ -355,6 +391,17 @@ export const DynamicTableDeadStocks = ({
             ))}
           </tbody>
         </table>
+        {hasMoreRows && (
+          <div className="sticky bottom-0 z-20 bg-custom-gray dark:bg-gray-900 px-2 py-2 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={loadMoreRows}
+              className="w-full h-10 rounded-lg border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-300"
+            >
+              Показать еще ({Math.max(sortedData.length - visibleRowsCount, 0)})
+            </button>
+          </div>
+        )}
       </div>
 
       {activeIndex !== null && (

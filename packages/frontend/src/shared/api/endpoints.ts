@@ -10,8 +10,19 @@ import {
 import { OpenTimesResponseSchema } from "@work-appt/backend/src/contracts/openTimes";
 import { PlanForTodayResponseSchema } from "@work-appt/backend/src/contracts/planMetrics";
 import { client } from "./client";
+import {
+  useDataSourceStore,
+  type DataSource,
+  type DataSourceMeta,
+} from "@shared/model/dataSourceStore";
 
 type ShopBrief = { uuid: string; name: string };
+
+function applyDataSourceMeta(meta: DataSourceMeta | null | undefined) {
+  if (!meta) return;
+  if (meta.source !== "DB" && meta.source !== "ELVATOR") return;
+  useDataSourceStore.getState().setMeta(meta);
+}
 
 export async function fetchMe() {
   const res = await client.api.employees.user.$get();
@@ -34,6 +45,7 @@ export async function fetchSchedules() {
 }
 
 export async function fetchWorkingByShops() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const res = await (client.api.evotor as any)["working-by-shops"].$get();
   if (!res.ok) {
     throw new Error("Ошибка загрузки данных по сменам");
@@ -81,7 +93,9 @@ export async function fetchFinancialForToday(): Promise<FinancialMetricsResponse
   if (!res.ok) {
     const err = await res.json().catch(() => null);
     if (err && typeof err === "object" && "error" in err) {
-      throw new Error((err as { error?: string }).error || "Ошибка загрузки отчёта");
+      throw new Error(
+        (err as { error?: string }).error || "Ошибка загрузки отчёта"
+      );
     }
     throw new Error("Ошибка загрузки отчёта");
   }
@@ -187,6 +201,53 @@ export async function fetchFinancialMetrics(params?: {
   return parsed.data;
 }
 
+export async function fetchDataMode() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const response = await (client.api.admin as any)["data-mode"].$get();
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(
+      (err as { message?: string } | null)?.message ||
+        "Ошибка загрузки режима данных"
+    );
+  }
+  const data = (await response.json()) as {
+    mode: DataSource;
+    meta?: DataSourceMeta;
+  };
+  applyDataSourceMeta(data.meta ?? null);
+  return data;
+}
+
+export async function updateDataMode(mode: DataSource) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const response = await (client.api.admin as any)["data-mode"].$post({
+    json: { mode },
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(
+      (err as { message?: string } | null)?.message ||
+        "Ошибка смены режима данных"
+    );
+  }
+  const data = (await response.json()) as {
+    ok: boolean;
+    mode: DataSource;
+    meta?: DataSourceMeta;
+  };
+  console.log("updateDataMode response:", data);
+  applyDataSourceMeta(data.meta ?? null);
+  // Directly update store if meta not provided
+  if (!data.meta && data.mode) {
+    useDataSourceStore.getState().setMeta({
+      source: data.mode,
+      aiAvailable: data.mode === "DB",
+    });
+  }
+  return data;
+}
+
 export async function fetchFinancialTodayForUser(params: {
   telegramId?: string;
   userId?: string;
@@ -243,9 +304,10 @@ export async function fetchOrderForecast(params: {
   });
 
   if (!response.ok) {
-    const err = (await response.json().catch(() => null)) as
-      | Record<string, unknown>
-      | null;
+    const err = (await response.json().catch(() => null)) as Record<
+      string,
+      unknown
+    > | null;
     const message =
       (typeof err?.error === "string" ? err.error : undefined) ||
       (typeof err?.message === "string" ? err.message : undefined) ||
@@ -271,9 +333,10 @@ export async function fetchOrderForecastV2(params: {
   });
 
   if (!response.ok) {
-    const err = (await response.json().catch(() => null)) as
-      | Record<string, unknown>
-      | null;
+    const err = (await response.json().catch(() => null)) as Record<
+      string,
+      unknown
+    > | null;
     const message =
       (typeof err?.error === "string" ? err.error : undefined) ||
       (typeof err?.message === "string" ? err.message : undefined) ||

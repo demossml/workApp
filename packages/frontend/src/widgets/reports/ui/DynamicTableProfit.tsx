@@ -200,6 +200,7 @@ export const DynamicTableProfit: React.FC<DynamicTableProfitProps> = ({
           <tbody>
             {sortedData.map((row, idx) => {
               const isTotalRow = row.shopName === "Итого";
+              const animationDelay = idx < 12 ? idx * 0.03 : 0;
               return (
                 <Fragment key={idx}>
                   <motion.tr
@@ -207,7 +208,7 @@ export const DynamicTableProfit: React.FC<DynamicTableProfitProps> = ({
                     animate={{ opacity: 1, y: 0 }}
                     transition={{
                       duration: 0.25,
-                      delay: idx * 0.07,
+                      delay: animationDelay,
                       ease: "easeInOut",
                     }}
                     className={`border-b border-gray-300 dark:border-gray-700 ${
@@ -248,12 +249,13 @@ export const DynamicTableProfit: React.FC<DynamicTableProfitProps> = ({
       <div className="block sm:hidden space-y-1 px-2 py-2 max-h-[calc(100vh-4rem)] overflow-y-auto">
         {sortedData.map((row, idx) => {
           const isTotalRow = row.shopName === "Итого";
+          const animationDelay = idx < 12 ? idx * 0.03 : 0;
           return (
             <motion.div
               key={idx}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: idx * 0.05 }}
+              transition={{ duration: 0.3, delay: animationDelay }}
               className={`p-3 rounded-lg shadow-md bg-white dark:bg-gray-800 ${
                 isTotalRow ? "font-bold border-2 border-blue-500" : "border"
               }`}

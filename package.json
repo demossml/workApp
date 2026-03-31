@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev --filter=@@work-appt/{backend,frontend}",
+    "dev": "turbo run dev --filter=@work-appt/backend --filter=@work-appt/frontend",
     "deploy": "turbo run deploy",
     "deploy:backend": "pnpm -C packages/backend run deploy",
     "deploy:backend:debug": "pnpm -C packages/backend run deploy:debug",

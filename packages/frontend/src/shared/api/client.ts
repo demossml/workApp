@@ -13,6 +13,7 @@ if (!initData) {
     initData = "guest"; // чтобы пройти auth
   }
 }
+
 export const client = hc<IAPI>("", {
   init: {
     headers: {
@@ -113,4 +114,3 @@ export const client = hc<IAPI>("", {
       .finally(() => clearTimeout(timeoutId));
   },
 });
-

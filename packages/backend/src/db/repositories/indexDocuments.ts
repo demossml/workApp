@@ -9,6 +9,13 @@ interface ShopLastDocument {
 	closeDate: string;
 }
 
+function normalizeIsoOffset(value: string): string {
+	return value
+		.replace("+00:00", "+0000")
+		.replace(/([+-]\d{2}):(\d{2})$/, "$1$2")
+		.replace(/Z$/, "+0000");
+}
+
 export async function createIndexDocumentsTable(db: D1Database): Promise<void> {
 	try {
 		await db.batch([
@@ -90,7 +97,7 @@ export async function saveNewIndexDocuments(
 				return insertStmt.bind(
 					String(doc.number),
 					doc.shop_id,
-					doc.closeDate ?? null,
+					doc.closeDate ? normalizeIsoOffset(doc.closeDate) : null,
 					doc.openUserUuid ?? null,
 					doc.type ?? null,
 					doc.transactions ? JSON.stringify(doc.transactions) : null,

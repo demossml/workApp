@@ -12,7 +12,7 @@ export type FinishOpeningPayload = {
   ok: boolean | null;
   discrepancy:
     | {
-        amount: string;
+        amount: string | number;
         type: "+" | "-";
       }
     | null;

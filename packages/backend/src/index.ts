@@ -18,6 +18,12 @@ import {
 
 const JOBS_KV_PREFIX = "jobs:evotrack:";
 
+function isFlagEnabled(value?: string): boolean {
+	if (!value) return false;
+	const normalized = value.trim().toLowerCase();
+	return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
 function parseTzOffsetMinutes(value?: string): number {
 	const parsed = Number(value);
 	return Number.isFinite(parsed) ? parsed : 180;
@@ -70,6 +76,28 @@ async function shouldRunDailyJob(
 	return false;
 }
 
+async function runDailyDbRetention(
+	env: IEnv["Bindings"],
+): Promise<void> {
+	try {
+		const appEventsResult = await env.DB
+			.prepare("DELETE FROM app_events WHERE ts < datetime('now', '-14 day')")
+			.run();
+		const metricsResult = await env.DB
+			.prepare(
+				"DELETE FROM metrics_minute WHERE minute_ts < (strftime('%s','now') - 7*24*60*60) * 1000",
+			)
+			.run();
+
+		logger.info("Daily D1 retention completed", {
+			appEventsDeleted: Number(appEventsResult.meta?.changes || 0),
+			metricsDeleted: Number(metricsResult.meta?.changes || 0),
+		});
+	} catch (error) {
+		logger.error("Daily D1 retention failed", { error });
+	}
+}
+
 const app = new Hono<IEnv>()
 	.use("/*", cors())
 	.use("/*", requestLogger())
@@ -83,8 +111,17 @@ const app = new Hono<IEnv>()
 export default {
 	fetch: app.fetch,
 	scheduled: async (event: ScheduledEvent, env: IEnv["Bindings"]) => {
-		if (event.cron === "*/3 * * * *") {
-			await getDocuments(env);
+		if (event.cron === "*/15 * * * *") {
+			const indexingDisabled = isFlagEnabled(
+				env.DISABLE_EVOTOR_DOCUMENTS_INDEXING,
+			);
+			if (!indexingDisabled) {
+				await getDocuments(env);
+			} else {
+				logger.warn("Scheduled documents indexing is disabled by env flag", {
+					flag: "DISABLE_EVOTOR_DOCUMENTS_INDEXING",
+				});
+			}
 
 			const nowUtc = new Date();
 			const nowUtcMs = nowUtc.getTime();
@@ -92,6 +129,11 @@ export default {
 				nowUtc,
 				parseTzOffsetMinutes(env.ALERT_TZ_OFFSET_MINUTES),
 			);
+			const localDateKey = getLocalDateKey(localNow);
+
+			if (await shouldRunDailyJob(env, "d1-retention", localDateKey)) {
+				await runDailyDbRetention(env);
+			}
 
 			// Аналог EvoTrack: updateProductsShope ~ каждые 5 минут.
 			if (await shouldRunIntervalJob(env, "update-products-shope", 5, nowUtcMs)) {
@@ -119,7 +161,7 @@ export default {
 				(await shouldRunDailyJob(
 					env,
 					"salary-sync",
-					getLocalDateKey(localNow),
+					localDateKey,
 				))
 			) {
 				try {

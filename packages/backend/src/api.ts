@@ -11,6 +11,7 @@ import { analyticsRoutes } from "./routes/analytics";
 import { telegramRoutes } from "./routes/telegram";
 import { onecRoutes } from "./routes/onec";
 import { eventsRoutes } from "./routes/events";
+import { adminRoutes } from "./routes/admin";
 
 export const api = new Hono<IEnv>()
 	.route("/api/employees", employeesRoutes)
@@ -23,6 +24,7 @@ export const api = new Hono<IEnv>()
 	.route("/api/analytics", analyticsRoutes)
 	.route("/api/telegram", telegramRoutes)
 	.route("/api/events", eventsRoutes)
+	.route("/api/admin", adminRoutes)
 	.route("/api/1c", onecRoutes);
 
 export type IAPI = typeof api;

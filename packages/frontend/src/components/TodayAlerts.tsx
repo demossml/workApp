@@ -1,3 +1,3 @@
-import { TodayAlertsWidget } from "@widgets";
+import { TodayAlertsWidget } from "@widgets/home";
 
 export default TodayAlertsWidget;
