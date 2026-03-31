@@ -1,0 +1,17 @@
+{$APP_DOMAIN} {
+  encode zstd gzip
+
+  @api path /api/*
+  handle @api {
+    reverse_proxy backend:8787
+  }
+
+  handle {
+    reverse_proxy frontend:4173
+  }
+}
+
+{$API_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy backend:8787
+}

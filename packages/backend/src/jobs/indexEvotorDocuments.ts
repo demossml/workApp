@@ -90,6 +90,6 @@ export async function runEvotorDocumentsIndexingJob(
 	logger.info("Evotor documents indexing completed", {
 		shops: shopUuids.length,
 		fetchedDocuments: documents.length,
-		derivedIndexingPaused: true,
+		derivedIndexingPaused: false,
 	});
 }

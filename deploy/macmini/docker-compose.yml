@@ -1,0 +1,56 @@
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/macmini/backend.Dockerfile
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+    volumes:
+      - wrangler_state:/app/.wrangler/state
+      - ../../packages/backend/.dev.vars:/app/packages/backend/.dev.vars:ro
+    expose:
+      - "8787"
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: deploy/macmini/frontend.Dockerfile
+    restart: unless-stopped
+    expose:
+      - "4173"
+    depends_on:
+      - backend
+
+  scheduler:
+    build:
+      context: ../..
+      dockerfile: deploy/macmini/scheduler/Dockerfile
+    restart: unless-stopped
+    environment:
+      CRON_TOKEN: ${CRON_TOKEN}
+      TZ: UTC
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  wrangler_state:
+  caddy_data:
+  caddy_config:

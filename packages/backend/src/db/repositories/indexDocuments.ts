@@ -48,14 +48,20 @@ export async function createIndexDocumentsTable(db: D1Database): Promise<void> {
 
 export async function createIndexOnType(db: D1Database): Promise<void> {
 	try {
-		await db
-			.prepare(
-				`
+		await db.batch([
+			db.prepare(`
 			CREATE INDEX IF NOT EXISTS idx_index_documents_type 
 			ON index_documents (type)
-		`,
-			)
-			.run();
+		`),
+			db.prepare(`
+			CREATE INDEX IF NOT EXISTS idx_index_documents_shop_close_date_type
+			ON index_documents (shop_id, close_date, type)
+		`),
+			db.prepare(`
+			CREATE INDEX IF NOT EXISTS idx_index_documents_open_user_close_date
+			ON index_documents (open_user_uuid, close_date)
+		`),
+		]);
 	} catch (err) {
 		console.error("Ошибка при создании индекса по полю 'type':", err);
 		throw err;

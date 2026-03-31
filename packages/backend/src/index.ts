@@ -18,12 +18,6 @@ import {
 
 const JOBS_KV_PREFIX = "jobs:evotrack:";
 
-function isFlagEnabled(value?: string): boolean {
-	if (!value) return false;
-	const normalized = value.trim().toLowerCase();
-	return normalized === "1" || normalized === "true" || normalized === "yes";
-}
-
 function parseTzOffsetMinutes(value?: string): number {
 	const parsed = Number(value);
 	return Number.isFinite(parsed) ? parsed : 180;
@@ -35,6 +29,12 @@ function toLocalTime(nowUtc: Date, tzOffsetMinutes: number): Date {
 
 function getLocalDateKey(localDate: Date): string {
 	return localDate.toISOString().slice(0, 10);
+}
+
+function isCronTokenValid(env: IEnv["Bindings"], token: string | undefined): boolean {
+	if (!env.CRON_TOKEN) return false;
+	if (!token) return false;
+	return env.CRON_TOKEN === token;
 }
 
 async function shouldRunIntervalJob(
@@ -98,11 +98,96 @@ async function runDailyDbRetention(
 	}
 }
 
+async function runScheduledByCron(
+	cron: string,
+	env: IEnv["Bindings"],
+): Promise<boolean> {
+	if (cron === "*/3 * * * *" || cron === "*/15 * * * *") {
+		await getDocuments(env);
+
+		const nowUtc = new Date();
+		const nowUtcMs = nowUtc.getTime();
+		const localNow = toLocalTime(
+			nowUtc,
+			parseTzOffsetMinutes(env.ALERT_TZ_OFFSET_MINUTES),
+		);
+		const localDateKey = getLocalDateKey(localNow);
+
+		if (await shouldRunDailyJob(env, "d1-retention", localDateKey)) {
+			await runDailyDbRetention(env);
+		}
+
+		if (await shouldRunIntervalJob(env, "update-products-shope", 5, nowUtcMs)) {
+			try {
+				await updateProductsShope(env);
+			} catch (error) {
+				logger.error("Scheduled updateProductsShope failed", { error });
+			}
+		}
+
+		if (await shouldRunIntervalJob(env, "update-products", 25, nowUtcMs)) {
+			try {
+				await updateProducts(env);
+			} catch (error) {
+				logger.error("Scheduled updateProducts failed", { error });
+			}
+		}
+
+		const isSalaryWindow =
+			localNow.getUTCHours() === 6 && localNow.getUTCMinutes() >= 35;
+		if (
+			isSalaryWindow &&
+			(await shouldRunDailyJob(
+				env,
+				"salary-sync",
+				localDateKey,
+			))
+		) {
+			try {
+				await getDataForCurrentDate(env);
+			} catch (error) {
+				logger.error("Scheduled getDataForCurrentDate failed", { error });
+			}
+		}
+
+		if (nowUtc.getUTCHours() === 6 && nowUtc.getUTCMinutes() === 0) {
+			await runDailyTelegramDigestAndAlerts(env);
+		}
+		return true;
+	}
+
+	if (cron === "0 8 * * *" || cron === "0 11 * * *") {
+		await runTempoAlerts(env);
+		return true;
+	}
+
+	return false;
+}
+
 const app = new Hono<IEnv>()
 	.use("/*", cors())
 	.use("/*", requestLogger())
 	.use("/*", initialize)
 	.get("/", (c) => c.json({ message: "Welcome to Evo backend" }))
+	.post("/internal/cron/run", async (c) => {
+		const token = c.req.header("x-cron-token");
+		if (!isCronTokenValid(c.env, token)) {
+			return c.json({ ok: false, error: "CRON_TOKEN_INVALID" }, 401);
+		}
+
+		const body = await c.req.json().catch(() => ({}));
+		const cron = typeof body?.cron === "string" ? body.cron : "";
+		if (!cron) {
+			return c.json({ ok: false, error: "CRON_REQUIRED" }, 400);
+		}
+
+		const handled = await runScheduledByCron(cron, c.env);
+		if (!handled) {
+			logger.warn("Unhandled scheduled cron expression", { cron });
+		}
+
+		return c.json({ ok: true, handled, cron });
+	})
 	.route("/api", healthRoutes)
 	.use("/*", authenticate)
 	.route("/", api)
@@ -111,75 +196,8 @@ const app = new Hono<IEnv>()
 export default {
 	fetch: app.fetch,
 	scheduled: async (event: ScheduledEvent, env: IEnv["Bindings"]) => {
-		if (event.cron === "*/15 * * * *") {
-			const indexingDisabled = isFlagEnabled(
-				env.DISABLE_EVOTOR_DOCUMENTS_INDEXING,
-			);
-			if (!indexingDisabled) {
-				await getDocuments(env);
-			} else {
-				logger.warn("Scheduled documents indexing is disabled by env flag", {
-					flag: "DISABLE_EVOTOR_DOCUMENTS_INDEXING",
-				});
-			}
-
-			const nowUtc = new Date();
-			const nowUtcMs = nowUtc.getTime();
-			const localNow = toLocalTime(
-				nowUtc,
-				parseTzOffsetMinutes(env.ALERT_TZ_OFFSET_MINUTES),
-			);
-			const localDateKey = getLocalDateKey(localNow);
-
-			if (await shouldRunDailyJob(env, "d1-retention", localDateKey)) {
-				await runDailyDbRetention(env);
-			}
-
-			// Аналог EvoTrack: updateProductsShope ~ каждые 5 минут.
-			if (await shouldRunIntervalJob(env, "update-products-shope", 5, nowUtcMs)) {
-				try {
-					await updateProductsShope(env);
-				} catch (error) {
-					logger.error("Scheduled updateProductsShope failed", { error });
-				}
-			}
-
-			// Аналог EvoTrack: updateProducts ~ каждые 25 минут.
-			if (await shouldRunIntervalJob(env, "update-products", 25, nowUtcMs)) {
-				try {
-					await updateProducts(env);
-				} catch (error) {
-					logger.error("Scheduled updateProducts failed", { error });
-				}
-			}
-
-			// Аналог EvoTrack: getDataForCurrentDate ежедневно около 06:35 (МСК).
-			const isSalaryWindow =
-				localNow.getUTCHours() === 6 && localNow.getUTCMinutes() >= 35;
-			if (
-				isSalaryWindow &&
-				(await shouldRunDailyJob(
-					env,
-					"salary-sync",
-					localDateKey,
-				))
-			) {
-				try {
-					await getDataForCurrentDate(env);
-				} catch (error) {
-					logger.error("Scheduled getDataForCurrentDate failed", { error });
-				}
-			}
-
-			// Ежедневный запуск в 06:00 UTC (09:00 MSK) в рамках 3-минутного cron.
-			if (nowUtc.getUTCHours() === 6 && nowUtc.getUTCMinutes() === 0) {
-				await runDailyTelegramDigestAndAlerts(env);
-			}
-			return;
-		}
-
-		if (event.cron === "0 8 * * *" || event.cron === "0 11 * * *") {
-			await runTempoAlerts(env);
+		const handled = await runScheduledByCron(event.cron, env);
+		if (handled) {
 			return;
 		}
 

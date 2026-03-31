@@ -1,0 +1,7 @@
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+TZ=UTC
+
+*/3 * * * * /bin/sh -c 'curl -fsS -X POST http://backend:8787/internal/cron/run -H "x-cron-token: ${CRON_TOKEN}" -H "content-type: application/json" -d "{\"cron\":\"*/3 * * * *\"}" || echo "[scheduler] failed cron */3"'
+0 8 * * * /bin/sh -c 'curl -fsS -X POST http://backend:8787/internal/cron/run -H "x-cron-token: ${CRON_TOKEN}" -H "content-type: application/json" -d "{\"cron\":\"0 8 * * *\"}" || echo "[scheduler] failed cron 0 8"'
+0 11 * * * /bin/sh -c 'curl -fsS -X POST http://backend:8787/internal/cron/run -H "x-cron-token: ${CRON_TOKEN}" -H "content-type: application/json" -d "{\"cron\":\"0 11 * * *\"}" || echo "[scheduler] failed cron 0 11"'

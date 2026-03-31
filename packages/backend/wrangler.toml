@@ -53,10 +53,8 @@ ONEC_API_KEY = "секретный_ключ_минимум_32_символа"
 WEATHER_DEFAULT_LAT = "54.7826"
 WEATHER_DEFAULT_LON = "32.0453"
 WEATHER_DEFAULT_NAME = "Smolensk"
-# Аварийные флаги экономии D1 (по умолчанию выключены)
-DISABLE_EVOTOR_DOCUMENTS_INDEXING = "false"
 DISABLE_AI_DIRECTOR = "false"
 
 [triggers]
-# Mixed schedule: каждые 15 минут + в 08:00 и 11:00 UTC.
-crons = ["*/15 * * * *", "0 8 * * *", "0 11 * * *"]
+# Mixed schedule: каждые 3 минуты + в 08:00 и 11:00 UTC.
+crons = ["*/3 * * * *", "0 8 * * *", "0 11 * * *"]
