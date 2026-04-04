@@ -53,6 +53,7 @@ ONEC_API_KEY = "секретный_ключ_минимум_32_символа"
 WEATHER_DEFAULT_LAT = "54.7826"
 WEATHER_DEFAULT_LON = "32.0453"
 WEATHER_DEFAULT_NAME = "Smolensk"
+DISABLE_EVOTOR_CRON = "false"
 DISABLE_AI_DIRECTOR = "false"
 
 [triggers]

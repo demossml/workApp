@@ -18,6 +18,12 @@ import {
 
 const JOBS_KV_PREFIX = "jobs:evotrack:";
 
+function isFlagEnabled(value?: string): boolean {
+	if (!value) return false;
+	const normalized = value.trim().toLowerCase();
+	return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
 function parseTzOffsetMinutes(value?: string): number {
 	const parsed = Number(value);
 	return Number.isFinite(parsed) ? parsed : 180;
@@ -103,7 +109,7 @@ async function runScheduledByCron(
 	env: IEnv["Bindings"],
 ): Promise<boolean> {
 	if (cron === "*/3 * * * *" || cron === "*/15 * * * *") {
-		await getDocuments(env);
+		const evotorCronDisabled = isFlagEnabled(env.DISABLE_EVOTOR_CRON);
 
 		const nowUtc = new Date();
 		const nowUtcMs = nowUtc.getTime();
@@ -116,6 +122,16 @@ async function runScheduledByCron(
 		if (await shouldRunDailyJob(env, "d1-retention", localDateKey)) {
 			await runDailyDbRetention(env);
 		}
+
+		if (evotorCronDisabled) {
+			logger.warn("Scheduled Evotor cron tasks are disabled by env flag", {
+				flag: "DISABLE_EVOTOR_CRON",
+				cron,
+			});
+			return true;
+		}
+
+		await getDocuments(env);
 
 		if (await shouldRunIntervalJob(env, "update-products-shope", 5, nowUtcMs)) {
 			try {
@@ -157,6 +173,13 @@ async function runScheduledByCron(
 	}
 
 	if (cron === "0 8 * * *" || cron === "0 11 * * *") {
+		if (isFlagEnabled(env.DISABLE_EVOTOR_CRON)) {
+			logger.warn("Scheduled Evotor cron tasks are disabled by env flag", {
+				flag: "DISABLE_EVOTOR_CRON",
+				cron,
+			});
+			return true;
+		}
 		await runTempoAlerts(env);
 		return true;
 	}
