@@ -119,27 +119,37 @@ async function getShopUuidsWithFallback(
 async function getShopUuidsFromDb(
 	c: { get: (key: "db") => IEnv["Bindings"]["DB"] },
 ): Promise<string[]> {
-	const db = c.get("db");
-	const rows = await db
-		.prepare("SELECT store_uuid FROM stores")
-		.all<{ store_uuid: string }>();
-	return (rows.results || []).map((row) => row.store_uuid).filter(Boolean);
+	try {
+		const db = c.get("db");
+		const rows = await db
+			.prepare("SELECT store_uuid FROM stores")
+			.all<{ store_uuid: string }>();
+		return (rows.results || []).map((row) => row.store_uuid).filter(Boolean);
+	} catch (error) {
+		logger.warn("DB fallback shop UUIDs unavailable", { error });
+		return [];
+	}
 }
 
 async function getShopNamesFromDb(
 	c: { get: (key: "db") => IEnv["Bindings"]["DB"] },
 ): Promise<Record<string, string>> {
-	const db = c.get("db");
-	const rows = await db
-		.prepare("SELECT store_uuid, name FROM stores")
-		.all<{ store_uuid: string; name: string | null }>();
-	const map: Record<string, string> = {};
-	for (const row of rows.results || []) {
-		if (row.store_uuid) {
-			map[row.store_uuid] = row.name || row.store_uuid;
+	try {
+		const db = c.get("db");
+		const rows = await db
+			.prepare("SELECT store_uuid, name FROM stores")
+			.all<{ store_uuid: string; name: string | null }>();
+		const map: Record<string, string> = {};
+		for (const row of rows.results || []) {
+			if (row.store_uuid) {
+				map[row.store_uuid] = row.name || row.store_uuid;
+			}
 		}
+		return map;
+	} catch (error) {
+		logger.warn("DB fallback shop names unavailable", { error });
+		return {};
 	}
-	return map;
 }
 
 async function getShopNameByUuidFromDb(
