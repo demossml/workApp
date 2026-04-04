@@ -9,11 +9,13 @@ import {
 import { DashboardSummaryWidget } from "@widgets/dashboard";
 import { buildHomeAccessModel } from "@features/dashboard/model/homePageModel";
 import { useDataSourceStore } from "@shared/model/dataSourceStore";
+import { isTelegramMiniApp } from "../helpers/telegram";
 
 export default function Home() {
   const { data, error, isLoading } = useEmployeeRole();
   const dataSource = useDataSourceStore((state) => state.dataSource);
   const aiAvailable = useDataSourceStore((state) => state.aiAvailable);
+  const miniApp = isTelegramMiniApp();
 
   // Состояния загрузки и ошибок
   if (isLoading) return <LoadingState />;
@@ -21,14 +23,16 @@ export default function Home() {
 
   // Проверка прав доступа - улучшенная версия
   if (!data?.employeeRole || data.employeeRole === "null") {
+    const shouldShowManualIdInput = !miniApp || data?.employeeRole === "null";
+
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 p-4 sm:p-6">
         <h1 className="mb-4 text-lg sm:text-xl md:text-2xl text-gray-800 dark:text-gray-100 font-bold">
-          {!data?.employeeRole
-            ? "У вас нет прав доступа."
-            : "Завершите регистрацию."}
+          {shouldShowManualIdInput
+            ? "Введите Telegram ID для входа"
+            : "У вас нет прав доступа."}
         </h1>
-        {data?.employeeRole === "null" && (
+        {shouldShowManualIdInput && (
           <RegisterUserCard
             onRegister={(id) => {
               console.log("Новый пользователь Telegram ID:", id);
