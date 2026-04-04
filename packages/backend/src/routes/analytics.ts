@@ -1003,7 +1003,17 @@ export const analyticsRoutes = new Hono<IEnv>()
 
 		const evo = c.var.evotor;
 		const shopUuids = await evo.getShopUuids();
-		const shopNamesMap = await evo.getShopNamesByUuids(shopUuids);
+		const shopNamesMap = await evo.getShopNamesByUuids(shopUuids).catch(async () => {
+			const rows = await c
+				.get("db")
+				.prepare("SELECT store_uuid, name FROM stores")
+				.all<{ store_uuid: string; name: string | null }>();
+			const fallbackMap: Record<string, string> = {};
+			for (const row of rows.results || []) {
+				if (row.store_uuid) fallbackMap[row.store_uuid] = row.name || row.store_uuid;
+			}
+			return fallbackMap;
+		});
 
 		const byShop = await Promise.all(
 			shopUuids.map(async (shopUuid) => {
@@ -1206,7 +1216,19 @@ export const analyticsRoutes = new Hono<IEnv>()
 		);
 		const employeeNames =
 			employeeUuids.length > 0
-				? await evo.getEmployeeNamesByUuids(employeeUuids)
+				? await evo.getEmployeeNamesByUuids(employeeUuids).catch(async () => {
+						const dbRows = await c
+							.get("db")
+							.prepare(
+								"SELECT uuid, COALESCE(last_name, name, user_id) as display_name FROM employees_details WHERE uuid IS NOT NULL AND uuid != ''",
+							)
+							.all<{ uuid: string; display_name: string | null }>();
+						const fallbackNames: Record<string, string> = {};
+						for (const row of dbRows.results || []) {
+							if (row.uuid) fallbackNames[row.uuid] = row.display_name || row.uuid;
+						}
+						return fallbackNames;
+					})
 				: {};
 
 		const data = limited.map((row) => ({
