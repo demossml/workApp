@@ -49,10 +49,17 @@ export const storesRoutes = new Hono<IEnv>()
 			const db = c.env.DB;
 			const currentUserId = c.var.userId || "";
 
-			const [shops, openings] = await Promise.all([
-				c.var.evotor.getShopNameUuids(),
-				getOpeningsByDate(db, date),
-			]);
+			let shops = await c.var.evotor.getShopNameUuids().catch(async (error) => {
+				logger.warn("Evotor shops-opening-status fallback to DB stores", { error });
+				const rows = await db
+					.prepare("SELECT store_uuid as uuid, name FROM stores")
+					.all<{ uuid: string; name: string | null }>();
+				return (rows.results || []).map((row) => ({
+					uuid: row.uuid,
+					name: row.name || row.uuid,
+				}));
+			});
+			const openings = await getOpeningsByDate(db, date);
 			assert(shops, "not an shopsNameAndUuid");
 
 			const openingByShop = new Map<

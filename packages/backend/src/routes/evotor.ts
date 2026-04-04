@@ -1870,18 +1870,32 @@ export const evotorRoutes = new Hono<IEnv>()
 			await createAccessoriesTable(db);
 			await createSalaryBonusTable(db);
 
-			const shopIds: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
+			const shopIds: string[] =
+				(await getShopUuidsWithFallback(c, c.var.evotor).catch(async (error) => {
+					logger.warn("settings-config: Evotor shop UUIDs fallback to DB", { error });
+					return await getShopUuidsFromDb(c);
+				})) || [];
 			const filteredUuids = shopIds.filter(
 				(uuid: string) => uuid !== "20231001-6611-407F-8068-AC44283C9196",
 			);
 			const baseShopUuid = filteredUuids[0];
 
 			const groupOptions = baseShopUuid
-				? await c.var.evotor.getGroupsByNameUuid(baseShopUuid)
+				? await c.var.evotor.getGroupsByNameUuid(baseShopUuid).catch((error) => {
+						logger.warn("settings-config: Evotor groupOptions failed", { error });
+						return [];
+					})
 				: [];
 			const selectedGroupUuids = await getAllUuid(db);
 			const selectedGroupNames = baseShopUuid
-				? await c.var.evotor.getGroupsByName(baseShopUuid, selectedGroupUuids)
+				? await c.var.evotor
+						.getGroupsByName(baseShopUuid, selectedGroupUuids)
+						.catch((error) => {
+							logger.warn("settings-config: Evotor selectedGroupNames failed", {
+								error,
+							});
+							return [];
+						})
 				: [];
 
 			const currentDate = formatDate(new Date());

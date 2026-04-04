@@ -1120,8 +1120,24 @@ export const analyticsRoutes = new Hono<IEnv>()
 		const shopNameFilter = c.req.query("shopName") || "";
 
 		const evo = c.var.evotor;
-		const allShopUuids = await evo.getShopUuids();
-		const allShopNamesMap = await evo.getShopNamesByUuids(allShopUuids);
+		const allShopUuids = await evo.getShopUuids().catch(async () => {
+			const rows = await c
+				.get("db")
+				.prepare("SELECT store_uuid FROM stores")
+				.all<{ store_uuid: string }>();
+			return (rows.results || []).map((row) => row.store_uuid).filter(Boolean);
+		});
+		const allShopNamesMap = await evo.getShopNamesByUuids(allShopUuids).catch(async () => {
+			const rows = await c
+				.get("db")
+				.prepare("SELECT store_uuid, name FROM stores")
+				.all<{ store_uuid: string; name: string | null }>();
+			const fallbackMap: Record<string, string> = {};
+			for (const row of rows.results || []) {
+				if (row.store_uuid) fallbackMap[row.store_uuid] = row.name || row.store_uuid;
+			}
+			return fallbackMap;
+		});
 		const shopUuids = allShopUuids.filter((shopUuid) => {
 			if (shopUuidFilter && shopUuid !== shopUuidFilter) return false;
 			if (shopNameFilter && allShopNamesMap[shopUuid] !== shopNameFilter) return false;
@@ -1137,7 +1153,7 @@ export const analyticsRoutes = new Hono<IEnv>()
 					shopUuid,
 					sinceIso,
 					untilIso,
-					{ types: ["SELL", "PAYBACK"] },
+					{ types: ["SELL", "PAYBACK"], skipFetchIfStale: true },
 				);
 				return docs
 					.filter((doc) => doc.type === "PAYBACK")
