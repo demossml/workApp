@@ -53,7 +53,8 @@ export const storesRoutes = new Hono<IEnv>()
 				logger.warn("Evotor shops-opening-status fallback to DB stores", { error });
 				const rows = await db
 					.prepare("SELECT store_uuid as uuid, name FROM stores")
-					.all<{ uuid: string; name: string | null }>();
+					.all<{ uuid: string; name: string | null }>()
+					.catch(() => ({ results: [] as Array<{ uuid: string; name: string | null }> }));
 				return (rows.results || []).map((row) => ({
 					uuid: row.uuid,
 					name: row.name || row.uuid,
