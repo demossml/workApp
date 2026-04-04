@@ -1153,7 +1153,17 @@ export const analyticsRoutes = new Hono<IEnv>()
 			if (shopNameFilter && allShopNamesMap[shopUuid] !== shopNameFilter) return false;
 			return true;
 		});
-		const shopNamesMap = await evo.getShopNamesByUuids(shopUuids);
+		const shopNamesMap = await evo.getShopNamesByUuids(shopUuids).catch(async () => {
+			const rows = await c
+				.get("db")
+				.prepare("SELECT store_uuid, name FROM stores")
+				.all<{ store_uuid: string; name: string | null }>();
+			const fallbackMap: Record<string, string> = {};
+			for (const row of rows.results || []) {
+				if (row.store_uuid) fallbackMap[row.store_uuid] = row.name || row.store_uuid;
+			}
+			return fallbackMap;
+		});
 
 		const refundsRaw = await Promise.all(
 			shopUuids.map(async (shopUuid) => {
