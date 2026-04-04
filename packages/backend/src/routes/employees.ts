@@ -10,6 +10,8 @@ import {
 	toEmployeeSummary,
 } from "../db/repositories/employeesDetails";
 
+const SUPERADMIN_IDS = new Set(["5700958253", "475039971"]);
+
 export const employeesRoutes = new Hono<IEnv>()
 
 	.get("/user", (c) => {
@@ -87,7 +89,7 @@ export const employeesRoutes = new Hono<IEnv>()
 		if (!userId) {
 			return c.json({ employeeRole: null });
 		}
-		if (userId === "5700958253" || userId === "475039971") {
+		if (SUPERADMIN_IDS.has(userId)) {
 			return c.json({ employeeRole: "SUPERADMIN" });
 		}
 		const row = await getEmployeeDetailsByUserId(c.env.DB, userId);
@@ -107,6 +109,9 @@ export const employeesRoutes = new Hono<IEnv>()
 
 			const { userId } = validate(RegisterSchema, data);
 			c.set("userId", String(userId));
+			if (SUPERADMIN_IDS.has(String(userId))) {
+				return c.json({ success: true, employeeRole: "SUPERADMIN" });
+			}
 
 			const row = await getEmployeeDetailsByUserId(c.env.DB, userId);
 			const employeeRoleFromEvotor = await c.var.evotor.getEmployeeRole(userId);
