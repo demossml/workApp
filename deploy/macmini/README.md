@@ -77,6 +77,18 @@ docker compose --env-file deploy/macmini/.env -f deploy/macmini/docker-compose.y
 docker compose --env-file deploy/macmini/.env -f deploy/macmini/docker-compose.yml logs --tail=120 caddy
 ```
 
+### Smoke-тесты Evotor API (для Mac mini)
+
+```bash
+pnpm smoke:evotor:macmini
+```
+
+Если нужно запускать на другом домене:
+
+```bash
+SMOKE_BASE_URL=https://app.example.com pnpm smoke:evotor:macmini
+```
+
 ## 5) DNS и домены
 
 - Направь DNS-записи `APP_DOMAIN` и `API_DOMAIN` на внешний IP Mac mini.
