@@ -86,10 +86,11 @@ export const storesRoutes = new Hono<IEnv>()
 				if (!iso) return null;
 				const dateObj = new Date(iso);
 				if (Number.isNaN(dateObj.getTime())) return null;
-				return dateObj.toLocaleTimeString("ru-RU", {
-					hour: "2-digit",
-					minute: "2-digit",
-				});
+				// Avoid Intl locale dependency in workerd runtime.
+				const mskDate = new Date(dateObj.getTime() + 3 * 60 * 60 * 1000);
+				const hh = String(mskDate.getUTCHours()).padStart(2, "0");
+				const mm = String(mskDate.getUTCMinutes()).padStart(2, "0");
+				return `${hh}:${mm}`;
 			};
 
 			const shopsNameAndUuid = shops.map((shop) => {
