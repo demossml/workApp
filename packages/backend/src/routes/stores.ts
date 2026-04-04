@@ -49,7 +49,7 @@ export const storesRoutes = new Hono<IEnv>()
 			const db = c.env.DB;
 			const currentUserId = c.var.userId || "";
 
-			let shops = await c.var.evotor.getShopNameUuids().catch(async (error) => {
+			const rawShops = await c.var.evotor.getShopNameUuids().catch(async (error) => {
 				logger.warn("Evotor shops-opening-status fallback to DB stores", { error });
 				const rows = await db
 					.prepare("SELECT store_uuid as uuid, name FROM stores")
@@ -60,8 +60,11 @@ export const storesRoutes = new Hono<IEnv>()
 					name: row.name || row.uuid,
 				}));
 			});
-			const openings = await getOpeningsByDate(db, date);
-			assert(shops, "not an shopsNameAndUuid");
+			const shops = Array.isArray(rawShops) ? rawShops : [];
+			const openings = await getOpeningsByDate(db, date).catch((error) => {
+				logger.warn("shops-opening-status: openings fallback to empty", { error });
+				return [];
+			});
 
 			const openingByShop = new Map<
 				string,
