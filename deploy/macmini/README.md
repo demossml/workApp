@@ -89,6 +89,18 @@ pnpm smoke:evotor:macmini
 SMOKE_BASE_URL=https://app.example.com pnpm smoke:evotor:macmini
 ```
 
+Запуск smoke-тестов внутри Docker-контейнера backend (рекомендуется):
+
+```bash
+pnpm smoke:evotor:docker
+```
+
+С переопределением параметров:
+
+```bash
+SMOKE_BASE_URL=http://backend:8787 SMOKE_TELEGRAM_ID=5700958253 pnpm smoke:evotor:docker
+```
+
 ## 5) DNS и домены
 
 - Направь DNS-записи `APP_DOMAIN` и `API_DOMAIN` на внешний IP Mac mini.
