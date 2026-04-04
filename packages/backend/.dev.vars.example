@@ -6,3 +6,6 @@ BOT_TOKEN=your_bot_token_here
 
 # Evotor API Token
 EVOTOR_API_TOKEN=your_evotor_api_token_here
+
+# Optional local proxy for Evotor API (helps when workerd TLS chain validation fails)
+# EVOTOR_PROXY_URL=http://evotor-proxy:3000/proxy

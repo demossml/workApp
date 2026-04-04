@@ -26,6 +26,7 @@ export type IEnv = {
 		AI_MAX_TOKENS?: string;
 		ONEC_API_KEY?: string;
 		CRON_TOKEN?: string;
+		EVOTOR_PROXY_URL?: string;
 		DISABLE_EVOTOR_CRON?: string;
 		DISABLE_AI_DIRECTOR?: string;
 	};

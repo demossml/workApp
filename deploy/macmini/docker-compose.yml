@@ -1,4 +1,12 @@
 services:
+  evotor-proxy:
+    build:
+      context: ../..
+      dockerfile: deploy/macmini/evotor-proxy/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "3000"
+
   backend:
     build:
       context: ../..
@@ -11,6 +19,8 @@ services:
       - ../../packages/backend/.dev.vars:/app/packages/backend/.dev.vars:ro
     expose:
       - "8787"
+    depends_on:
+      - evotor-proxy
 
   frontend:
     build:

@@ -7,6 +7,7 @@
 - `backend` в локальном Worker-режиме на порту `8787` с персистентным `.wrangler/state`
 - `frontend` через `vite preview` на порту `4173`
 - `scheduler` контейнер для cron-запусков внутренних задач backend
+- `evotor-proxy` контейнер для запросов к Evotor API (обход TLS-проблем `workerd`)
 - `caddy` как reverse proxy с TLS для поддоменов `app` и `api`
 
 ## 1) Подготовка `.env` для Docker Compose
@@ -43,6 +44,7 @@ head -c 32 /dev/urandom | xxd -p -c 32
 
 ```dotenv
 CRON_TOKEN=93dab926c603bb037381430152fcf6272260535d8bd493053a58d796ae97443f
+EVOTOR_PROXY_URL=http://evotor-proxy:3000/proxy
 ```
 
 Важно: `CRON_TOKEN` в `packages/backend/.dev.vars` должен совпадать с `CRON_TOKEN` в `deploy/macmini/.env`.

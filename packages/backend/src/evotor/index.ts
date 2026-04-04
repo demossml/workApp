@@ -33,6 +33,7 @@ import type { D1Database, KVNamespace } from "@cloudflare/workers-types";
 export class Evotor {
 	private headers: { "X-Authorization": string }; // Заголовки для авторизации
 	private kv?: KVNamespace;
+	private proxyUrl?: string;
 	private shopUuidsCacheKey = "evotor:shopUuids";
 	private shopNamesCacheKey = "evotor:shopNames";
 	private cacheTtlSeconds = 900;
@@ -52,9 +53,10 @@ export class Evotor {
 	 * Конструктор класса Evotor
 	 * @param token - Токен для авторизации
 	 */
-	constructor(token: string, kv?: KVNamespace) {
+	constructor(token: string, kv?: KVNamespace, proxyUrl?: string) {
 		this.headers = { "X-Authorization": token }; // Инициализация заголовков
 		this.kv = kv;
+		this.proxyUrl = proxyUrl;
 		this.urls = {
 			getEmployees: "https://api.evotor.ru/api/v1/inventories/employees/search",
 			getShops: "https://api.evotor.ru/api/v1/inventories/stores/search",
@@ -199,16 +201,8 @@ export class Evotor {
 
 	async checkToken(): Promise<boolean> {
 		try {
-			const response = await fetch(this.urls.getShops, {
-				method: "GET",
-				headers: this.headers, // Используем текущие заголовки с токеном
-			});
-
-			// Проверка успешности запроса
-			if (response.ok) {
-				return true; // Токен действителен
-			}
-			throw new Error("Неверный или истекший токен");
+			await this._fetchData(this.urls.getShops);
+			return true;
 		} catch (error) {
 			this._logError("Ошибка при проверке токена", error);
 			return false; // Токен недействителен
@@ -2826,7 +2820,12 @@ export class Evotor {
 		try {
 			const controller = new AbortController();
 			timeoutId = setTimeout(() => controller.abort(), 15000);
-			const response = await fetch(url, {
+			const requestUrl =
+				this.proxyUrl &&
+				url.startsWith("https://api.evotor.ru/")
+					? `${this.proxyUrl}?url=${encodeURIComponent(url)}`
+					: url;
+			const response = await fetch(requestUrl, {
 				headers: this.headers,
 				signal: controller.signal,
 			}); // Выполнение запроса

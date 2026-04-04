@@ -16,7 +16,11 @@ import { upsertEmployeesDetails } from "../db/repositories/employeesDetails";
 export async function runEvotorDocumentsIndexingJob(
 	bindings: IEnv["Bindings"],
 ): Promise<void> {
-	const evotor = new Evotor(bindings.EVOTOR_API_TOKEN, bindings.KV);
+	const evotor = new Evotor(
+		bindings.EVOTOR_API_TOKEN,
+		bindings.KV,
+		bindings.EVOTOR_PROXY_URL,
+	);
 	const db = bindings.DB;
 
 	await createIndexDocumentsTable(db);
