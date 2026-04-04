@@ -120,11 +120,18 @@ export const storesRoutes = new Hono<IEnv>()
 	})
 
 	.get("/shops-names", async (c) => {
-		const shopsName = await c.var.evotor.getShopsName();
-
-		assert(shopsName, "not an shopOptions");
-
-		return c.json({ shopsName });
+		try {
+			const shopsName = await c.var.evotor.getShopsName();
+			assert(shopsName, "not an shopOptions");
+			return c.json({ shopsName });
+		} catch (error) {
+			logger.warn("Evotor shops-names failed, using DB fallback", { error });
+			const rows = await c.env.DB
+				.prepare("SELECT name FROM stores WHERE name IS NOT NULL AND name != ''")
+				.all<{ name: string }>();
+			const shopsName = (rows.results || []).map((row) => row.name).filter(Boolean);
+			return c.json({ shopsName });
+		}
 	})
 
 	.post("/get-file", async (c) => {
