@@ -794,13 +794,32 @@ async function loadFinancialDataByMode(input: {
 	const evo = input.c.var.evotor;
 
 	if (input.mode === "DB") {
-		const allShopUuids = await getShopUuidsFromDb(input.c);
+		let allShopUuids = await getShopUuidsFromDb(input.c);
+		if (allShopUuids.length === 0) {
+			logger.warn(
+				"Financial DB mode: stores table is empty, falling back to Evotor shops list",
+			);
+			allShopUuids = await getShopUuidsWithFallback(input.c, evo);
+		}
 		const shopUuids = input.effectiveShopUuid
 			? allShopUuids.includes(input.effectiveShopUuid)
 				? [input.effectiveShopUuid]
 				: []
 			: allShopUuids;
-		const shopNamesMap = await getShopNamesFromDb(input.c);
+		let shopNamesMap = await getShopNamesFromDb(input.c);
+		if (Object.keys(shopNamesMap).length === 0 && shopUuids.length > 0) {
+			try {
+				shopNamesMap = await getShopNamesByUuidsWithFallback(
+					input.c,
+					evo,
+					shopUuids,
+				);
+			} catch (error) {
+				logger.warn("Financial DB mode: failed to resolve shop names fallback", {
+					error,
+				});
+			}
+		}
 		return await getFinancialDataFromDbAggregates(
 			db,
 			evo,
