@@ -189,8 +189,8 @@ async function runScheduledByCron(
 
 const app = new Hono<IEnv>()
 	.use("/*", cors())
-	.use("/*", requestLogger())
 	.use("/*", initialize)
+	.use("/*", requestLogger())
 	.get("/", (c) => c.json({ message: "Welcome to Evo backend" }))
 	.post("/internal/cron/run", async (c) => {
 		const token = c.req.header("x-cron-token");

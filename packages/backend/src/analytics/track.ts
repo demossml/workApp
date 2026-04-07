@@ -18,6 +18,9 @@ export async function trackAppEvent(
 ) {
 	try {
 		const drizzleDb = c.get("drizzle");
+		if (!drizzleDb || typeof (drizzleDb as { insert?: unknown }).insert !== "function") {
+			return;
+		}
 		await saveAppEvent(drizzleDb, {
 			eventName,
 			userId: options?.userId ?? c.var.userId ?? null,
