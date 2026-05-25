@@ -276,34 +276,38 @@ export class DuckDBDataService {
 
   async getCashByShops(): Promise<Record<string, number>> {
     const r = await this.db.prepare(`
-      SELECT s.store_uuid, COALESCE(SUM(p.sum), 0) as cash
+      SELECT COALESCE(st.name, s.store_uuid) as name, COALESCE(SUM(p.sum), 0) as cash
       FROM payments p JOIN sells s ON p.doc_id = s.doc_id
+      LEFT JOIN stores st ON st.store_uuid = s.store_uuid
       WHERE p.payment_type = 'CASH'
-      GROUP BY s.store_uuid
-    `).all<{ store_uuid: string; cash: number }>();
+      GROUP BY s.store_uuid, st.name
+    `).all<{ name: string; cash: number }>();
     const result: Record<string, number> = {};
-    for (const row of r.results) result[row.store_uuid] = row.cash;
+    for (const row of r.results) result[row.name] = row.cash;
     return result;
   }
 
   async getCashByShopsForPeriod(since: string, until: string): Promise<Record<string, number>> {
     const r = await this.db.prepare(`
-      SELECT s.store_uuid, COALESCE(SUM(p.sum), 0) as cash
+      SELECT COALESCE(st.name, s.store_uuid) as name, COALESCE(SUM(p.sum), 0) as cash
       FROM payments p JOIN sells s ON p.doc_id = s.doc_id
+      LEFT JOIN stores st ON st.store_uuid = s.store_uuid
       WHERE p.payment_type = 'CASH' AND s.close_date >= ? AND s.close_date < ?
-      GROUP BY s.store_uuid
-    `).bind(since, until).all<{ store_uuid: string; cash: number }>();
+      GROUP BY s.store_uuid, st.name
+    `).bind(since, until).all<{ name: string; cash: number }>();
     const result: Record<string, number> = {};
-    for (const row of r.results) result[row.store_uuid] = row.cash;
+    for (const row of r.results) result[row.name] = row.cash;
     return result;
   }
 
   async getExpensesByCategories(shopUuids: string[], since: string, until: string): Promise<Record<string, { byCategory: Record<string, number>; total: number }>> {
     // Expenses (CASH_OUTCOME) are not in sells/positions — they'd be in a separate table
     // For now return empty per-shop structure
+    const names = await this.getShopNameUuidsDict() || {};
     const result: Record<string, { byCategory: Record<string, number>; total: number }> = {};
     for (const uuid of shopUuids) {
-      result[uuid] = { byCategory: {}, total: 0 };
+      const name = names[uuid] || uuid;
+      result[name] = { byCategory: {}, total: 0 };
     }
     return result;
   }
