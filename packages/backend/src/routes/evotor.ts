@@ -1955,7 +1955,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			const data = await c.req.json();
 			const { groups } = validate(AccessoryGroupsSaveSchema, data);
 
-			const db = c.get("db");
+			const db = c.get("settingsDb");
 			await createAccessoriesTable(db);
 			await saveOrUpdateUUIDs(groups, db);
 

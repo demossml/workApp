@@ -4,9 +4,11 @@ import { existsSync, mkdirSync, copyFileSync, unlinkSync } from "fs";
 import { join } from "path";
 
 const DB_SOURCE = process.env.DUCKDB_PATH || "/home/admingimolost/.hermes/data/evotor.duckdb";
+const SETTINGS_DB_PATH = process.env.DUCKDB_SETTINGS_PATH || "/home/admingimolost/.hermes/data/evotor-settings.duckdb";
 const TEMP_DIR = "/tmp/evo-duckdb";
 
 let _db: Database | null = null;
+let _settingsDb: Database | null = null;
 
 function getTempPath(): string {
   if (!existsSync(TEMP_DIR)) mkdirSync(TEMP_DIR, { recursive: true });
@@ -23,6 +25,13 @@ export function getDuckDB(): Database {
   }
   _db = new Database(tempPath);
   return _db;
+}
+
+/** Separate persistent DB for settings tables (accessories, plan, salary, etc). */
+export function getSettingsDB(): Database {
+  if (_settingsDb) return _settingsDb;
+  _settingsDb = new Database(SETTINGS_DB_PATH);
+  return _settingsDb;
 }
 
 // Promisified DuckDB helpers
@@ -134,10 +143,54 @@ export class D1Adapter {
 }
 
 let _adapter: D1Adapter | null = null;
+let _settingsAdapter: D1Adapter | null = null;
 
 export function createD1Adapter(): D1Adapter {
   if (!_adapter) _adapter = new D1Adapter();
   return _adapter;
+}
+
+/** Adapter that uses the persistent settings DB (survives restarts). */
+class SettingsD1Adapter extends D1Adapter {
+  prepare(sql: string): D1PreparedStatement {
+    return new SettingsD1PreparedStatement(sql);
+  }
+}
+
+class SettingsD1PreparedStatement extends D1PreparedStatement {
+  async all<T = any>(): Promise<{ success: boolean; results: T[]; meta: any }> {
+    try {
+      const db = getSettingsDB();
+      const results = await dbAll(db, (this as any).sql, ...(this as any).params);
+      return { success: true, results: results as T[], meta: { changes: results.length } };
+    } catch (err: any) {
+      console.error("SettingsD1Adapter.all error:", err.message);
+      return { success: false, results: [], meta: { error: err.message } };
+    }
+  }
+
+  async run(): Promise<{ success: boolean; meta: { changes: number } }> {
+    try {
+      const db = getSettingsDB();
+      await dbRun(db, (this as any).sql, ...(this as any).params);
+      return { success: true, meta: { changes: 1 } };
+    } catch (err: any) {
+      console.error("SettingsD1Adapter.run error:", err.message);
+      return { success: false, meta: { changes: 0 } };
+    }
+  }
+
+  async first<T = any>(): Promise<T | null> {
+    try {
+      const db = getSettingsDB();
+      return await dbFirst(db, (this as any).sql, ...(this as any).params) as T;
+    } catch { return null; }
+  }
+}
+
+export function createSettingsAdapter(): D1Adapter {
+  if (!_settingsAdapter) _settingsAdapter = new SettingsD1Adapter();
+  return _settingsAdapter;
 }
 
 export async function ensureSchema(): Promise<void> {

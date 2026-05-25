@@ -3,7 +3,7 @@ import { Evotor } from "./evotor";
 import { DuckDBDataService, getDataService } from "./data-service";
 import type { IContext } from "./types";
 import { isValidSign } from "./utils";
-import { createD1Adapter } from "./db-duckdb";
+import { createD1Adapter, createSettingsAdapter } from "./db-duckdb";
 import { KVStore, globalKV } from "./kv-store";
 import { jsonError } from "./errors";
 import { createAiAdapter } from "./ai-adapter";
@@ -19,6 +19,7 @@ export const initialize = (c: IContext, next: Next) => {
   
   const db = createD1Adapter();
   c.set("db", db);
+  c.set("settingsDb", createSettingsAdapter());
   c.set("ai", createAiAdapter());
   c.set("BOT_TOKEN", c.env.BOT_TOKEN);
   c.set("kv", c.env.KV || defaultKV);
