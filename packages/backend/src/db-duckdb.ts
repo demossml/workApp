@@ -170,7 +170,7 @@ export async function ensureSchema(): Promise<void> {
     `CREATE OR REPLACE VIEW receipts AS SELECT doc_id AS receipt_id, store_uuid AS shop_id, close_date, close_sum AS total, 'SELL' AS type FROM sells`,
     `CREATE OR REPLACE VIEW receipt_positions AS SELECT p.doc_id AS receipt_id, s.store_uuid AS shop_id, s.close_date, p.commodity_uuid, p.product_name AS commodity_name, p.quantity, p.sum, 0.0 AS cost_price FROM positions p JOIN sells s ON p.doc_id = s.doc_id`,
     `CREATE OR REPLACE VIEW receipt_payments AS SELECT doc_id AS receipt_id, payment_type, sum FROM payments`,
-    `CREATE OR REPLACE VIEW stores AS SELECT DISTINCT store_uuid AS uuid, store_uuid AS id FROM sells`,
+    `CREATE OR REPLACE VIEW stores AS SELECT DISTINCT store_uuid, store_uuid AS id, store_name AS name FROM sells`,
   ];
   for (const v of views) {
     try { await dbRun(getDuckDB(), v); } catch {}
