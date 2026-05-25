@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { eq, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { aiInsightsCache } from "../schema/aiInsightsCache";

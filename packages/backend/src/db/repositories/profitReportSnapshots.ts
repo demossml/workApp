@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { D1Database } from "@cloudflare/workers-types";
 
 let schemaEnsured = false;

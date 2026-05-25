@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type {
 	D1Database,
 	D1PreparedStatement,

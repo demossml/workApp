@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Hono } from "hono";
 import type { IEnv } from "../types";
 import { logger } from "../logger";

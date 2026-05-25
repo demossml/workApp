@@ -14,7 +14,7 @@ type DataSourceStoreState = {
 };
 
 export const useDataSourceStore = create<DataSourceStoreState>((set) => ({
-  dataSource: "ELVATOR",
+  dataSource: "DB" as DataSource,
   aiAvailable: false,
   setMeta: (meta) =>
     set((state) => {

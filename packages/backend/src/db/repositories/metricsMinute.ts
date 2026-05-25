@@ -1,46 +1,38 @@
-import { and, eq, gte, lte } from "drizzle-orm";
-import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { metricsMinute } from "../schema/metricsMinute";
+import type { D1Adapter } from "../../db-duckdb";
 
 export const API_LATENCY_METRIC_KEY = "api_latency_ms";
 
 function toMinuteBucket(timestampMs: number) {
-	return Math.floor(timestampMs / 60000) * 60000;
+  return Math.floor(timestampMs / 60000) * 60000;
 }
 
 export async function saveApiLatencyMetric(
-	db: DrizzleD1Database<Record<string, unknown>>,
-	latencyMs: number,
-	timestampMs = Date.now(),
+  db: D1Adapter,
+  latencyMs: number,
+  timestampMs = Date.now(),
 ) {
-	await db
-		.insert(metricsMinute)
-		.values({
-			minuteTs: toMinuteBucket(timestampMs),
-			metricKey: API_LATENCY_METRIC_KEY,
-			shopUuid: null,
-			value: latencyMs,
-		})
-		.run();
+  await db.prepare(`
+    INSERT INTO metrics_minute (minute_ts, metric_key, shop_uuid, value)
+    VALUES (?, ?, ?, ?)
+  `).bind(
+    toMinuteBucket(timestampMs),
+    API_LATENCY_METRIC_KEY,
+    null,
+    latencyMs,
+  ).run();
 }
 
 export async function getApiLatencyValuesByPeriod(
-	db: DrizzleD1Database<Record<string, unknown>>,
-	sinceTs: number,
-	untilTs: number,
+  db: D1Adapter,
+  sinceTs: number,
+  untilTs: number,
 ) {
-	const sinceMinute = toMinuteBucket(sinceTs);
-	const untilMinute = toMinuteBucket(untilTs);
-
-	return db
-		.select({ value: metricsMinute.value })
-		.from(metricsMinute)
-		.where(
-			and(
-				eq(metricsMinute.metricKey, API_LATENCY_METRIC_KEY),
-				gte(metricsMinute.minuteTs, sinceMinute),
-				lte(metricsMinute.minuteTs, untilMinute),
-			),
-		)
-		.all();
+  const sinceMinute = toMinuteBucket(sinceTs);
+  const untilMinute = toMinuteBucket(untilTs);
+  return db.prepare(`
+    SELECT value FROM metrics_minute
+    WHERE metric_key = ?
+      AND minute_ts >= ?
+      AND minute_ts <= ?
+  `).bind(API_LATENCY_METRIC_KEY, sinceMinute, untilMinute).all();
 }

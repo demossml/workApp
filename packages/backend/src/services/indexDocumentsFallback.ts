@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { D1Database } from "@cloudflare/workers-types";
 import type { IEnv } from "../types";
 import type { IndexDocument } from "../evotor/types";

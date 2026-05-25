@@ -6,8 +6,12 @@ import { errorHandler, requestLogger } from "./middleware";
 import type { IEnv } from "./types";
 import { healthRoutes } from "./routes/health";
 import { runDailyTelegramDigestAndAlerts } from "./telegram/digestAndAlerts";
-import type { ScheduledEvent } from "@cloudflare/workers-types";
 import { logger } from "./logger";
+
+interface ScheduledEvent {
+  cron: string;
+  scheduledTime: number;
+}
 import { runTempoAlerts } from "./telegram/tempoAlerts";
 import {
 	getDataForCurrentDate,
@@ -215,6 +219,8 @@ const app = new Hono<IEnv>()
 	.use("/*", authenticate)
 	.route("/", api)
 	.onError(errorHandler);
+
+export { app };
 
 export default {
 	fetch: app.fetch,

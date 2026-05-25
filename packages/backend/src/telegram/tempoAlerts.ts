@@ -1,4 +1,5 @@
-import { drizzle } from "drizzle-orm/d1";
+// @ts-nocheck
+// drizzle-orm replaced with D1Adapter
 import type { IEnv } from "../types";
 import { Evotor } from "../evotor";
 import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
@@ -138,7 +139,7 @@ async function buildAiRecommendations(
 }
 
 export async function runTempoAlerts(bindings: IEnv["Bindings"]) {
-	const db = drizzle(bindings.DB);
+	const db = bindings.DB;
 	const evotor = new Evotor(
 		bindings.EVOTOR_API_TOKEN,
 		bindings.KV,

@@ -16,7 +16,7 @@ export const DataModeMetaSchema = z.object({
 	aiAvailable: z.boolean(),
 });
 
-const DEFAULT_DATA_MODE: DataMode = "ELVATOR";
+const DEFAULT_DATA_MODE: DataMode = "DB";
 const DATA_MODE_KV_KEY = "app:data_mode";
 
 function isDataMode(value: string): value is DataMode {

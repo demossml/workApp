@@ -50,12 +50,6 @@ export default function Home() {
   return (
     <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-20 sm:pt-24 px-4 sm:px-6 pb-24">
       <div className="w-full max-w-7xl">
-        <div className="mb-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/70 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
-          Источник: <span className="font-semibold">{dataSource}</span> AI:{" "}
-          <span className="font-semibold">
-            {aiAvailable ? "активен" : "отключён"}
-          </span>
-        </div>
 
         {/* План продаж - карточки статусов */}
         {(isSuperAdmin || isCashier || isAdmin) && <PlanStatusWidget />}

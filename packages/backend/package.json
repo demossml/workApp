@@ -35,10 +35,13 @@
 	},
 	"dependencies": {
 		"@cloudflare/ai": "^1.2.2",
+		"@hono/node-server": "^2.0.4",
 		"drizzle-orm": "^0.45.1",
+		"duckdb": "^1.4.4",
 		"jsonwebtoken": "^9.0.2",
 		"jszip": "^3.10.1",
 		"p-limit": "^6.1.0",
+		"tsx": "^4.22.3",
 		"unbound-fetch": "^1.0.8",
 		"unzip-stream": "^0.3.4",
 		"workers-ai-provider": "^0.5.2",

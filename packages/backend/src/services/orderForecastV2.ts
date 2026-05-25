@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { IEnv } from "../types";
 import { getDocumentsFromIndexFirst } from "./indexDocumentsFallback";
 

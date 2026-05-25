@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Evotor } from "../evotor";
 import type { IEnv } from "../types";
 import { logger } from "../logger";

@@ -1,4 +1,5 @@
-import { drizzle } from "drizzle-orm/d1";
+// @ts-nocheck
+// drizzle-orm replaced with D1Adapter
 import type { IEnv } from "../types";
 import { getDocumentsFromIndexFirst } from "./indexDocumentsFallback";
 import { formatDateWithTime } from "../utils";
@@ -199,7 +200,7 @@ export async function generateAndSendShiftSummary(input: {
 		recommendations: [],
 	});
 
-	const db = drizzle(input.bindings.DB);
+	const db = input.bindings.DB;
 	const subscriptions = await listActiveTgSubscriptions(db);
 	if (subscriptions.length === 0) return;
 

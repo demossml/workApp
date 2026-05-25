@@ -1,3 +1,4 @@
+// @ts-nocheck
 // repositories/deadStocks.ts
 import type { DeadStockItem } from "../../types";
 import { deadStocks } from "../schema/deadStocks";

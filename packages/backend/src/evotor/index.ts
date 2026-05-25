@@ -25,14 +25,15 @@ import type {
 	// TransactionSale,
 } from "./types";
 
-import type { D1Database, KVNamespace } from "@cloudflare/workers-types";
+import type { D1Database } from "@cloudflare/workers-types";
+import type { KVStore } from "../kv-store";
 
 /**
  * Класс Evotor для работы с API Эвотор
  */
 export class Evotor {
 	private headers: { "X-Authorization": string }; // Заголовки для авторизации
-	private kv?: KVNamespace;
+	private kv?: KVStore;
 	private proxyUrl?: string;
 	private shopUuidsCacheKey = "evotor:shopUuids";
 	private shopNamesCacheKey = "evotor:shopNames";
@@ -53,7 +54,7 @@ export class Evotor {
 	 * Конструктор класса Evotor
 	 * @param token - Токен для авторизации
 	 */
-	constructor(token: string, kv?: KVNamespace, proxyUrl?: string) {
+	constructor(token: string, kv?: KVStore, proxyUrl?: string) {
 		this.headers = { "X-Authorization": token }; // Инициализация заголовков
 		this.kv = kv;
 		this.proxyUrl = proxyUrl;
@@ -88,9 +89,9 @@ export class Evotor {
 	private async getCachedShopUuids(): Promise<string[] | null> {
 		if (!this.kv) return null;
 		try {
-			const cached = await this.kv.get(this.shopUuidsCacheKey, {
-				type: "json",
-			});
+			const cachedRaw = await this.kv.get(this.shopUuidsCacheKey);
+			if (!cachedRaw) return null;
+			const cached = JSON.parse(cachedRaw);
 			if (!Array.isArray(cached)) return null;
 			const filtered = cached.filter((item) => typeof item === "string");
 			return filtered.length > 0 ? (filtered as string[]) : null;
@@ -114,9 +115,9 @@ export class Evotor {
 	private async getCachedShopNamesMap(): Promise<Record<string, string> | null> {
 		if (!this.kv) return null;
 		try {
-			const cached = await this.kv.get(this.shopNamesCacheKey, {
-				type: "json",
-			});
+			const cachedRaw = await this.kv.get(this.shopNamesCacheKey);
+			if (!cachedRaw) return null;
+			const cached = JSON.parse(cachedRaw);
 			if (!cached || typeof cached !== "object") return null;
 			const result: Record<string, string> = {};
 			for (const [key, value] of Object.entries(cached)) {

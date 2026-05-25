@@ -1,331 +1,225 @@
-import { and, desc, eq, gte, like, or, sql } from "drizzle-orm";
-import type { SQL } from "drizzle-orm";
-import type { DrizzleD1Database } from "drizzle-orm/d1";
-import {
-	onecImportLog,
-	onecPriceHistory,
-	onecPrices,
-} from "../schema/onecPrices";
+import type { D1Adapter } from "../../db-duckdb";
 
 export type PriceItem = {
-	sku: string;
-	barcode: string | null;
-	name: string | null;
-	price: number;
-	priceType: string;
-	store: string;
-	changedAt: string | null;
+  sku: string;
+  barcode: string | null;
+  name: string | null;
+  price: number;
+  priceType: string;
+  store: string;
+  changedAt: string | null;
 };
 
 export type UpsertPricesResult = {
-	inserted: number;
-	updated: number;
-	skipped: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
 };
 
 export type GetPricesParams = {
-	store?: string;
-	priceType?: string;
-	sku?: string;
-	name?: string;
-	updatedSince?: string;
-	page: number;
-	limit: number;
+  store?: string;
+  priceType?: string;
+  sku?: string;
+  name?: string;
+  updatedSince?: string;
+  page: number;
+  limit: number;
 };
 
 export type SaveImportLogInput = {
-	store?: string;
-	priceType?: string;
-	itemsReceived?: number;
-	itemsInserted?: number;
-	itemsUpdated?: number;
-	itemsSkipped?: number;
-	status: "success" | "error";
-	errorMessage?: string;
+  store?: string;
+  priceType?: string;
+  itemsReceived?: number;
+  itemsInserted?: number;
+  itemsUpdated?: number;
+  itemsSkipped?: number;
+  status: "success" | "error";
+  errorMessage?: string;
 };
 
 function chunkArray<T>(items: T[], size: number) {
-	const chunks: T[][] = [];
-	for (let i = 0; i < items.length; i += size) {
-		chunks.push(items.slice(i, i + size));
-	}
-	return chunks;
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
 }
 
 function makeKey(sku: string, store: string, priceType: string) {
-	return `${sku}::${store}::${priceType}`;
+  return `${sku}::${store}::${priceType}`;
 }
 
 export async function upsertPrices(
-	db: DrizzleD1Database<Record<string, unknown>>,
-	items: PriceItem[],
+  db: D1Adapter,
+  items: PriceItem[],
 ): Promise<UpsertPricesResult> {
-	let inserted = 0;
-	let updated = 0;
-	let skipped = 0;
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
 
-	if (items.length === 0) {
-		return { inserted, updated, skipped };
-	}
+  if (items.length === 0) return { inserted, updated, skipped };
 
-	const batches = chunkArray(items, 100);
+  const batches = chunkArray(items, 100);
 
-	for (const batch of batches) {
-		const conditions = batch.map((item) =>
-			and(
-				eq(onecPrices.sku, item.sku),
-				eq(onecPrices.store, item.store),
-				eq(onecPrices.priceType, item.priceType),
-			),
-		);
+  for (const batch of batches) {
+    // Build placeholders for batch query
+    const placeholders = batch.map(() => "(?, ?, ?)").join(", ");
+    const flatParams: any[] = [];
+    batch.forEach(item => flatParams.push(item.sku, item.store, item.priceType));
 
-		const existingRows = conditions.length
-			? await db
-					.select()
-					.from(onecPrices)
-					.where(conditions.length === 1 ? conditions[0] : or(...conditions))
-					.all()
-			: [];
+    const existingRows = await db.prepare(`
+      SELECT * FROM onec_prices WHERE (sku, store, price_type) IN (${placeholders})
+    `).bind(...flatParams).all<{ sku: string; store: string; price_type: string; price: number }>();
 
-		const existingMap = new Map(
-			existingRows.map((row) => [
-				makeKey(row.sku, row.store, row.priceType),
-				row,
-			]),
-		);
+    const existingMap = new Map(
+      existingRows.results.map((row: any) => [
+        makeKey(row.sku, row.store, row.price_type),
+        row,
+      ]),
+    );
 
-		const inserts = [] as Array<{
-			sku: string;
-			barcode: string | null;
-			name: string | null;
-			price: number;
-			priceType: string;
-			store: string;
-			changedAt: string | null;
-		}>;
+    const inserts: any[] = [];
+    const history: any[] = [];
 
-		const history = [] as Array<{
-			sku: string;
-			store: string;
-			priceType: string;
-			oldPrice: number | null;
-			newPrice: number;
-			changedAt: string;
-		}>;
+    for (const item of batch) {
+      const key = makeKey(item.sku, item.store, item.priceType);
+      const existing = existingMap.get(key);
 
-		for (const item of batch) {
-			const key = makeKey(item.sku, item.store, item.priceType);
-			const existing = existingMap.get(key);
+      if (!existing) {
+        inserts.push(item.sku, item.barcode, item.name, item.price, item.priceType, item.store, item.changedAt);
+        inserted++;
+        continue;
+      }
 
-			if (!existing) {
-				inserts.push({
-					sku: item.sku,
-					barcode: item.barcode,
-					name: item.name,
-					price: item.price,
-					priceType: item.priceType,
-					store: item.store,
-					changedAt: item.changedAt,
-				});
-				inserted++;
-				continue;
-			}
+      if (Number(existing.price) !== item.price) {
+        await db.prepare(`
+          UPDATE onec_prices SET price = ?, barcode = ?, name = ?, changed_at = ?, updated_at = ?
+          WHERE sku = ? AND store = ? AND price_type = ?
+        `).bind(item.price, item.barcode, item.name, item.changedAt, new Date().toISOString(),
+                item.sku, item.store, item.priceType).run();
 
-			if (Number(existing.price) !== item.price) {
-				await db
-					.update(onecPrices)
-					.set({
-						price: item.price,
-						barcode: item.barcode,
-						name: item.name,
-						changedAt: item.changedAt,
-						updatedAt: new Date().toISOString(),
-					})
-					.where(
-						and(
-							eq(onecPrices.sku, item.sku),
-							eq(onecPrices.store, item.store),
-							eq(onecPrices.priceType, item.priceType),
-						),
-					)
-					.run();
+        history.push(item.sku, item.store, item.priceType, existing.price ?? null, item.price,
+                     item.changedAt ?? new Date().toISOString());
+        updated++;
+      } else {
+        skipped++;
+      }
+    }
 
-				history.push({
-					sku: item.sku,
-					store: item.store,
-					priceType: item.priceType,
-					oldPrice: existing.price ?? null,
-					newPrice: item.price,
-					changedAt: item.changedAt ?? new Date().toISOString(),
-				});
+    if (inserts.length > 0) {
+      const insertPlaceholders = [];
+      for (let i = 0; i < inserts.length; i += 7) {
+        insertPlaceholders.push("(?, ?, ?, ?, ?, ?, ?)");
+      }
+      await db.prepare(`
+        INSERT INTO onec_prices (sku, barcode, name, price, price_type, store, changed_at)
+        VALUES ${insertPlaceholders.join(", ")}
+      `).bind(...inserts).run();
+    }
 
-				updated++;
-			} else {
-				skipped++;
-			}
-		}
+    if (history.length > 0) {
+      const histPlaceholders = [];
+      for (let i = 0; i < history.length; i += 7) {
+        histPlaceholders.push("(?, ?, ?, ?, ?, ?, ?)");
+      }
+      await db.prepare(`
+        INSERT INTO onec_price_history (sku, store, price_type, old_price, new_price, changed_at, created_at)
+        VALUES ${histPlaceholders.join(", ")}
+      `).bind(...history.map((v, i) => i % 7 === 6 ? (v ?? new Date().toISOString()) : v)).run();
+    }
+  }
 
-		if (inserts.length > 0) {
-			await db.insert(onecPrices).values(inserts).run();
-		}
-
-		if (history.length > 0) {
-			await db.insert(onecPriceHistory).values(history).run();
-		}
-	}
-
-	return { inserted, updated, skipped };
+  return { inserted, updated, skipped };
 }
 
 export async function getPrices(
-	db: DrizzleD1Database<Record<string, unknown>>,
-	params: GetPricesParams,
+  db: D1Adapter,
+  params: GetPricesParams,
 ) {
-	const filters: SQL[] = [];
+  const conditions: string[] = [];
+  const values: any[] = [];
 
-	if (params.store) {
-		filters.push(eq(onecPrices.store, params.store));
-	}
-	if (params.priceType) {
-		filters.push(eq(onecPrices.priceType, params.priceType));
-	}
-	if (params.sku) {
-		filters.push(like(onecPrices.sku, `%${params.sku}%`));
-	}
-	if (params.name) {
-		filters.push(like(onecPrices.name, `%${params.name}%`));
-	}
-	if (params.updatedSince) {
-		filters.push(gte(onecPrices.updatedAt, params.updatedSince));
-	}
+  if (params.store) { conditions.push("store = ?"); values.push(params.store); }
+  if (params.priceType) { conditions.push("price_type = ?"); values.push(params.priceType); }
+  if (params.sku) { conditions.push("sku LIKE ?"); values.push(`%${params.sku}%`); }
+  if (params.name) { conditions.push("name LIKE ?"); values.push(`%${params.name}%`); }
+  if (params.updatedSince) { conditions.push("updated_at >= ?"); values.push(params.updatedSince); }
 
-	const whereClause = filters.length > 0 ? and(...filters) : undefined;
-	const offset = (params.page - 1) * params.limit;
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const offset = (params.page - 1) * params.limit;
 
-	const rows = await db
-		.select()
-		.from(onecPrices)
-		.where(whereClause)
-		.orderBy(desc(onecPrices.updatedAt))
-		.limit(params.limit)
-		.offset(offset)
-		.all();
+  const rows = await db.prepare(`
+    SELECT * FROM onec_prices ${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?
+  `).bind(...values, params.limit, offset).all();
 
-	const totalRow = await db
-		.select({ count: sql<number>`count(*)` })
-		.from(onecPrices)
-		.where(whereClause)
-		.get();
+  const totalRow = await db.prepare(`
+    SELECT count(*) as count FROM onec_prices ${where}
+  `).bind(...values).first<{ count: number }>();
 
-	const total = totalRow?.count ?? 0;
+  const total = totalRow?.count ?? 0;
 
-	return {
-		data: rows,
-		page: params.page,
-		limit: params.limit,
-		total,
-		total_pages: params.limit > 0 ? Math.ceil(total / params.limit) : 0,
-	};
+  return {
+    data: rows.results,
+    page: params.page,
+    limit: params.limit,
+    total,
+    total_pages: params.limit > 0 ? Math.ceil(total / params.limit) : 0,
+  };
 }
 
 export async function getPriceBySku(
-	db: DrizzleD1Database<Record<string, unknown>>,
-	sku: string,
-	store?: string,
-	priceType?: string,
+  db: D1Adapter, sku: string, store?: string, priceType?: string,
 ) {
-	const filters = [eq(onecPrices.sku, sku)];
+  const conditions = ["sku = ?"];
+  const values: any[] = [sku];
+  if (store) { conditions.push("store = ?"); values.push(store); }
+  if (priceType) { conditions.push("price_type = ?"); values.push(priceType); }
 
-	if (store) {
-		filters.push(eq(onecPrices.store, store));
-	}
-	if (priceType) {
-		filters.push(eq(onecPrices.priceType, priceType));
-	}
-
-	return db
-		.select()
-		.from(onecPrices)
-		.where(and(...filters))
-		.orderBy(desc(onecPrices.updatedAt))
-		.all();
+  return db.prepare(`
+    SELECT * FROM onec_prices WHERE ${conditions.join(" AND ")} ORDER BY updated_at DESC
+  `).bind(...values).all();
 }
 
 export async function getPriceHistory(
-	db: DrizzleD1Database<Record<string, unknown>>,
-	sku: string,
-	store?: string,
-	limit = 50,
+  db: D1Adapter, sku: string, store?: string, limit = 50,
 ) {
-	const filters = [eq(onecPriceHistory.sku, sku)];
+  const conditions = ["sku = ?"];
+  const values: any[] = [sku];
+  if (store) { conditions.push("store = ?"); values.push(store); }
 
-	if (store) {
-		filters.push(eq(onecPriceHistory.store, store));
-	}
-
-	return db
-		.select()
-		.from(onecPriceHistory)
-		.where(and(...filters))
-		.orderBy(desc(onecPriceHistory.changedAt))
-		.limit(limit)
-		.all();
+  return db.prepare(`
+    SELECT * FROM onec_price_history WHERE ${conditions.join(" AND ")} ORDER BY changed_at DESC LIMIT ?
+  `).bind(...values, limit).all();
 }
 
 export async function saveImportLog(
-	db: DrizzleD1Database<Record<string, unknown>>,
-	input: SaveImportLogInput,
+  db: D1Adapter, input: SaveImportLogInput,
 ) {
-	await db
-		.insert(onecImportLog)
-		.values({
-			store: input.store ?? null,
-			priceType: input.priceType ?? null,
-			itemsReceived: input.itemsReceived ?? null,
-			itemsInserted: input.itemsInserted ?? null,
-			itemsUpdated: input.itemsUpdated ?? null,
-			itemsSkipped: input.itemsSkipped ?? null,
-			status: input.status,
-			errorMessage: input.errorMessage ?? null,
-		})
-		.run();
+  await db.prepare(`
+    INSERT INTO onec_import_log (store, price_type, items_received, items_inserted, items_updated, items_skipped, status, error_message)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    input.store ?? null, input.priceType ?? null,
+    input.itemsReceived ?? null, input.itemsInserted ?? null,
+    input.itemsUpdated ?? null, input.itemsSkipped ?? null,
+    input.status, input.errorMessage ?? null,
+  ).run();
 }
 
-export async function getImportLogs(
-	db: DrizzleD1Database<Record<string, unknown>>,
-	limit = 20,
-) {
-	return db
-		.select()
-		.from(onecImportLog)
-		.orderBy(desc(onecImportLog.receivedAt))
-		.limit(limit)
-		.all();
+export async function getImportLogs(db: D1Adapter, limit = 20) {
+  return db.prepare(`SELECT * FROM onec_import_log ORDER BY received_at DESC LIMIT ?`)
+    .bind(limit).all();
 }
 
-export async function getOnecStats(
-	db: DrizzleD1Database<Record<string, unknown>>,
-) {
-	const totalPricesRow = await db
-		.select({ count: sql<number>`count(*)` })
-		.from(onecPrices)
-		.get();
+export async function getOnecStats(db: D1Adapter) {
+  const totalPrices = await db.prepare(`SELECT CAST(count(*) AS INTEGER) as count FROM onec_prices`).first<{ count: number }>();
+  const stores = await db.prepare(`SELECT CAST(count(DISTINCT store) AS INTEGER) as count FROM onec_prices`).first<{ count: number }>();
+  const lastImport = await db.prepare(`SELECT * FROM onec_import_log ORDER BY received_at DESC LIMIT 1`).first<any>();
 
-	const storesRow = await db
-		.select({ count: sql<number>`count(distinct ${onecPrices.store})` })
-		.from(onecPrices)
-		.get();
-
-	const lastImport = await db
-		.select()
-		.from(onecImportLog)
-		.orderBy(desc(onecImportLog.receivedAt))
-		.get();
-
-	return {
-		total_prices: totalPricesRow?.count ?? 0,
-		stores: storesRow?.count ?? 0,
-		last_import_at: lastImport?.receivedAt ?? null,
-		last_import_status: lastImport?.status ?? null,
-	};
+  return {
+    total_prices: totalPrices?.count ?? 0,
+    stores: stores?.count ?? 0,
+    last_import_at: lastImport?.received_at ?? null,
+    last_import_status: lastImport?.status ?? null,
+  };
 }

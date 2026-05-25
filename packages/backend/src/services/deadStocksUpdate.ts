@@ -11,7 +11,7 @@ type DeadStocksUpdatePayload = SaveDeadStocksRequest & { userId?: number };
 
 export async function handleDeadStocksUpdate(c: Context<IEnv>) {
 	try {
-		const db = c.get("drizzle");
+		const db = c.get("db");
 		const payload = await c.req.json<DeadStocksUpdatePayload>().catch(() => null);
 		if (!payload) {
 			return jsonError(c, 400, "INVALID_JSON", "Invalid JSON body");
