@@ -1525,12 +1525,16 @@ export const evotorRoutes = new Hono<IEnv>()
 					tzOffsetMinutes,
 				);
 
+				// Vape-only sales (join positions → product_groups → vape_groups)
 				const salesRows = await db
 					.prepare(
-						`SELECT shop_id as shopUuid, SUM(total) as totalSell
-						FROM receipts
-						WHERE type = 'SELL' AND close_date >= ? AND close_date <= ?
-						GROUP BY shop_id`,
+						`SELECT s.store_uuid as shopUuid, COALESCE(SUM(p.sum), 0) as totalSell
+						FROM positions p
+						JOIN sells s ON p.doc_id = s.doc_id
+						JOIN product_groups pg ON pg.product_name = p.product_name AND pg.store_uuid = s.store_uuid
+						JOIN vape_groups vg ON pg.parent_uuid = vg.group_uuid
+						WHERE s.close_date >= ? AND s.close_date <= ?
+						GROUP BY s.store_uuid`,
 					)
 					.bind(since, until)
 					.all<{ shopUuid: string; totalSell: number | null }>();
