@@ -1,11 +1,14 @@
 import type { D1Database } from "@cloudflare/workers-types";
 
+// Uses acc_group_settings table to avoid conflict with main DuckDB accessories(group_uuid, group_name)
+const TABLE = "acc_group_settings";
+
 export async function createAccessoriesTable(db: D1Database): Promise<void> {
 	try {
 		const createTableQuery = `
-            CREATE TABLE IF NOT EXISTS accessories (
+            CREATE TABLE IF NOT EXISTS ${TABLE} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                uuid TEXT NOT NULL,
+                group_uuid TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -21,13 +24,11 @@ export async function saveOrUpdateUUIDs(
 	db: D1Database,
 ): Promise<void> {
 	try {
-		const deleteQuery = `
-            DELETE FROM accessories;
-        `;
+		const deleteQuery = `DELETE FROM ${TABLE};`;
 		await db.prepare(deleteQuery).run();
 
 		const insertQuery = `
-            INSERT INTO accessories (uuid, created_at)
+            INSERT INTO ${TABLE} (group_uuid, created_at)
             VALUES (?, CURRENT_TIMESTAMP);
         `;
 		const insertStatement = db.prepare(insertQuery);
@@ -42,17 +43,13 @@ export async function saveOrUpdateUUIDs(
 
 export async function getAllUuid(db: D1Database): Promise<string[]> {
 	try {
-		const selectQuery = `
-            SELECT uuid
-            FROM accessories;
-        `;
-
+		const selectQuery = `SELECT group_uuid FROM ${TABLE};`;
 		const statement = db.prepare(selectQuery);
 		const result = await statement.all();
 
 		if (result.success && Array.isArray(result.results)) {
-			const uuids = result.results as Array<{ uuid: string }>;
-			return uuids.map((row) => row.uuid);
+			const uuids = result.results as Array<{ group_uuid: string }>;
+			return uuids.map((row) => row.group_uuid);
 		}
 		console.error(
 			"Не удалось получить UUID, структура результата некорректна:",
