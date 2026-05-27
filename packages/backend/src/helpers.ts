@@ -64,7 +64,7 @@ export const authenticate = async (c: IContext, next: Next) => {
     } else {
       const payload = Object.fromEntries(new URLSearchParams(initData));
       // TEMP: skip signature validation for debugging
-      const isValid = true; // await isValidSign(c.env.BOT_TOKEN, payload);
+      const isValid = await isValidSign(c.env.BOT_TOKEN, payload);
 
       if (!isValid) {
         return jsonError(c, 401, "AUTH_INVALID_SIGNATURE", "Invalid signature");
