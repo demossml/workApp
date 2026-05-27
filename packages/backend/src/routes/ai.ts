@@ -2607,6 +2607,12 @@ export const aiRoutes = new Hono<IEnv>()
 		try {
 			const payload = await c.req.json().catch(() => ({}));
 			const days = Math.max(1, Math.min(90, Number(payload.days) || 14));
+			const kv = c.env.KV;
+			const cacheKey = `stock-health:d${days}`;
+
+			const cached = await kv.get(cacheKey);
+			if (cached) return c.json(JSON.parse(cached));
+
 			const db = c.get("db");
 
 			const stores = await db.prepare(
@@ -2702,17 +2708,20 @@ export const aiRoutes = new Hono<IEnv>()
 				s.outOfStock = s.outOfStock.slice(0, 10);
 			}
 
-			return c.json({
+			const result = {
 				date: new Date().toISOString().slice(0, 10),
 				deadStockCount: deadStock.length,
 				lowStockCount: lowStock.length,
 				outOfStockCount: outOfStock.length,
 				totalLostPerDay: Math.round(outOfStock.reduce((s, i) => s + i.lostRevenuePerDay, 0)),
-			deadStock: deadStock,
-			lowStock: lowStock,
-			outOfStock: outOfStock,
+				deadStock: deadStock,
+				lowStock: lowStock,
+				outOfStock: outOfStock,
 				byShop: Array.from(byShop.values()),
-			});
+			};
+
+			await kv.put(cacheKey, JSON.stringify(result), { expirationTtl: 300 });
+			return c.json(result);
 		} catch (error) {
 			logger.error("stock-health failed", { error });
 			return c.json({ error: "STOCK_HEALTH_FAILED" }, 500);
@@ -2723,6 +2732,12 @@ export const aiRoutes = new Hono<IEnv>()
 		try {
 			const payload = await c.req.json().catch(() => ({}));
 			const days = Math.max(1, Math.min(90, Number(payload.days) || 14));
+			const kv = c.env.KV;
+			const cacheKey = `stock-transfer:d${days}`;
+
+			const cached = await kv.get(cacheKey);
+			if (cached) return c.json(JSON.parse(cached));
+
 			const db = c.get("db");
 
 			const since = new Date();
@@ -2801,10 +2816,13 @@ export const aiRoutes = new Hono<IEnv>()
 
 			recommendations.sort((a, b) => b.soldQty14d - a.soldQty14d);
 
-			return c.json({
+			const result = {
 				date: new Date().toISOString().slice(0, 10),
 				recommendations: recommendations.slice(0, 30),
-			});
+			};
+
+			await kv.put(cacheKey, JSON.stringify(result), { expirationTtl: 300 });
+			return c.json(result);
 		} catch (error) {
 			logger.error("stock-transfer failed", { error });
 			return c.json({ error: "STOCK_TRANSFER_FAILED" }, 500);
