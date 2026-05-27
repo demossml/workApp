@@ -45,7 +45,7 @@ export function AppRouter() {
         <Route path="/evotor/store-opening-report" element={<StoreOpeningReport />} />
         <Route path="/evotor/store-openings-admin" element={<StoreOpeningsAdminReport />} />
         <Route path="/evotor/profit" element={<ProfitReportPage />} />
-        <Route path="/evotor/staff-analysi" element={<StaffRatingsReport />} />
+        <Route path="/evotor/staff-analysis" element={<StaffRatingsReport />} />
         <Route path="/evotor/salary-user-report" element={<SalaryReport />} />
         <Route path="/evotor/sales-today" element={<SalesTodayReport />} />
         <Route path="/evotor/schedules" element={<SchedulesReport />} />

@@ -60,10 +60,12 @@ export function StockHealthWidget() {
   const [deadDays, setDeadDays] = React.useState(14);
   const [exportUrl, setExportUrl] = React.useState<string | null>(null);
   const [exporting, setExporting] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
     setExportUrl(null);
+    setLoading(true);
     const fetchData = async () => {
       try {
         const resp = await fetch("/api/ai/director/stock-health", {
@@ -78,6 +80,8 @@ export function StockHealthWidget() {
         }
       } catch {
         // silent
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
     const fetchTransfer = async () => {
@@ -161,10 +165,15 @@ export function StockHealthWidget() {
   const lowCount = filteredLow.length;
   const oosCount = filteredOOS.length;
 
-  const displayDead = onlyTransfers
-    ? filteredDead.filter((item) => getTransferFor(item) !== null)
-    : filteredDead;
-  const transferCount = filteredDead.filter((item) => getTransferFor(item) !== null).length;
+  const displayDead = React.useMemo(() => {
+    if (!expandedDead) return [] as StockItem[];
+    return onlyTransfers
+      ? filteredDead.filter((item) => getTransferFor(item) !== null)
+      : filteredDead;
+  }, [expandedDead, onlyTransfers, filteredDead]);
+  const transferCount = React.useMemo(() =>
+    expandedDead ? filteredDead.filter((item) => getTransferFor(item) !== null).length : 0,
+    [expandedDead, filteredDead]);
   const lostPerDay = filteredOOS.reduce((s, i) => s + i.lostRevenuePerDay, 0);
 
   const collapseAll = (except?: string) => {
@@ -177,9 +186,14 @@ export function StockHealthWidget() {
   return (
     <div className="mb-4 rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-          Состояние остатков
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+            Состояние остатков
+          </h3>
+          {loading && (
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+          )}
+        </div>
         {shops.length > 1 && (
           <select
             className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
