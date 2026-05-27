@@ -118,18 +118,11 @@ export function StockHealthWidget() {
     return map;
   }, [transferData]);
 
-  if (
-    !data ||
-    (data.deadStockCount === 0 &&
-      data.lowStockCount === 0 &&
-      data.outOfStockCount === 0)
-  )
-    return null;
-
   const shops =
-    data.byShop?.map((s) => ({ uuid: s.shopUuid, name: s.shopName })) || [];
+    data?.byShop?.map((s) => ({ uuid: s.shopUuid, name: s.shopName })) || [];
 
   const getFilteredDead = () => {
+    if (!data) return [];
     if (selectedShop === "all") return data.deadStock;
     const shop = data.byShop?.find(
       (s) => s.shopUuid === selectedShop || s.shopName === selectedShop
@@ -138,6 +131,7 @@ export function StockHealthWidget() {
   };
 
   const getFilteredLow = () => {
+    if (!data) return [];
     if (selectedShop === "all") return data.lowStock;
     const shop = data.byShop?.find(
       (s) => s.shopUuid === selectedShop || s.shopName === selectedShop
@@ -146,6 +140,7 @@ export function StockHealthWidget() {
   };
 
   const getFilteredOOS = () => {
+    if (!data) return [];
     if (selectedShop === "all") return data.outOfStock;
     const shop = data.byShop?.find(
       (s) => s.shopUuid === selectedShop || s.shopName === selectedShop
@@ -182,6 +177,14 @@ export function StockHealthWidget() {
     if (except !== "oos") setExpandedOOS(false);
     setOnlyTransfers(false);
   };
+
+  if (
+    !data ||
+    (data.deadStockCount === 0 &&
+      data.lowStockCount === 0 &&
+      data.outOfStockCount === 0)
+  )
+    return null;
 
   return (
     <div className="mb-4 rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
