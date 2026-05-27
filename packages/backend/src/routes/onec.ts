@@ -142,7 +142,9 @@ export const onecRoutes = new Hono<IEnv>()
 					status:       "error",
 					errorMessage: error instanceof Error ? error.message : String(error),
 				});
-			} catch {}
+			} catch (err) {
+			console.warn("onec: failed to save error status:", String(err));
+		}
 
 			const { status, body } = toApiErrorPayload(error, {
 				code:    "ONEC_IMPORT_FAILED",

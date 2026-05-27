@@ -143,7 +143,8 @@ export async function getDataModeOrDefault(
 ): Promise<DataMode> {
 	try {
 		return await getDataMode(env);
-	} catch {
+	} catch (err) {
+		console.warn("getDataMode failed, using default:", String(err));
 		return DEFAULT_DATA_MODE;
 	}
 }

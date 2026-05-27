@@ -140,7 +140,8 @@ export async function generateAndSendShiftSummary(input: {
 		try {
 			const names = await input.evotor.getEmployeeNamesByUuids([topEmployeeUuid]);
 			topEmployeeName = names[topEmployeeUuid] || topEmployeeUuid;
-		} catch {
+		} catch (err) {
+			console.warn("shiftSummary: employee name lookup failed:", String(err));
 			topEmployeeName = topEmployeeUuid;
 		}
 	}

@@ -128,7 +128,7 @@ export class D1Adapter {
   async exec(sql: string): Promise<void> {
     const statements = sql.split(";").filter(s => s.trim());
     for (const stmt of statements) {
-      try { await dbRun(getDuckDB(), stmt.trim()); } catch {}
+      try { await dbRun(getDuckDB(), stmt.trim()); } catch (err) { console.warn("D1Adapter exec error:", String(err)); }
     }
   }
 
@@ -216,7 +216,7 @@ export async function ensureSchema(): Promise<void> {
     `CREATE TABLE IF NOT EXISTS profitReportSnapshots (createdAt TEXT NOT NULL, createdBy TEXT, since TEXT NOT NULL, until TEXT NOT NULL, payloadJson TEXT NOT NULL)`,
   ];
   for (const sql of tables) {
-    try { await dbRun(getDuckDB(), sql); } catch {}
+    try { await dbRun(getDuckDB(), sql); } catch (err) { console.warn("ensureSchema table error:", String(err)); }
   }
   // Create views mapping sells/positions/payments to workApp D1 schema
   const views = [
@@ -226,7 +226,7 @@ export async function ensureSchema(): Promise<void> {
     `CREATE OR REPLACE VIEW stores AS SELECT DISTINCT store_uuid, store_uuid AS id, store_name AS name FROM sells`,
   ];
   for (const v of views) {
-    try { await dbRun(getDuckDB(), v); } catch {}
+    try { await dbRun(getDuckDB(), v); } catch (err) { console.warn("ensureSchema view error:", String(err)); }
   }
 }
 

@@ -1,15 +1,19 @@
-const { serve } = require("@hono/node-server");
-const { serveStatic } = require("@hono/node-server/serve-static");
-const { Hono } = require("hono");
-const { cors } = require("hono/cors");
-const { api } = require("./api");
-const { authenticate, initialize } = require("./helpers");
-const { errorHandler, requestLogger } = require("./middleware");
-const { healthRoutes } = require("./routes/health");
-const { ensureSchema, createD1Adapter } = require("./db-duckdb");
-const { KVStore } = require("./kv-store");
-const path = require("path");
-const fs = require("fs");
+import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { api } from "./api";
+import { authenticate, initialize } from "./helpers";
+import { errorHandler, requestLogger } from "./middleware";
+import { healthRoutes } from "./routes/health";
+import { ensureSchema, createD1Adapter } from "./db-duckdb";
+import { KVStore } from "./kv-store";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const port = parseInt(process.env.PORT || "8787", 10);
 

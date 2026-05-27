@@ -71,7 +71,7 @@ export function PlanStatusWidget() {
         const json = await resp.json();
         setTransferData(json.recommendations || []);
       }
-    } catch { /* silent */ }
+    } catch (err) { console.warn("PlanStatusWidget: transfer fetch failed:", err) }
     setTransferLoading(false);
   }, [transferShop]);
 

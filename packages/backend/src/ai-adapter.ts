@@ -41,11 +41,12 @@ async function callAnthropic(prompt: string, opts: { maxTokens?: number }): Prom
         { timeout: 60000, maxBuffer: 100 * 1024 }
       );
       return result.toString().trim();
-    } catch {
+    } catch (err) {
+      console.warn("AI adapter local fallback error:", String(err));
       return "AI сервис временно недоступен";
     }
   }
-  
+
   try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -63,7 +64,8 @@ async function callAnthropic(prompt: string, opts: { maxTokens?: number }): Prom
     });
     const data: any = await resp.json();
     return data?.content?.[0]?.text || JSON.stringify(data);
-  } catch {
+  } catch (err) {
+    console.warn("AI adapter Anthropic error:", String(err));
     return "AI сервис временно недоступен";
   }
 }
