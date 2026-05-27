@@ -327,6 +327,7 @@ export async function fetchOrderForecastV2(params: {
   leadTimeDays?: number;
   serviceLevel?: 0.8 | 0.9 | 0.95 | 0.98;
   budgetLimit?: number;
+  analysisWeeks?: number;
 }) {
   const response = await client.api.evotor["order-v2"].$post({
     json: params,

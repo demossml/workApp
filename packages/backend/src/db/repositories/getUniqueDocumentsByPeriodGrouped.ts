@@ -1,4 +1,3 @@
-// @ts-nocheck
 // deadStocks.repository.ts
 
 import { between, sql } from "drizzle-orm";

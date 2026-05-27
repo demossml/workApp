@@ -1,8 +1,7 @@
-// @ts-nocheck
-import type { D1Database } from "@cloudflare/workers-types";
 import type { IEnv } from "../types";
 import type { IndexDocument } from "../evotor/types";
 import { getDocumentsByPeriod } from "../db/repositories/documents";
+import type { AppDB } from "../db-duckdb.js";
 import {
 	createIndexDocumentsTable,
 	createIndexOnType,
@@ -36,7 +35,7 @@ function isIndexFreshEnough(documents: IndexDocument[], untilIso: string): boole
 	return freshnessTargetTs - latestTs <= INDEX_STALE_THRESHOLD_MS;
 }
 
-async function ensureIndexSchema(db: D1Database): Promise<void> {
+async function ensureIndexSchema(db: AppDB): Promise<void> {
 	if (indexSchemaEnsured) return;
 	await createIndexDocumentsTable(db);
 	await createIndexOnType(db);
@@ -44,7 +43,7 @@ async function ensureIndexSchema(db: D1Database): Promise<void> {
 }
 
 export async function getDocumentsFromIndexFirst(
-	db: D1Database,
+	db: AppDB,
 	evo: EvotorForIndexDocuments,
 	shopUuid: string,
 	since: string,

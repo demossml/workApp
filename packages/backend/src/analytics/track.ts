@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { IContext } from "../types";
 import { logger } from "../logger";
 import type { AppEventName } from "./events";

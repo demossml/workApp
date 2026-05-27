@@ -64,7 +64,7 @@ export function AiDirectorTopWidget({ model }: Props) {
             label="Выручка сети"
             value={`${Math.round(topKpi.totalRevenue).toLocaleString("ru-RU")} ₽`}
           />
-          <StatCard label="Чеки" value={topKpi.totalChecks} />
+          <StatCard label="Чеки" value={`${topKpi.totalChecks} шт`} />
           <StatCard
             label="Средний чек"
             value={`${Math.round(topKpi.avgCheck).toLocaleString("ru-RU")} ₽`}

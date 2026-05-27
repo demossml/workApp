@@ -1,4 +1,3 @@
-// @ts-nocheck
 // drizzle-orm replaced with D1Adapter
 import type { IEnv } from "../types";
 import { getDocumentsFromIndexFirst } from "./indexDocumentsFallback";

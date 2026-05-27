@@ -61,7 +61,7 @@ async function callAnthropic(prompt: string, opts: { maxTokens?: number }): Prom
       }),
       signal: AbortSignal.timeout(55000),
     });
-    const data = await resp.json();
+    const data: any = await resp.json();
     return data?.content?.[0]?.text || JSON.stringify(data);
   } catch {
     return "AI сервис временно недоступен";

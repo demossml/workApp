@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Hono } from "hono";
 import type { IEnv } from "../types";
 import { logger } from "../logger";
@@ -210,13 +209,12 @@ export const onecRoutes = new Hono<IEnv>()
 			const query   = validate(OnecGetPriceBySkuQuerySchema, c.req.query());
 			const drizzle = c.get("db");
 
-			const rows = await getPriceBySku(drizzle, sku, query.store, query.price_type);
-
-			if (rows.length === 0) {
+			const result = await getPriceBySku(drizzle, sku, query.store, query.price_type);
+			if (result.results.length === 0) {
 				return jsonError(c, 404, "ONEC_SKU_NOT_FOUND", `Цена для SKU «${sku}» не найдена`);
 			}
 
-			return c.json({ data: rows });
+			return c.json({ data: result.results });
 		} catch (error) {
 			const { status, body } = toApiErrorPayload(error, {
 				code:    "ONEC_GET_PRICE_BY_SKU_FAILED",

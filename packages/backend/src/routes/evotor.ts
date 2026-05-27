@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Hono } from "hono";
 import type { IEnv } from "../types";
 import { logger } from "../logger";
@@ -339,7 +338,7 @@ async function getFinancialDataDirectFromEvotor(
 	]);
 	const grandTotalCashOutcome = calculateTotalSum(cashOutcomeData);
 	const totalCashBalance = Object.values(cashBalanceByShop).reduce(
-		(sum, value) => sum + Number(value || 0),
+		(sum: number, value: any) => sum + Number(value || 0),
 		0,
 	);
 	const { netRevenue, averageCheck } = computeRevenueSummary(
@@ -647,7 +646,7 @@ async function getFinancialDataFromDbAggregates(
 
 	const grandTotalCashOutcome = calculateTotalSum(cashOutcomeData);
 	const totalCashBalance = Object.values(cashBalanceByShop).reduce(
-		(sum, value) => sum + Number(value || 0),
+		(sum: number, value: any) => sum + Number(value || 0),
 		0,
 	);
 
@@ -810,11 +809,10 @@ async function loadFinancialDataByMode(input: {
 		let shopNamesMap = await getShopNamesFromDb(input.c);
 		if (Object.keys(shopNamesMap).length === 0 && shopUuids.length > 0) {
 			try {
-				shopNamesMap = await getShopNamesByUuidsWithFallback(
+				shopNamesMap = await getShopUuidsWithFallback(
 					input.c,
 					evo,
-					shopUuids,
-				);
+				) as any;
 			} catch (error) {
 				logger.warn("Financial DB mode: failed to resolve shop names fallback", {
 					error,
@@ -1211,26 +1209,26 @@ export const evotorRoutes = new Hono<IEnv>()
 				response.byShop = salesResults.map(({ shopId, shopName, sales }) => ({
 					shopId,
 					shopName,
-					sales: Object.entries(sales).map(([name, data]) => ({
-						name,
-						quantity: data.quantitySale,
-						sum: data.sum,
-					})),
+				sales: Object.entries(sales).map(([name, data]: [string, any]) => ({
+					name,
+					quantity: data.quantitySale,
+					sum: data.sum,
+				})),
 				}));
 					const total: Record<string, { quantity: number; sum: number }> = {};
 					const nonAccessoriesTotal: Record<
 						string,
 						{ quantity: number; sum: number }
 					> = {};
-					for (const { sales } of salesResults) {
-						for (const [name, data] of Object.entries(sales)) {
-							if (!total[name]) total[name] = { quantity: 0, sum: 0 };
-							total[name].quantity += data.quantitySale;
-							total[name].sum += data.sum;
-						}
+				for (const { sales } of salesResults) {
+					for (const [name, data] of Object.entries(sales) as [string, any][]) {
+						if (!total[name]) total[name] = { quantity: 0, sum: 0 };
+						total[name].quantity += data.quantitySale;
+						total[name].sum += data.sum;
 					}
-					for (const { nonAccessoriesSales } of salesResults) {
-						for (const [name, data] of Object.entries(nonAccessoriesSales)) {
+				}
+				for (const { nonAccessoriesSales } of salesResults) {
+					for (const [name, data] of Object.entries(nonAccessoriesSales) as [string, any][]) {
 							if (!nonAccessoriesTotal[name]) {
 								nonAccessoriesTotal[name] = { quantity: 0, sum: 0 };
 							}
@@ -1265,7 +1263,7 @@ export const evotorRoutes = new Hono<IEnv>()
 				const telegramUserId = c.var.userId || userId || "";
 				const employees = await evo.getEmployees();
 				const employee = employees.find(
-					(emp) => emp.lastName === telegramUserId,
+					(emp: any) => emp.lastName === telegramUserId,
 				);
 				const employeeUuid = employee?.uuid || "";
 				const employeeStores = employee?.stores || [];
@@ -1317,11 +1315,11 @@ export const evotorRoutes = new Hono<IEnv>()
 						{
 						shopId: shopUuid,
 						shopName,
-						sales: Object.entries(salesData).map(([name, data]) => ({
-							name,
-							quantity: data.quantitySale,
-							sum: data.sum,
-						})),
+				sales: Object.entries(salesData).map(([name, data]: [string, any]) => ({
+					name,
+					quantity: data.quantitySale,
+					sum: data.sum,
+				})),
 					},
 					];
 					response.total = response.byShop[0].sales;
@@ -1594,7 +1592,7 @@ export const evotorRoutes = new Hono<IEnv>()
 				logger.debug(
 					"План отсутствует/подозрителен, пересчитываем по товарам каждого магазина",
 				);
-				datPlan = await c.var.evotor.getPlan(newDate, (shopId) =>
+				datPlan = await c.var.evotor.getPlan(newDate, (shopId: any) =>
 					getProductsByGroup(db, shopId, groupIdsVape),
 				);
 				await updatePlan(datPlan, datePlan, db);
@@ -1693,7 +1691,7 @@ export const evotorRoutes = new Hono<IEnv>()
 				];
 
 				const groups = groupsData.filter(
-					(group) => !excludedUuids.includes(group.uuid),
+					(group: any) => !excludedUuids.includes(group.uuid),
 				);
 
 				assert(groups, "not an result");
@@ -1805,10 +1803,10 @@ export const evotorRoutes = new Hono<IEnv>()
 						Object.keys(plan).length === 0 ||
 						Object.values(plan).every((value) => Number(value) === 5200);
 					if (shouldRegeneratePlan) {
-						plan = await c.var.evotor.getPlan(date, (shopId) =>
+						plan = await c.var.evotor.getPlan(date, (shopId: any) =>
 							getProductsByGroup(db, shopId, groupIdsVape),
 						);
-						await updatePlan(plan, datePlan, db);
+						await updatePlan(plan as Record<string, number>, datePlan, db);
 					}
 					const resolvedPlan = plan ?? {};
 
@@ -1904,7 +1902,7 @@ export const evotorRoutes = new Hono<IEnv>()
 	.get("/settings-config", async (c) => {
 		try {
 			const db = c.get("db");
-			await createAccessoriesTable(db);
+			await createAccessoriesTable(db!);
 			await createSalaryBonusTable(db);
 
 			const shopIds: string[] =
@@ -1918,7 +1916,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			const baseShopUuid = filteredUuids[0];
 
 			const groupOptions = baseShopUuid
-				? await c.var.evotor.getGroupsByNameUuid(baseShopUuid).catch((error) => {
+				? await c.var.evotor.getGroupsByNameUuid(baseShopUuid).catch((error: any) => {
 						logger.warn("settings-config: Evotor groupOptions failed", { error });
 						return [];
 					})
@@ -1927,7 +1925,7 @@ export const evotorRoutes = new Hono<IEnv>()
 			const selectedGroupNames = baseShopUuid
 				? await c.var.evotor
 						.getGroupsByName(baseShopUuid, selectedGroupUuids)
-						.catch((error) => {
+						.catch((error: any) => {
 							logger.warn("settings-config: Evotor selectedGroupNames failed", {
 								error,
 							});
@@ -1956,8 +1954,8 @@ export const evotorRoutes = new Hono<IEnv>()
 			const { groups } = validate(AccessoryGroupsSaveSchema, data);
 
 			const db = c.get("settingsDb");
-			await createAccessoriesTable(db);
-			await saveOrUpdateUUIDs(groups, db);
+			await createAccessoriesTable(db!);
+			await saveOrUpdateUUIDs(groups, db!);
 
 			const shopIds: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
 			const filteredUuids = shopIds.filter(
@@ -2014,7 +2012,7 @@ export const evotorRoutes = new Hono<IEnv>()
 		const shops = await c.var.evotor.getShops();
 
 		const shopOptions: Record<string, string> = shops.reduce(
-			(acc, shop) => {
+			(acc: any, shop: any) => {
 				acc[shop.uuid] = shop.name;
 				return acc;
 			},

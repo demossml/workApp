@@ -1,6 +1,5 @@
-// @ts-nocheck
-import type { D1Database } from "@cloudflare/workers-types";
 import type { IndexDocument } from "../../evotor/types";
+import type { AppDB } from "../../db-duckdb.js";
 
 export type SalesHourlyRow = {
 	shopId: string;
@@ -10,7 +9,7 @@ export type SalesHourlyRow = {
 	checks: number;
 };
 
-export async function ensureSalesHourlyTable(db: D1Database): Promise<void> {
+export async function ensureSalesHourlyTable(db: AppDB): Promise<void> {
 	await db
 		.prepare(
 			"CREATE TABLE IF NOT EXISTS sales_hourly (id INTEGER PRIMARY KEY AUTOINCREMENT, shop_id TEXT NOT NULL, day_of_week INTEGER NOT NULL, hour INTEGER NOT NULL, revenue REAL NOT NULL DEFAULT 0, checks INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT (datetime('now')))"
@@ -62,7 +61,7 @@ export function buildSalesHourlyRows(
 }
 
 export async function upsertSalesHourlyRows(
-	db: D1Database,
+	db: AppDB,
 	rows: SalesHourlyRow[],
 ): Promise<void> {
 	if (rows.length === 0) return;
@@ -80,7 +79,7 @@ export async function upsertSalesHourlyRows(
 }
 
 export async function getSalesHourly(
-	db: D1Database,
+	db: AppDB,
 	shopIds?: string[],
 ): Promise<SalesHourlyRow[]> {
 	await ensureSalesHourlyTable(db);

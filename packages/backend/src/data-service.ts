@@ -1,4 +1,3 @@
-// @ts-nocheck
 // DuckDB Data Service — replaces direct Evotor API calls
 import { createD1Adapter } from "./db-duckdb";
 import type { D1Adapter } from "./db-duckdb";

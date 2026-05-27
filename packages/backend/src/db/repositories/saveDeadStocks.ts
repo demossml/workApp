@@ -1,10 +1,8 @@
-// @ts-nocheck
-// repositories/deadStocks.ts
 import type { DeadStockItem } from "../../types";
-import { deadStocks } from "../schema/deadStocks";
+import type { AppDB } from "../../db-duckdb.js";
 
 export const saveDeadStocks = async (
-	db: ReturnType<typeof import("drizzle-orm/d1").drizzle>,
+	db: AppDB,
 	shopUuid: string,
 	items: DeadStockItem[],
 ): Promise<void> => {
@@ -13,7 +11,6 @@ export const saveDeadStocks = async (
 	}
 
 	const document_number = crypto.randomUUID();
-
 	const d = new Date();
 	const document_date = [
 		String(d.getDate()).padStart(2, "0"),
@@ -21,18 +18,25 @@ export const saveDeadStocks = async (
 		d.getFullYear(),
 	].join(".");
 
-	const values = items.map((item) => ({
-		shop_uuid: shopUuid,
-		name: item.name,
-		quantity: item.quantity,
-		sold: item.sold,
-		lastSaleDate: item.lastSaleDate,
-		mark: item.mark ?? null,
-		moveCount: item.moveCount ?? null,
-		moveToStore: item.moveToStore ?? null,
-		document_number,
-		document_date,
-	}));
+	const snapshot_date = new Date().toISOString().slice(0, 10);
 
-	await db.insert(deadStocks).values(values).run();
+	for (const item of items) {
+		await db
+			.prepare(
+				`INSERT INTO dead_stocks (shop_uuid, name, quantity, sold, last_sale_date, mark, move_count, move_to_store, snapshot_date)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			)
+			.bind(
+				shopUuid,
+				item.name,
+				item.quantity,
+				item.sold,
+				item.lastSaleDate,
+				item.mark ?? null,
+				item.moveCount ?? null,
+				item.moveToStore ?? null,
+				snapshot_date,
+			)
+			.run();
+	}
 };

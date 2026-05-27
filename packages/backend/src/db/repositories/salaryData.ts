@@ -1,6 +1,6 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
-export async function createSalaryTable(db: D1Database): Promise<void> {
+export async function createSalaryTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery = `
             CREATE TABLE IF NOT EXISTS salaryData (
@@ -22,7 +22,7 @@ export async function createSalaryTable(db: D1Database): Promise<void> {
 }
 
 export async function saveSalaryData(
-	db: D1Database,
+	db: AppDB,
 	dataReport: Record<string, any>,
 ): Promise<void> {
 	try {
@@ -75,7 +75,7 @@ export async function getSalaryData(
 	employeeUuid: string,
 	date: string,
 	shopUuid: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<Record<string, any> | null> {
 	try {
 		const queryCheck = `

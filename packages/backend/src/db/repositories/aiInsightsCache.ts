@@ -1,140 +1,53 @@
-// @ts-nocheck
-import { eq, sql } from "drizzle-orm";
-import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { aiInsightsCache } from "../schema/aiInsightsCache";
 import type { AiInsightsData } from "../../types";
+import type { AppDB } from "../../db-duckdb.js";
 
-/**
- * Генерирует ключ кэша на основе параметров запроса
- */
-function generateCacheKey(
-	shopUuid: string,
-	startDate: string,
-	endDate: string,
-): string {
+function generateCacheKey(shopUuid: string, startDate: string, endDate: string): string {
 	return `ai_insights:${shopUuid}:${startDate}:${endDate}`;
 }
 
-/**
- * Получает кэшированные AI insights, если они существуют и не истекли
- */
 export async function getAiInsightsFromCache(
-	db: DrizzleD1Database<Record<string, unknown>>,
-	shopUuid: string,
-	startDate: string,
-	endDate: string,
+	db: AppDB, shopUuid: string, startDate: string, endDate: string,
 ): Promise<AiInsightsData | null> {
 	const cacheKey = generateCacheKey(shopUuid, startDate, endDate);
 	const now = Math.floor(Date.now() / 1000);
-
-	const cached = await db
-		.select()
-		.from(aiInsightsCache)
-		.where(eq(aiInsightsCache.cacheKey, cacheKey))
-		.get();
-
-	if (!cached) {
+	const cached = await db.prepare("SELECT * FROM ai_insights_cache WHERE cache_key = ?").bind(cacheKey).first();
+	if (!cached) return null;
+	if (cached.expires_at < now) {
+		await db.prepare("DELETE FROM ai_insights_cache WHERE cache_key = ?").bind(cacheKey).run();
 		return null;
 	}
-
-	// Проверяем, не истек ли кэш
-	if (cached.expiresAt < now) {
-		// Кэш истек, удаляем запись
-		await db
-			.delete(aiInsightsCache)
-			.where(eq(aiInsightsCache.cacheKey, cacheKey))
-			.run();
-		return null;
-	}
-
-	// Возвращаем кэшированные данные
+	const parsed = JSON.parse(cached.data_json);
 	return {
-		insights: JSON.parse(cached.insights),
-		anomalies: JSON.parse(cached.anomalies),
-		patterns: JSON.parse(cached.patterns),
-		documentsCount: cached.documentsCount,
+		insights: parsed.insights || [],
+		anomalies: parsed.anomalies || [],
+		patterns: parsed.patterns || [],
+		documentsCount: parsed.documentsCount || 0,
 	};
 }
 
-/**
- * Сохраняет результаты AI анализа в кэш
- * TTL: 1 час
- */
 export async function saveAiInsightsToCache(
-	db: DrizzleD1Database<Record<string, unknown>>,
-	shopUuid: string,
-	startDate: string,
-	endDate: string,
-	data: AiInsightsData,
+	db: AppDB, shopUuid: string, startDate: string, endDate: string, data: AiInsightsData,
 ): Promise<void> {
 	const cacheKey = generateCacheKey(shopUuid, startDate, endDate);
 	const now = Math.floor(Date.now() / 1000);
-	const ttl = 3600; // 1 час в секундах
-	const expiresAt = now + ttl;
-
-	// Удаляем старую запись, если существует
-	await db
-		.delete(aiInsightsCache)
-		.where(eq(aiInsightsCache.cacheKey, cacheKey))
-		.run();
-
-	// Вставляем новую запись
-	await db
-		.insert(aiInsightsCache)
-		.values({
-			cacheKey,
-			shopUuid,
-			startDate,
-			endDate,
-			insights: JSON.stringify(data.insights),
-			anomalies: JSON.stringify(data.anomalies),
-			patterns: JSON.stringify(data.patterns),
-			documentsCount: data.documentsCount || 0,
-			expiresAt,
-		})
-		.run();
+	const expiresAt = now + 3600;
+	await db.prepare("DELETE FROM ai_insights_cache WHERE cache_key = ?").bind(cacheKey).run();
+	await db.prepare("INSERT INTO ai_insights_cache (cache_key, data_json, created_at, expires_at) VALUES (?, ?, ?, ?)")
+		.bind(cacheKey, JSON.stringify(data), now, expiresAt).run();
 }
 
-/**
- * Очищает истекшие записи кэша
- * Рекомендуется вызывать периодически (например, раз в день)
- */
-export async function cleanupExpiredCache(
-	db: DrizzleD1Database<Record<string, unknown>>,
-): Promise<number> {
+export async function cleanupExpiredCache(db: AppDB): Promise<number> {
 	const now = Math.floor(Date.now() / 1000);
-
-	const result = await db
-		.delete(aiInsightsCache)
-		.where(sql`${aiInsightsCache.expiresAt} < ${now}`)
-		.run();
-
+	const result = await db.prepare("DELETE FROM ai_insights_cache WHERE expires_at < ?").bind(now).run();
 	return result.meta.changes || 0;
 }
 
-/**
- * Инвалидирует кэш для конкретного магазина и периода
- */
-export async function invalidateAiInsightsCache(
-	db: DrizzleD1Database<Record<string, unknown>>,
-	shopUuid: string,
-	startDate: string,
-	endDate: string,
-): Promise<void> {
+export async function invalidateAiInsightsCache(db: AppDB, shopUuid: string, startDate: string, endDate: string): Promise<void> {
 	const cacheKey = generateCacheKey(shopUuid, startDate, endDate);
-
-	await db
-		.delete(aiInsightsCache)
-		.where(eq(aiInsightsCache.cacheKey, cacheKey))
-		.run();
+	await db.prepare("DELETE FROM ai_insights_cache WHERE cache_key = ?").bind(cacheKey).run();
 }
 
-/**
- * Очищает весь кэш AI insights
- */
-export async function clearAllAiInsightsCache(
-	db: DrizzleD1Database<Record<string, unknown>>,
-): Promise<number> {
-	const result = await db.delete(aiInsightsCache).run();
+export async function clearAllAiInsightsCache(db: AppDB): Promise<number> {
+	const result = await db.prepare("DELETE FROM ai_insights_cache").run();
 	return result.meta.changes || 0;
 }

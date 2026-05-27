@@ -1,10 +1,10 @@
-// @ts-nocheck
-import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types";
+import { DuckPreparedStatement } from "../../db-duckdb.js";
+import type { AppDB } from "../../db-duckdb.js";
 
 type ShopDate = { shopId: string; date: string };
 
 export async function ensureEmployeeKpiDailyTable(
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	await db.batch([
 		db.prepare(
@@ -32,7 +32,7 @@ function normalizeShopDates(input: ShopDate[]): ShopDate[] {
 }
 
 export async function recomputeEmployeeKpiDailyForShopDates(
-	db: D1Database,
+	db: AppDB,
 	shopDatesInput: ShopDate[],
 ): Promise<void> {
 	const shopDates = normalizeShopDates(shopDatesInput);
@@ -184,7 +184,7 @@ export async function recomputeEmployeeKpiDailyForShopDates(
 		rows.set(metricKey, existing);
 	}
 
-	const statements: D1PreparedStatement[] = [];
+	const statements: DuckPreparedStatement[] = [];
 	const deleteStmt = db.prepare(
 		"DELETE FROM employee_kpi_daily WHERE date = ? AND shop_uuid = ?",
 	);

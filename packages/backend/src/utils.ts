@@ -1,9 +1,5 @@
-// @ts-nocheck
-import type {
-	D1Database,
-	D1PreparedStatement,
-	R2Bucket,
-} from "@cloudflare/workers-types";
+import type { R2Bucket } from "@cloudflare/workers-types";
+import { DuckPreparedStatement } from "./db-duckdb.js";
 import { z } from "zod";
 import type { Evotor } from "./evotor";
 import type {
@@ -137,7 +133,7 @@ export function getIsoTimestamp(isEndOfDay = false, dayOffset = 0): string {
 	return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${fractionalSeconds}+00:00`;
 }
 
-export function formatDate(date: Date): string {
+export const formatDate = (date: Date): string => {
 	// console.log(date)
 	const day = String(date.getDate()).padStart(2, "0"); // Добавляем ведущий ноль, если день меньше 10
 	const month = String(date.getMonth() + 1).padStart(2, "0"); // Месяцы начинаются с 0, поэтому добавляем 1
@@ -310,7 +306,7 @@ export function generateDateRanges(
 	}
 
 	// Форматирование даты в ISO
-	function formatDate(date: Date): string {
+	const formatDate = (date: Date): string => {
 		return date.toISOString();
 	}
 
@@ -447,7 +443,7 @@ export function sortStockData(
 		}, {} as StockData);
 }
 
-export async function createSalaryBonusTable(db: D1Database): Promise<void> {
+export async function createSalaryBonusTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery = `
             CREATE TABLE IF NOT EXISTS salary_bonus (
@@ -468,7 +464,7 @@ export async function saveSalaryAndBonus(
 	data: string,
 	salary: number,
 	bonus: number,
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	try {
 		// Проверяем, существует ли запись с указанной датой
@@ -513,7 +509,7 @@ interface SalaryBonus {
 /// Функция для получения самой последней зарплаты и премии из таблицы salary_bonus до указанной даты
 export async function getSalaryAndBonus(
 	date: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<SalaryBonus | null> {
 	try {
 		// Запрос для получения самой последней зарплаты и премии до указанной даты
@@ -544,7 +540,7 @@ export async function getSalaryAndBonus(
 }
 
 // Функция для создания таблицы accessories, если она не существует
-export async function createAccessoriesTable(db: D1Database): Promise<void> {
+export async function createAccessoriesTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery = `
             CREATE TABLE IF NOT EXISTS accessories (
@@ -563,7 +559,7 @@ export async function createAccessoriesTable(db: D1Database): Promise<void> {
 
 export async function saveOrUpdateUUIDs(
 	uuids: string[],
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	try {
 		// Удаляем все существующие записи из таблицы accessories
@@ -590,7 +586,7 @@ export async function saveOrUpdateUUIDs(
 }
 
 // Функция для получения всех UUID из таблицы accessories
-export async function getAllUuid(db: D1Database): Promise<string[]> {
+export async function getAllUuid(db: AppDB): Promise<string[]> {
 	try {
 		const selectQuery = `
             SELECT uuid
@@ -618,7 +614,7 @@ export async function getAllUuid(db: D1Database): Promise<string[]> {
 }
 
 // Функция для создания таблицы plan, если она не существует
-export async function createPlanTable(db: D1Database): Promise<void> {
+export async function createPlanTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery = `
             CREATE TABLE IF NOT EXISTS plan (
@@ -648,7 +644,7 @@ interface CheckResult {
 export async function updatePlan(
 	planByShops: PlanByShops,
 	date: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	try {
 		// Проверяем, есть ли запись с текущей датой
@@ -709,7 +705,7 @@ interface PlanItem {
 
 export async function getPlan(
 	date: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<Record<string, number> | null> {
 	try {
 		const query = `
@@ -807,7 +803,7 @@ export function sortSalesSummary(
 }
 
 export async function getUuidsByParentUuidList(
-	db: D1Database,
+	db: AppDB,
 	parentUuids: string[],
 ): Promise<string[]> {
 	try {
@@ -834,7 +830,7 @@ export async function getUuidsByParentUuidList(
 }
 
 // Функция для создания таблицы salaryData, если она не существует
-export async function createSalaryTable(db: D1Database): Promise<void> {
+export async function createSalaryTable(db: AppDB): Promise<void> {
 	try {
 		// SQL-запрос для создания таблицы
 		const createTableQuery = `
@@ -861,7 +857,7 @@ export async function createSalaryTable(db: D1Database): Promise<void> {
 
 // Функция для сохранения данных отчета в таблицу salaryData
 export async function saveSalaryData(
-	db: D1Database,
+	db: AppDB,
 	dataReport: Record<string, any>,
 ): Promise<void> {
 	try {
@@ -926,7 +922,7 @@ export async function getSalaryData(
 	employeeUuid: string,
 	date: string,
 	shopUuid: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<Record<string, any> | null> {
 	try {
 		// SQL-запрос для проверки наличия записи с указанной датой и shopUuid
@@ -1040,7 +1036,7 @@ export interface OpenShopRecord {
 export async function getData(
 	date: string,
 	shopUuid: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<OpenShopRecord | null> {
 	try {
 		// console.log(
@@ -1176,7 +1172,7 @@ export async function getTelegramFileUpl(
 
 export async function getSalesDataByDate(
 	date: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<Record<
 	string,
 	{ datePlan: number; dataSales: number; dataQuantity: Record<string, number> }
@@ -1237,7 +1233,7 @@ export async function getSalesDataByDate(
 	}
 }
 
-export async function createProductsTableIfNotExists(db: D1Database) {
+export async function createProductsTableIfNotExists(db: AppDB) {
 	try {
 		// console.log("Начало создания таблицы shop");
 
@@ -1288,7 +1284,7 @@ export async function updateOrInsertData(
 		shopId: string;
 		name: string;
 	}[],
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	try {
 		console.log("Запуск операции по вставке данных...");
@@ -1341,7 +1337,7 @@ export async function updateOrInsertData(
 }
 
 export async function getGroupsByNameUuid(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 ): Promise<{ name: string; uuid: string }[] | null> {
 	try {
@@ -1374,7 +1370,7 @@ export async function getGroupsByNameUuid(
 }
 
 export async function getProductsByGroup(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 	groupIds: string[],
 ): Promise<string[]> {
@@ -1505,7 +1501,7 @@ export function transformScheduleDataD(
 	return result;
 }
 
-export async function createScheduleTable(db: D1Database): Promise<void> {
+export async function createScheduleTable(db: AppDB): Promise<void> {
 	try {
 		const createTableSQL = `
             CREATE TABLE IF NOT EXISTS schedule (
@@ -1544,7 +1540,7 @@ export async function createScheduleTable(db: D1Database): Promise<void> {
 	}
 }
 
-export async function deleteScheduleTable(db: D1Database): Promise<void> {
+export async function deleteScheduleTable(db: AppDB): Promise<void> {
 	try {
 		const deleteQuery = `
             DROP TABLE IF EXISTS schedule;
@@ -1557,7 +1553,7 @@ export async function deleteScheduleTable(db: D1Database): Promise<void> {
 }
 
 export async function updateSchedule(
-	db: D1Database,
+	db: AppDB,
 	schedules: TransformedSchedule[],
 ): Promise<void> {
 	try {
@@ -1620,7 +1616,7 @@ export async function updateSchedule(
 }
 
 export async function getScheduleByPeriodAndShopId(
-	db: D1Database,
+	db: AppDB,
 	dateStart: string,
 	dateEnd: string,
 	shopUuid: string,
@@ -1656,7 +1652,7 @@ export async function getScheduleByPeriodAndShopId(
 }
 
 export async function getSchedule(
-	db: D1Database,
+	db: AppDB,
 	date: string,
 	shopUuid: string,
 ): Promise<TransformedSchedule[] | null> {
@@ -1686,7 +1682,7 @@ export async function getSchedule(
 }
 
 export async function getScheduleByPeriod(
-	db: D1Database,
+	db: AppDB,
 	dateStart: string,
 	dateEnd: string,
 ): Promise<TransformedSchedule[] | null> {
@@ -2013,7 +2009,7 @@ export async function analyzeSalesDocuments(docs: Document[], aiWithRun: any) {
 	}
 }
 
-export async function createIndexDocumentsTable(db: D1Database): Promise<void> {
+export async function createIndexDocumentsTable(db: AppDB): Promise<void> {
 	try {
 		await db.batch([
 			db.prepare(`
@@ -2045,7 +2041,7 @@ export async function createIndexDocumentsTable(db: D1Database): Promise<void> {
 	}
 }
 
-export async function createIndexOnType(db: D1Database): Promise<void> {
+export async function createIndexOnType(db: AppDB): Promise<void> {
 	try {
 		await db
 			.prepare(
@@ -2072,7 +2068,7 @@ export async function createIndexOnType(db: D1Database): Promise<void> {
  * @throws Ошибка базы данных при неудачной вставке
  */
 export async function saveNewIndexDocuments(
-	db: D1Database,
+	db: AppDB,
 	documents: IndexDocument[],
 ): Promise<void> {
 	if (!documents?.length) {
@@ -2113,7 +2109,7 @@ export async function saveNewIndexDocuments(
 					doc.transactions ? JSON.stringify(doc.transactions) : null,
 				);
 			})
-			.filter((stmt): stmt is D1PreparedStatement => stmt !== null);
+			.filter((stmt): stmt is DuckPreparedStatement => stmt !== null);
 
 		if (statements.length === 0) {
 			console.log("No valid documents to insert");
@@ -2131,7 +2127,7 @@ export async function saveNewIndexDocuments(
 }
 
 // export async function saveNewIndexDocuments(
-// 	db: D1Database,
+// 	db: AppDB,
 // 	documents: IndexDocument[],
 // ): Promise<void> {
 // 	if (!documents?.length) {
@@ -2187,7 +2183,7 @@ export async function saveNewIndexDocuments(
 // 		);
 
 // 		const validInserts = batch.filter(
-// 			(stmt): stmt is D1PreparedStatement => stmt !== null,
+// 			(stmt): stmt is DuckPreparedStatement => stmt !== null,
 // 		);
 
 // 		if (validInserts.length) {
@@ -2208,7 +2204,7 @@ interface ShopLastDocument {
 }
 
 export async function getLatestCloseDates(
-	db: D1Database,
+	db: AppDB,
 	shopIds: string[],
 ): Promise<ShopLastDocument[]> {
 	if (!shopIds?.length) {
@@ -2245,7 +2241,7 @@ export async function getLatestCloseDates(
 		now.setUTCHours(3, 0, 0, 0); // начало дня + 3 часа UTC
 
 		// Преобразуем дату в нужный формат
-		function formatDate(date: Date): string {
+		const formatDate = (date: Date): string => {
 			return date.toISOString().replace("Z", "+0000");
 		}
 
@@ -2299,7 +2295,7 @@ export function buildSinceUntilFromDocuments(
 }
 
 export async function getDocumentsByPeriod(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 	since: string,
 	until: string,
@@ -2354,7 +2350,7 @@ function parseTransactions(value: unknown): Transaction[] {
 }
 
 export async function getDocumentsByCashOutcomeByPeriod(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 	since: string,
 	until: string,
@@ -2396,7 +2392,7 @@ export async function getDocumentsByCashOutcomeByPeriod(
 }
 
 export async function getDocumentsBySalesPeriod(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 	since: string,
 	until: string,
@@ -2438,7 +2434,7 @@ export async function getDocumentsBySalesPeriod(
 }
 
 export async function getDocumentsBySales(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 	since: string,
 	until: string,
@@ -2479,7 +2475,7 @@ export async function getDocumentsBySales(
 	}
 }
 
-import JSZip from "jszip";
+import * as JSZip from "jszip";
 
 export type CandleBinance = {
 	symbol: string;
@@ -2558,8 +2554,9 @@ export const downloadCandleBinance2 = async (
 //
 // pnpm add -D @types/unzip-stream
 import { Readable } from "node:stream";
-import unzip from "unzip-stream";
+import * as unzip from "unzip-stream";
 import type { DeadStockItem } from "./types";
+import type { AppDB } from "./db-duckdb.js";
 
 export const saveToR2 = async (
 	r2: R2Bucket,
@@ -2583,7 +2580,7 @@ export const saveToR2 = async (
 export const downloadCandleBinance3 = async (
 	params: CandleBinance,
 	r2: R2Bucket,
-	db: D1Database,
+	db: AppDB,
 ): Promise<string[]> => {
 	await createCandesTable(db);
 	const fileName = `${params.symbol}-${params.interval}-${params.year}-${params.month}.zip`;
@@ -2654,7 +2651,7 @@ export const syncBinanceAll = async (
 	interval: string,
 	since: string,
 	r2: R2Bucket,
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> => {
 	const date = new Date(since);
 	const today = new Date();
@@ -2737,7 +2734,7 @@ export const parsedCandles = async (
 		});
 };
 
-export async function createCandesTable(db: D1Database): Promise<void> {
+export async function createCandesTable(db: AppDB): Promise<void> {
 	try {
 		await db.batch([
 			db.prepare(`
@@ -2779,7 +2776,7 @@ export async function createCandesTable(db: D1Database): Promise<void> {
 }
 
 export async function saveCandlesToD1(
-	db: D1Database,
+	db: AppDB,
 	candles: CandleBinanseCsv[],
 ): Promise<void> {
 	if (!candles.length) {
@@ -2874,7 +2871,7 @@ export async function saveFileToR2(
 }
 
 // Функция для создания таблицы plan, если она не существует
-export async function createOpenStorsTable(db: D1Database): Promise<void> {
+export async function createOpenStorsTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery =
 			"CREATE TABLE IF NOT EXISTS openStors (" +
@@ -2893,7 +2890,7 @@ export async function createOpenStorsTable(db: D1Database): Promise<void> {
 }
 
 export async function updateOpenStore(
-	db: D1Database,
+	db: AppDB,
 	userId: string,
 	data: { cash: number | null; sign: string | null },
 ): Promise<void> {
@@ -2914,7 +2911,7 @@ export async function updateOpenStore(
 }
 
 export async function saveOpenStorsTable(
-	db: D1Database,
+	db: AppDB,
 	data: {
 		date: string;
 		userId: string;
@@ -2942,7 +2939,7 @@ export async function saveOpenStorsTable(
 }
 
 // export async function isOpenStoreExists(
-// 	db: D1Database,
+// 	db: AppDB,
 // 	userId: string,
 // 	dateDDMMYYYY: string,
 // ): Promise<boolean> {
@@ -2977,7 +2974,7 @@ export async function saveOpenStorsTable(
 // }
 
 export async function isOpenStoreExists(
-	db: D1Database,
+	db: AppDB,
 	userId: string,
 	dateDDMMYYYY: string,
 ): Promise<boolean> {
@@ -3016,7 +3013,7 @@ export async function isOpenStoreExists(
 }
 
 export async function getOpenStoreDetails(
-	db: D1Database,
+	db: AppDB,
 	userId: string,
 	dateDDMMYYYY: string,
 ): Promise<{
@@ -3109,7 +3106,7 @@ export async function getOpenStoreDetails(
 	}
 }
 
-export async function createDeadStocksTable(db: D1Database): Promise<void> {
+export async function createDeadStocksTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery =
 			"CREATE TABLE IF NOT EXISTS deadStocks (" +
@@ -3133,7 +3130,7 @@ export async function createDeadStocksTable(db: D1Database): Promise<void> {
 }
 
 export async function saveDeadStocks(
-	db: D1Database,
+	db: AppDB,
 	shopUuid: string,
 	items: DeadStockItem[],
 ): Promise<void> {

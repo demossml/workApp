@@ -1,9 +1,8 @@
-// @ts-nocheck
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 let schemaEnsured = false;
 
-const ensureSchema = async (db: D1Database) => {
+const ensureSchema = async (db: AppDB) => {
 	if (schemaEnsured) return;
 
 	await db
@@ -37,7 +36,7 @@ export interface ProfitReportSnapshotPayload {
 }
 
 export const saveProfitReportSnapshot = async (
-	db: D1Database,
+	db: AppDB,
 	input: {
 		createdBy: string | null;
 		since: string;
@@ -48,7 +47,7 @@ export const saveProfitReportSnapshot = async (
 	await ensureSchema(db);
 	const createdAt = new Date().toISOString();
 
-	const result = await db
+	const result: any = await db
 		.prepare(
 			`INSERT INTO profitReportSnapshots (createdAt, createdBy, since, until, payloadJson)
 			 VALUES (?, ?, ?, ?, ?)`,
@@ -63,13 +62,13 @@ export const saveProfitReportSnapshot = async (
 		.run();
 
 	return {
-		id: Number(result.meta.last_row_id),
+		id: Number((result.meta as any).last_row_id),
 		createdAt,
 	};
 };
 
 export const listProfitReportSnapshots = async (
-	db: D1Database,
+	db: AppDB,
 	limit = 20,
 ) => {
 	await ensureSchema(db);
@@ -94,7 +93,7 @@ export const listProfitReportSnapshots = async (
 };
 
 export const getProfitReportSnapshotById = async (
-	db: D1Database,
+	db: AppDB,
 	id: number,
 ): Promise<
 	| {

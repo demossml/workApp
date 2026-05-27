@@ -1,7 +1,7 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 export async function getUuidsByParentUuidList(
-	db: D1Database,
+	db: AppDB,
 	parentUuids: string[],
 ): Promise<string[]> {
 	try {
@@ -21,7 +21,7 @@ export async function getUuidsByParentUuidList(
 	}
 }
 
-export async function createProductsTableIfNotExists(db: D1Database) {
+export async function createProductsTableIfNotExists(db: AppDB) {
 	try {
 		const createTableSQL = `
             CREATE TABLE IF NOT EXISTS shopProduct (
@@ -66,7 +66,7 @@ export async function updateOrInsertData(
 		shopId: string;
 		name: string;
 	}[],
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	try {
 		const insertQuery = `
@@ -98,7 +98,7 @@ export async function updateOrInsertData(
 }
 
 export async function getGroupsByNameUuid(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 ): Promise<{ name: string; uuid: string }[] | null> {
 	try {
@@ -125,7 +125,7 @@ export async function getGroupsByNameUuid(
 }
 
 export async function getProductsByGroup(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 	groupIds: string[],
 ): Promise<string[]> {

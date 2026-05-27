@@ -14,6 +14,7 @@ import { useTelegramFullscreenLayout } from "./hooks/useTelegramFullscreenLayout
 import { AppRouter } from "@app/router";
 import { BottomNavigation } from "@widgets/navigation";
 import { fetchDataMode, queryKeys } from "@shared/api";
+import { ErrorBoundary } from "@shared/ui/states/ErrorBoundary";
 
 function App() {
   const { data } = useEmployeeRole();
@@ -114,7 +115,9 @@ function App() {
       )}
       {/* <div className="pb-20"> */} {/* отступ снизу под меню */}
       <main className="app-shell-main">
-        <AppRouter />
+        <ErrorBoundary>
+          <AppRouter />
+        </ErrorBoundary>
       </main>
       {(() => {
         const allowedRoles = ["SUPERADMIN", "CASHIER", "ADMIN"];

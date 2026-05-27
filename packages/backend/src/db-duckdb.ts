@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Database } from "duckdb";
 import { existsSync, mkdirSync, copyFileSync, unlinkSync } from "fs";
 import { join } from "path";
@@ -69,9 +68,9 @@ function dbFirst(db: Database, sql: string, ...params: any[]): Promise<any> {
 }
 
 // D1-compatible prepared statement
-class D1PreparedStatement {
-  private sql: string;
-  private params: any[] = [];
+export class DuckPreparedStatement {
+  readonly sql: string;
+  params: any[] = [];
 
   constructor(sql: string) {
     this.sql = sql;
@@ -119,9 +118,11 @@ class D1PreparedStatement {
   }
 }
 
+export type AppDB = D1Adapter;
+
 export class D1Adapter {
-  prepare(sql: string): D1PreparedStatement {
-    return new D1PreparedStatement(sql);
+  prepare(sql: string): DuckPreparedStatement {
+    return new DuckPreparedStatement(sql);
   }
 
   async exec(sql: string): Promise<void> {
@@ -131,11 +132,10 @@ export class D1Adapter {
     }
   }
 
-  async batch<T = any>(statements: { sql: string; params?: any[] }[]): Promise<any[]> {
+  async batch<T = any>(statements: DuckPreparedStatement[]): Promise<any[]> {
     const results: any[] = [];
-    for (const { sql, params = [] } of statements) {
-      const stmt = this.prepare(sql);
-      const result = await stmt.bind(...params).all<T>();
+    for (const stmt of statements) {
+      const result = await stmt.all<T>();
       results.push(result);
     }
     return results;
@@ -151,20 +151,20 @@ export function createD1Adapter(): D1Adapter {
 }
 
 /** Adapter that uses the persistent settings DB (survives restarts). */
-class SettingsD1Adapter extends D1Adapter {
-  prepare(sql: string): D1PreparedStatement {
-    return new SettingsD1PreparedStatement(sql);
+class SettingsDuckAdapter extends D1Adapter {
+  prepare(sql: string): DuckPreparedStatement {
+    return new SettingsDuckPreparedStatement(sql);
   }
 }
 
-class SettingsD1PreparedStatement extends D1PreparedStatement {
+class SettingsDuckPreparedStatement extends DuckPreparedStatement {
   async all<T = any>(): Promise<{ success: boolean; results: T[]; meta: any }> {
     try {
       const db = getSettingsDB();
       const results = await dbAll(db, (this as any).sql, ...(this as any).params);
       return { success: true, results: results as T[], meta: { changes: results.length } };
     } catch (err: any) {
-      console.error("SettingsD1Adapter.all error:", err.message);
+      console.error("SettingsDuckAdapter.all error:", err.message);
       return { success: false, results: [], meta: { error: err.message } };
     }
   }
@@ -175,7 +175,7 @@ class SettingsD1PreparedStatement extends D1PreparedStatement {
       await dbRun(db, (this as any).sql, ...(this as any).params);
       return { success: true, meta: { changes: 1 } };
     } catch (err: any) {
-      console.error("SettingsD1Adapter.run error:", err.message);
+      console.error("SettingsDuckAdapter.run error:", err.message);
       return { success: false, meta: { changes: 0 } };
     }
   }
@@ -189,7 +189,7 @@ class SettingsD1PreparedStatement extends D1PreparedStatement {
 }
 
 export function createSettingsAdapter(): D1Adapter {
-  if (!_settingsAdapter) _settingsAdapter = new SettingsD1Adapter();
+  if (!_settingsAdapter) _settingsAdapter = new SettingsDuckAdapter();
   return _settingsAdapter;
 }
 

@@ -1,6 +1,6 @@
-// @ts-nocheck
 // drizzle-orm replaced with D1Adapter
 // DrizzleD1Database replaced with D1Adapter
+import type { D1Adapter } from "../db-duckdb";
 import type { IEnv } from "../types";
 import { Evotor } from "../evotor";
 import { sendTelegramMessage } from "../../utils/sendTelegramMessage";
@@ -141,7 +141,6 @@ export async function runDailyTelegramDigestAndAlerts(bindings: IEnv["Bindings"]
 	const prevByShop = new Map(prevMetrics.map((x) => [x.shopUuid, x]));
 	const shopsList = shops || [];
 	const openedSet = new Set(openingsToday.map((x) => x.shopUuid));
-
 	for (const sub of subscriptions) {
 		const settings = (sub.settingsJson
 			? (JSON.parse(sub.settingsJson) as TgSubscriptionSettings)

@@ -1,10 +1,7 @@
 import { logger } from "../logger";
-import type {
-	D1Database,
-	// D1PreparedStatement,
-} from "@cloudflare/workers-types";
+import type { AppDB } from "../db-duckdb.js";
 
-export async function createSalaryBonusTable(db: D1Database): Promise<void> {
+export async function createSalaryBonusTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery = `
             CREATE TABLE IF NOT EXISTS salary_bonus (
@@ -25,7 +22,7 @@ export async function saveSalaryAndBonus(
 	data: string,
 	salary: number,
 	bonus: number,
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	try {
 		// Проверяем, существует ли запись с указанной датой
@@ -70,7 +67,7 @@ interface SalaryBonus {
 /// Функция для получения самой последней зарплаты и премии из таблицы salary_bonus до указанной даты
 export async function getSalaryAndBonus(
 	date: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<SalaryBonus | null> {
 	try {
 		// Запрос для получения самой последней зарплаты и премии до указанной даты
@@ -101,7 +98,7 @@ export async function getSalaryAndBonus(
 }
 
 // Функция для создания таблицы accessories, если она не существует
-export async function createAccessoriesTable(db: D1Database): Promise<void> {
+export async function createAccessoriesTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery = `
             CREATE TABLE IF NOT EXISTS accessories (
@@ -120,7 +117,7 @@ export async function createAccessoriesTable(db: D1Database): Promise<void> {
 
 export async function saveOrUpdateUUIDs(
 	uuids: string[],
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	try {
 		// Удаляем все существующие записи из таблицы accessories
@@ -147,7 +144,7 @@ export async function saveOrUpdateUUIDs(
 }
 
 // Функция для получения всех UUID из таблицы accessories
-export async function getAllUuid(db: D1Database): Promise<string[]> {
+export async function getAllUuid(db: AppDB): Promise<string[]> {
 	try {
 		const selectQuery = `
             SELECT uuid
@@ -175,7 +172,7 @@ export async function getAllUuid(db: D1Database): Promise<string[]> {
 }
 
 // Функция для создания таблицы plan, если она не существует
-export async function createPlanTable(db: D1Database): Promise<void> {
+export async function createPlanTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery = `
             CREATE TABLE IF NOT EXISTS plan (
@@ -205,7 +202,7 @@ interface CheckResult {
 export async function updatePlan(
 	planByShops: PlanByShops,
 	date: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	try {
 		// Проверяем, есть ли запись с текущей датой
@@ -266,7 +263,7 @@ interface PlanItem {
 
 export async function getPlan(
 	date: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<Record<string, number> | null> {
 	try {
 		const query = `
@@ -303,7 +300,7 @@ export async function getPlan(
 }
 
 export async function getUuidsByParentUuidList(
-	db: D1Database,
+	db: AppDB,
 	parentUuids: string[],
 ): Promise<string[]> {
 	try {
@@ -330,7 +327,7 @@ export async function getUuidsByParentUuidList(
 }
 
 // Функция для создания таблицы salaryData, если она не существует
-export async function createSalaryTable(db: D1Database): Promise<void> {
+export async function createSalaryTable(db: AppDB): Promise<void> {
 	try {
 		// SQL-запрос для создания таблицы
 		const createTableQuery = `
@@ -357,7 +354,7 @@ export async function createSalaryTable(db: D1Database): Promise<void> {
 
 // Функция для сохранения данных отчета в таблицу salaryData
 export async function saveSalaryData(
-	db: D1Database,
+	db: AppDB,
 	dataReport: Record<string, any>,
 ): Promise<void> {
 	try {
@@ -422,7 +419,7 @@ export async function getSalaryData(
 	employeeUuid: string,
 	date: string,
 	shopUuid: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<Record<string, any> | null> {
 	try {
 		// SQL-запрос для проверки наличия записи с указанной датой и shopUuid

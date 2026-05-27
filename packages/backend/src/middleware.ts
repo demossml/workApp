@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Context, Next } from "hono";
 import type { z } from "zod";
 import type { IEnv } from "./types";

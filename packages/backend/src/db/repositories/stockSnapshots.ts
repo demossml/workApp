@@ -1,10 +1,10 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 export type StockSnapshotData = Record<string, { sum: number; quantity: number }>;
 
 let schemaEnsured = false;
 
-const ensureSchema = async (db: D1Database) => {
+const ensureSchema = async (db: AppDB) => {
 	if (schemaEnsured) return;
 
 	await db
@@ -37,12 +37,12 @@ const ensureSchema = async (db: D1Database) => {
 	schemaEnsured = true;
 };
 
-export const createStockSnapshotsTable = async (db: D1Database) => {
+export const createStockSnapshotsTable = async (db: AppDB) => {
 	await ensureSchema(db);
 };
 
 export const getStockSnapshot = async (
-	db: D1Database,
+	db: AppDB,
 	shopUuid: string,
 	groupsKey: string,
 ): Promise<{ stockData: StockSnapshotData; updatedAt: string } | null> => {
@@ -72,7 +72,7 @@ export const getStockSnapshot = async (
 };
 
 export const saveStockSnapshot = async (
-	db: D1Database,
+	db: AppDB,
 	input: {
 		shopUuid: string;
 		groupsKey: string;

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // drizzle-orm replaced with D1Adapter
 import type { IEnv } from "../types";
 import { Evotor } from "../evotor";
@@ -269,7 +268,6 @@ export async function runTempoAlerts(bindings: IEnv["Bindings"]) {
 			});
 		}
 	}
-
 	for (const sub of subscriptions) {
 		try {
 			await sendTelegramMessage(sub.chatId, text, bindings.BOT_TOKEN);

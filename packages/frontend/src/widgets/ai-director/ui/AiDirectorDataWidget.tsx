@@ -87,7 +87,7 @@ export function AiDirectorDataWidget({ model }: Props) {
                   <tr key={row.shopUuid} className="border-t border-gray-100 dark:border-gray-800">
                     <td className="py-2 pr-3">{row.shopName}</td>
                     <td className="py-2 pr-3">{Math.round(row.revenue)} ₽</td>
-                    <td className="py-2 pr-3">{row.checks}</td>
+                    <td className="py-2 pr-3">{row.checks} шт</td>
                     <td className="py-2 pr-3">{Math.round(row.averageCheck)} ₽</td>
                   </tr>
                 ))}
@@ -127,7 +127,7 @@ export function AiDirectorDataWidget({ model }: Props) {
                   <tr key={row.employeeUuid} className="border-t border-gray-100 dark:border-gray-800">
                     <td className="py-2 pr-3">{row.name}</td>
                     <td className="py-2 pr-3">{Math.round(row.revenue)} ₽</td>
-                    <td className="py-2 pr-3">{row.checks}</td>
+                    <td className="py-2 pr-3">{row.checks} шт</td>
                     <td className="py-2 pr-3">{Math.round(row.averageCheck)} ₽</td>
                   </tr>
                 ))}

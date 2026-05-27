@@ -42,18 +42,19 @@ export function useSalesData(params?: UseSalesDataParams): UseSalesDataReturn {
         shopUuid: params?.shopUuid,
       })) as SalesData,
     enabled: params?.enabled !== false,
-    placeholderData: (previousData) => previousData,
     staleTime: 30_000,
     refetchInterval: pollIntervalMs > 0 ? pollIntervalMs : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 
+  const isRefetching = query.isFetching && !query.isLoading;
+
   return {
-    data: query.data || null,
-    loading: query.isLoading,
+    data: isRefetching ? null : (query.data || null),
+    loading: query.isLoading || isRefetching,
     error: query.error?.message || null,
     lastUpdate: query.dataUpdatedAt ? new Date(query.dataUpdatedAt) : null,
-    isUpdating: query.isFetching && !query.isLoading,
+    isUpdating: isRefetching,
   };
 }

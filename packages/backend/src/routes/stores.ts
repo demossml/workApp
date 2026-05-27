@@ -49,7 +49,7 @@ export const storesRoutes = new Hono<IEnv>()
 			const db = c.env.DB;
 			const currentUserId = c.var.userId || "";
 
-			const rawShops = await c.var.evotor.getShopNameUuids().catch(async (error) => {
+			const rawShops = await c.var.evotor.getShopNameUuids().catch(async (error: any) => {
 				logger.warn("Evotor shops-opening-status fallback to DB stores", { error });
 				const rows = await db
 					.prepare("SELECT store_uuid as uuid, name FROM stores")
@@ -305,7 +305,7 @@ export const storesRoutes = new Hono<IEnv>()
 			const shopsList = shops ?? [];
 
 			const shopNameMap = shopsList.reduce(
-				(acc, shop) => {
+				(acc: any, shop: any) => {
 					acc[shop.uuid] = shop.name;
 					return acc;
 				},

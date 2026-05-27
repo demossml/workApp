@@ -1,8 +1,8 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 let schemaEnsured = false;
 
-const ensureSchema = async (db: D1Database) => {
+const ensureSchema = async (db: AppDB) => {
 	if (schemaEnsured) return;
 
 	await db
@@ -22,7 +22,7 @@ const ensureSchema = async (db: D1Database) => {
 };
 
 export const getOpeningsReportCache = async (
-	db: D1Database,
+	db: AppDB,
 	startDate: string,
 	endDate: string,
 ): Promise<{ payload: unknown; updatedAt: string } | null> => {
@@ -47,7 +47,7 @@ export const getOpeningsReportCache = async (
 };
 
 export const saveOpeningsReportCache = async (
-	db: D1Database,
+	db: AppDB,
 	startDate: string,
 	endDate: string,
 	payload: unknown,

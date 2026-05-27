@@ -1,12 +1,12 @@
-// @ts-nocheck
-import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types";
+import { DuckPreparedStatement } from "../../db-duckdb.js";
+import type { AppDB } from "../../db-duckdb.js";
 import type {
 	NormalizedPosition,
 	NormalizedReceipt,
 	NormalizedSets,
 } from "../../analytics/normalize";
 
-export async function ensureNormalizedTables(db: D1Database): Promise<void> {
+export async function ensureNormalizedTables(db: AppDB): Promise<void> {
 	await db.batch([
 		db.prepare(
 			"CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, number TEXT NOT NULL, shop_id TEXT NOT NULL, close_date TEXT NOT NULL, open_user_uuid TEXT, type TEXT, total REAL NOT NULL DEFAULT 0)",
@@ -36,7 +36,7 @@ export async function ensureNormalizedTables(db: D1Database): Promise<void> {
 }
 
 export async function upsertReceipts(
-	db: D1Database,
+	db: AppDB,
 	receipts: NormalizedReceipt[],
 ): Promise<void> {
 	if (receipts.length === 0) return;
@@ -58,7 +58,7 @@ export async function upsertReceipts(
 }
 
 export async function upsertReceiptPositions(
-	db: D1Database,
+	db: AppDB,
 	positions: NormalizedPosition[],
 ): Promise<void> {
 	if (positions.length === 0) return;
@@ -82,10 +82,10 @@ export async function upsertReceiptPositions(
 }
 
 export async function upsertReferenceSets(
-	db: D1Database,
+	db: AppDB,
 	sets: NormalizedSets,
 ): Promise<void> {
-	const statements: D1PreparedStatement[] = [];
+	const statements: DuckPreparedStatement[] = [];
 
 	if (sets.products.size > 0) {
 		const stmt = db.prepare(
@@ -120,7 +120,7 @@ export async function upsertReferenceSets(
 }
 
 export async function upsertStoresWithNames(
-	db: D1Database,
+	db: AppDB,
 	stores: Array<{ uuid: string; name?: string | null }>,
 ): Promise<void> {
 	if (stores.length === 0) return;

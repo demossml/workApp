@@ -1,4 +1,4 @@
-import type { KVNamespace } from "@cloudflare/workers-types";
+import type { KVStore } from "../kv-store";
 import { buildWeatherKey } from "./kvCache";
 
 export type WeatherSummary = {
@@ -26,7 +26,7 @@ export async function getWeatherSummary(
 	lat: number,
 	lon: number,
 	date: string,
-	kv?: KVNamespace,
+	kv?: KVStore,
 ): Promise<WeatherSummary | null> {
 	const key = buildWeatherKey(lat, lon, date);
 	if (kv) {

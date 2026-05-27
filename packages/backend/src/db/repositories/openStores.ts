@@ -1,8 +1,9 @@
-import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
+import type { R2Bucket } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 let schemaEnsured = false;
 
-async function ensureOpenStorsSchema(db: D1Database): Promise<void> {
+async function ensureOpenStorsSchema(db: AppDB): Promise<void> {
 	if (schemaEnsured) return;
 
 	await db
@@ -39,7 +40,7 @@ const getUtcRangeByDateDDMMYYYY = (dateDDMMYYYY: string) => {
 	return { startDate, endDate };
 };
 
-export async function createOpenStorsTable(db: D1Database): Promise<void> {
+export async function createOpenStorsTable(db: AppDB): Promise<void> {
 	try {
 		await ensureOpenStorsSchema(db);
 	} catch (err) {
@@ -48,7 +49,7 @@ export async function createOpenStorsTable(db: D1Database): Promise<void> {
 }
 
 export async function updateOpenStore(
-	db: D1Database,
+	db: AppDB,
 	userId: string,
 	shopUuid: string,
 	data: { cash: number | null; sign: string | null; ok: number | null },
@@ -71,7 +72,7 @@ export async function updateOpenStore(
 }
 
 export async function saveOpenStorsTable(
-	db: D1Database,
+	db: AppDB,
 	data: {
 		date: string;
 		userId: string;
@@ -104,7 +105,7 @@ export async function saveOpenStorsTable(
 }
 
 export async function isOpenStoreExists(
-	db: D1Database,
+	db: AppDB,
 	userId: string,
 	shopUuid: string,
 	dateDDMMYYYY: string,
@@ -135,7 +136,7 @@ export async function isOpenStoreExists(
 }
 
 export async function getLatestShopOpeningForDate(
-	db: D1Database,
+	db: AppDB,
 	shopUuid: string,
 	dateDDMMYYYY: string,
 ): Promise<{ userId: string; openedByName: string | null; date: string } | null> {
@@ -160,7 +161,7 @@ export async function getLatestShopOpeningForDate(
 }
 
 export async function getOpeningsByDate(
-	db: D1Database,
+	db: AppDB,
 	dateDDMMYYYY: string,
 ): Promise<Array<{ shopUuid: string; userId: string; openedByName: string | null; date: string }>> {
 	try {
@@ -189,7 +190,7 @@ export async function getOpeningsByDate(
 }
 
 export async function getLatestUserOpeningForDate(
-	db: D1Database,
+	db: AppDB,
 	userId: string,
 	dateDDMMYYYY: string,
 ): Promise<{ shopUuid: string; openedByName: string | null; date: string } | null> {
@@ -214,7 +215,7 @@ export async function getLatestUserOpeningForDate(
 }
 
 export async function getOpenStoreDetails(
-	db: D1Database,
+	db: AppDB,
 	r2: R2Bucket,
 	userId: string,
 	shopUuid: string,
@@ -331,7 +332,7 @@ export interface OpenStoreReportRow {
 }
 
 export async function getOpenStoreRowsByPeriod(
-	db: D1Database,
+	db: AppDB,
 	sinceIso: string,
 	untilIso: string,
 ): Promise<OpenStoreReportRow[]> {

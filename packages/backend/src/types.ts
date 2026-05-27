@@ -9,6 +9,7 @@ export type IEnv = {
     BOT_TOKEN: string;
     EVOTOR_API_TOKEN: string;
     R2_PUBLIC_URL: string;
+    R2?: any;
     KV?: KVStore;
     AI_KV?: KVStore;
     ANTHROPIC_API_KEY?: string;
@@ -47,6 +48,7 @@ export type IEnv = {
     kv?: KVStore;
     r2Dir?: string;
     r2Url: string;
+    settingsDb?: D1Adapter;
   };
 };
 

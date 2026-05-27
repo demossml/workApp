@@ -1,8 +1,8 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 let schemaEnsured = false;
 
-const ensureSchema = async (db: D1Database) => {
+const ensureSchema = async (db: AppDB) => {
 	if (schemaEnsured) return;
 
 	await db
@@ -43,7 +43,7 @@ export type OpeningPhotoDigestCacheRow = {
 };
 
 export const getOpeningPhotoDigestCache = async (
-	db: D1Database,
+	db: AppDB,
 	date: string,
 	shopUuid: string,
 	openedByUserId: string,
@@ -92,7 +92,7 @@ export const getOpeningPhotoDigestCache = async (
 };
 
 export const saveOpeningPhotoDigestCache = async (
-	db: D1Database,
+	db: AppDB,
 	payload: {
 		date: string;
 		shopUuid: string;

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Hono } from "hono";
 import type { IEnv } from "../types";
 import type { Context } from "hono";
@@ -10,12 +9,12 @@ import { getMonitoringSnapshot } from "../monitoring";
 import { getPlan } from "../db/repositories/plan";
 import { getApiLatencyValuesByPeriod } from "../db/repositories/metricsMinute";
 import { logger } from "../logger";
-import type { D1Database } from "@cloudflare/workers-types";
 import { aggregateShopFinancialFromDocuments } from "../contracts/financialAggregation";
 import { getData as getOpeningByDateAndShop } from "../db/repositories/openShops";
 import { getAllUuid as getAccessoryGroupUuids } from "../db/repositories/accessories";
 import { getProductsByGroup } from "../db/repositories/products";
 import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
+import type { AppDB } from "../db-duckdb.js";
 
 function percentile(values: number[], p: number) {
 	if (values.length === 0) return 0;
@@ -52,14 +51,14 @@ function parseMskHourFromIso(iso: string | null | undefined): number | null {
 }
 
 async function resolveOpenHourFromOpenings(
-	db: D1Database,
+	db: AppDB,
 	targetDate: Date,
 	shopUuids: string[],
 ): Promise<number | null> {
 	if (shopUuids.length === 0) return null;
 	const openingDate = toMskDDMMYYYY(targetDate);
 	const openings = await Promise.all(
-		shopUuids.map((shopUuid) => getOpeningByDateAndShop(openingDate, shopUuid, db)),
+		shopUuids.map((shopUuid: string) => getOpeningByDateAndShop(openingDate, shopUuid, db)),
 	);
 	const hours = openings
 		.map((row) => parseMskHourFromIso(row?.dateTime))
@@ -100,7 +99,7 @@ function trimmedMean(values: number[], trimRatio = 0.1): number {
 }
 
 async function computeAutoTotalSalesPlan(
-	db: D1Database,
+	db: AppDB,
 	evo: IEnv["Variables"]["evotor"],
 	targetDate: Date,
 	options?: {
@@ -130,7 +129,7 @@ async function computeAutoTotalSalesPlan(
 			? options.shopUuidsFilter
 			: await evo.getShopUuids();
 	const docsByShop = await Promise.all(
-		shopUuids.map((shopUuid) =>
+		shopUuids.map((shopUuid: string) =>
 			getDocumentsFromIndexFirst(db, evo, shopUuid, since, until, {
 				types: ["SELL", "PAYBACK"],
 			}),
@@ -195,7 +194,7 @@ async function computeAutoTotalSalesPlan(
 }
 
 async function computeHourlyPlanWeights(
-	db: D1Database,
+	db: AppDB,
 	evo: IEnv["Variables"]["evotor"],
 	targetDate: Date,
 	options: {
@@ -224,7 +223,7 @@ async function computeHourlyPlanWeights(
 			? options.shopUuidsFilter
 			: await evo.getShopUuids();
 	const docsByShop = await Promise.all(
-		shopUuids.map((shopUuid) =>
+		shopUuids.map((shopUuid: string) =>
 			getDocumentsFromIndexFirst(db, evo, shopUuid, since, until, {
 				types: ["SELL", "PAYBACK"],
 			}),
@@ -275,7 +274,7 @@ function dayNumToDateString(dayNum: number) {
 
 let analyticsSchemaEnsured = false;
 
-async function ensureAnalyticsSchema(db: D1Database) {
+async function ensureAnalyticsSchema(db: AppDB) {
 	if (analyticsSchemaEnsured) return;
 	await db
 		.prepare(
@@ -755,12 +754,12 @@ export const analyticsRoutes = new Hono<IEnv>()
 			const dayStart = new Date(`${sinceDate}T00:00:00Z`).getTime();
 			const dayEnd = new Date(`${untilDate}T23:59:59Z`).getTime();
 
-			const latencyRows = await getApiLatencyValuesByPeriod(
+			const latencyResult = await getApiLatencyValuesByPeriod(
 				c.get("db"),
 				dayStart,
 				dayEnd,
 			);
-			const historicalLatencies = latencyRows.map((row) => Number(row.value || 0));
+			const historicalLatencies = latencyResult.results.map((row: any) => Number(row.value || 0));
 			const fallbackLatencies = snapshot.recent.map((x) => x.latencyMs);
 			const latencySeries =
 				historicalLatencies.length > 0 ? historicalLatencies : fallbackLatencies;
@@ -896,7 +895,7 @@ export const analyticsRoutes = new Hono<IEnv>()
 		const evo = c.var.evotor;
 		const allShopUuids = await evo.getShopUuids();
 		const allShopNamesMap = await evo.getShopNamesByUuids(allShopUuids);
-		const shopUuids = allShopUuids.filter((shopUuid) => {
+		const shopUuids = allShopUuids.filter((shopUuid: any) => {
 			if (shopUuidFilter && shopUuid !== shopUuidFilter) return false;
 			if (shopNameFilter && allShopNamesMap[shopUuid] !== shopNameFilter) return false;
 			return true;
@@ -911,7 +910,7 @@ export const analyticsRoutes = new Hono<IEnv>()
 			: null;
 
 		const stores = await Promise.all(
-			shopUuids.map(async (shopUuid) => {
+			shopUuids.map(async (shopUuid: any) => {
 				const documents = await getDocumentsFromIndexFirst(
 					c.get("db"),
 					evo,
@@ -1017,7 +1016,7 @@ export const analyticsRoutes = new Hono<IEnv>()
 		});
 
 		const byShop = await Promise.all(
-			shopUuids.map(async (shopUuid) => {
+			shopUuids.map(async (shopUuid: any) => {
 				const documents = await getDocumentsFromIndexFirst(
 					c.get("db"),
 					evo,
@@ -1149,7 +1148,7 @@ export const analyticsRoutes = new Hono<IEnv>()
 			}
 			return fallbackMap;
 		});
-		const shopUuids = allShopUuids.filter((shopUuid) => {
+		const shopUuids = allShopUuids.filter((shopUuid: any) => {
 			if (shopUuidFilter && shopUuid !== shopUuidFilter) return false;
 			if (shopNameFilter && allShopNamesMap[shopUuid] !== shopNameFilter) return false;
 			return true;
@@ -1167,7 +1166,7 @@ export const analyticsRoutes = new Hono<IEnv>()
 		});
 
 		const refundsRaw = await Promise.all(
-			shopUuids.map(async (shopUuid) => {
+			shopUuids.map(async (shopUuid: any) => {
 				const docs = await getDocumentsFromIndexFirst(
 					c.get("db"),
 					evo,
@@ -1271,7 +1270,7 @@ export const analyticsRoutes = new Hono<IEnv>()
 		const allShopNamesMap = await evo.getShopNamesByUuids(allShopUuids);
 		const shopUuidFilter = c.req.query("shopUuid") || "";
 		const shopNameFilter = c.req.query("shopName") || "";
-		const shopUuids = allShopUuids.filter((shopUuid) => {
+		const shopUuids = allShopUuids.filter((shopUuid: any) => {
 			if (shopUuidFilter && shopUuid !== shopUuidFilter) return false;
 			if (shopNameFilter && allShopNamesMap[shopUuid] !== shopNameFilter) return false;
 			return true;
@@ -1280,7 +1279,7 @@ export const analyticsRoutes = new Hono<IEnv>()
 		const dateEndIso = formatDateWithTime(dateObj, true);
 
 		const docsByShop = await Promise.all(
-			shopUuids.map(async (shopUuid) => ({
+			shopUuids.map(async (shopUuid: any) => ({
 				shopUuid,
 				docs: await getDocumentsFromIndexFirst(
 					c.get("db"),
@@ -1341,7 +1340,7 @@ export const analyticsRoutes = new Hono<IEnv>()
 		const accessoryProductUuidsByShop = new Map<string, Set<string>>();
 		if (accessoryGroupUuids.length > 0) {
 			const productsByShop = await Promise.all(
-				shopUuids.map(async (shopUuid) => ({
+				shopUuids.map(async (shopUuid: any) => ({
 					shopUuid,
 					productUuids: await getProductsByGroup(
 						c.get("db"),
@@ -1469,7 +1468,7 @@ export const analyticsRoutes = new Hono<IEnv>()
 		const allShopNamesMap = await c.var.evotor.getShopNamesByUuids(allShopUuids);
 		const shopUuidFilter = c.req.query("shopUuid") || "";
 		const shopNameFilter = c.req.query("shopName") || "";
-		const filteredShopUuids = allShopUuids.filter((shopUuid) => {
+		const filteredShopUuids = allShopUuids.filter((shopUuid: any) => {
 			if (shopUuidFilter && shopUuid !== shopUuidFilter) return false;
 			if (shopNameFilter && allShopNamesMap[shopUuid] !== shopNameFilter)
 				return false;

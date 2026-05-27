@@ -1,4 +1,4 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 interface PlanByShops {
 	[shopUuid: string]: number;
@@ -9,7 +9,7 @@ interface PlanItem {
 	sum: number;
 }
 
-export async function createPlanTable(db: D1Database): Promise<void> {
+export async function createPlanTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery = `
             CREATE TABLE IF NOT EXISTS plan (
@@ -28,7 +28,7 @@ export async function createPlanTable(db: D1Database): Promise<void> {
 export async function updatePlan(
 	planByShops: PlanByShops,
 	date: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	try {
 		const entries = Object.entries(planByShops);
@@ -77,7 +77,7 @@ export async function updatePlan(
 
 export async function getPlan(
 	date: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<Record<string, number> | null> {
 	try {
 		const query = `

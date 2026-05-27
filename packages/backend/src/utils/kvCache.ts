@@ -1,4 +1,4 @@
-import type { KVNamespace } from "@cloudflare/workers-types";
+import type { KVStore } from "../kv-store";
 import { logger } from "../logger";
 
 export const buildSalesDayKey = (storeId: string, date: string) =>
@@ -17,7 +17,7 @@ export const buildWeatherKey = (lat: number, lon: number, date: string) =>
 	`weather:${lat.toFixed(4)}:${lon.toFixed(4)}:${date}`;
 
 export const getCachedJson = async <T>(
-	kv: KVNamespace | undefined,
+	kv: KVStore | undefined,
 	key: string,
 	ttlSeconds: number,
 	fetchFunction: () => Promise<T>,

@@ -1,4 +1,4 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 interface TransformedSchedule {
 	id?: number;
@@ -8,7 +8,7 @@ interface TransformedSchedule {
 	shiftType: string;
 }
 
-export async function createScheduleTable(db: D1Database): Promise<void> {
+export async function createScheduleTable(db: AppDB): Promise<void> {
 	try {
 		const createTableSQL = `
             CREATE TABLE IF NOT EXISTS schedule (
@@ -43,7 +43,7 @@ export async function createScheduleTable(db: D1Database): Promise<void> {
 	}
 }
 
-export async function deleteScheduleTable(db: D1Database): Promise<void> {
+export async function deleteScheduleTable(db: AppDB): Promise<void> {
 	try {
 		const deleteQuery = `
             DROP TABLE IF EXISTS schedule;
@@ -55,7 +55,7 @@ export async function deleteScheduleTable(db: D1Database): Promise<void> {
 }
 
 export async function updateSchedule(
-	db: D1Database,
+	db: AppDB,
 	schedules: TransformedSchedule[],
 ): Promise<void> {
 	try {
@@ -110,7 +110,7 @@ export async function updateSchedule(
 }
 
 export async function getScheduleByPeriodAndShopId(
-	db: D1Database,
+	db: AppDB,
 	dateStart: string,
 	dateEnd: string,
 	shopUuid: string,
@@ -141,7 +141,7 @@ export async function getScheduleByPeriodAndShopId(
 }
 
 export async function getSchedule(
-	db: D1Database,
+	db: AppDB,
 	date: string,
 	shopUuid: string,
 ): Promise<TransformedSchedule[] | null> {
@@ -168,7 +168,7 @@ export async function getSchedule(
 }
 
 export async function getScheduleByPeriod(
-	db: D1Database,
+	db: AppDB,
 	dateStart: string,
 	dateEnd: string,
 ): Promise<TransformedSchedule[] | null> {

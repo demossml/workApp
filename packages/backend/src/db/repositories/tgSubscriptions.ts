@@ -35,9 +35,10 @@ export async function upsertTgSubscription(
 export async function listActiveTgSubscriptions(
   db: D1Adapter,
 ) {
-  return db.prepare(`
+  const result = await db.prepare(`
     SELECT * FROM tg_subscriptions WHERE write_access = 1
   `).all();
+  return result.results;
 }
 
 export async function setTgSubscriptionWriteAccess(

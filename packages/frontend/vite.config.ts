@@ -7,14 +7,34 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // Временно выключаем кэширование SW, чтобы гарантированно убрать старые бандлы у пользователей.
-      selfDestroying: true,
-      registerType: "autoUpdate", // автообновление SW
+      // Кэширование включено: статика из кэша, API — network-first
+      selfDestroying: false,
+      registerType: "autoUpdate",
       workbox: {
         cacheId: "work-app-v2",
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
+        runtimeCaching: [
+          {
+            // API: пробуем сеть, при офлайне — кэш
+            urlPattern: /^\/api\/.*/,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "api-cache",
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 5 },
+            },
+          },
+          {
+            // Статика (JS/CSS): сразу из кэша, в фоне обновляем
+            urlPattern: /\.(?:js|css|svg|png|jpg|webp)$/,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "static-assets",
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 },
+            },
+          },
+        ],
       },
       devOptions: {
         enabled: true, // ⚡️ чтобы PWA работал и в dev-режиме

@@ -15,6 +15,7 @@ import {
   DoorOpen,
   NotepadText,
   Maximize2,
+  TrendingUp,
 } from "lucide-react";
 import { isTelegramMiniApp, telegram } from "@/helpers/telegram";
 
@@ -101,6 +102,12 @@ const moreButtons = [
     label: "Товарные остатки",
     icon: Wallet,
     roles: ["ADMIN", "SUPERADMIN"],
+  },
+  {
+    to: "/evotor/period-comparison",
+    label: "Сравнение",
+    icon: TrendingUp,
+    roles: ["SUPERADMIN"],
   },
 ];
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Hono, type Next } from "hono";
 import type { IEnv } from "../types";
 import { logger } from "../logger";
@@ -2349,7 +2348,7 @@ export const aiRoutes = new Hono<IEnv>()
 
 			const [todayDocsByShop, yesterdayDocsByShop] = await Promise.all([
 				Promise.all(
-					resolvedShopUuids.map((shopUuid) =>
+					resolvedShopUuids.map((shopUuid: any) =>
 						getDocumentsFromIndexFirst(
 							db,
 							evo,
@@ -2361,7 +2360,7 @@ export const aiRoutes = new Hono<IEnv>()
 					),
 				),
 				Promise.all(
-					resolvedShopUuids.map((shopUuid) =>
+					resolvedShopUuids.map((shopUuid: any) =>
 						getDocumentsFromIndexFirst(
 							db,
 							evo,
@@ -2507,7 +2506,7 @@ export const aiRoutes = new Hono<IEnv>()
 			];
 
 			const docsByShop = await Promise.all(
-				resolvedShopUuids.map((shopUuid) =>
+				resolvedShopUuids.map((shopUuid: any) =>
 					getDocumentsFromIndexFirst(db, evo, shopUuid, rangeSince, rangeUntil, {
 						types: ["SELL", "PAYBACK"],
 						skipFetchIfStale: true,
@@ -2601,6 +2600,242 @@ export const aiRoutes = new Hono<IEnv>()
 		} catch (error) {
 			logger.error("AI director stock monitor failed", { error });
 			return c.json({ error: "AI_DIRECTOR_STOCK_MONITOR_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/stock-health", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const days = Math.max(1, Math.min(90, Number(payload.days) || 14));
+			const db = c.get("db");
+
+			const stores = await db.prepare(
+				"SELECT DISTINCT store_uuid, store_name FROM product_stock"
+			).all<{ store_uuid: string; store_name: string }>();
+			const storeList = stores.results || [];
+
+			const since = new Date();
+			since.setDate(since.getDate() - days);
+			const sinceStr = since.toISOString().slice(0, 10);
+
+			// Get all sales in the period
+			const salesRows = await db.prepare(
+				`SELECT s.store_uuid, p.product_name, CAST(SUM(p.quantity) AS DOUBLE) as totalQty,
+				        CAST(SUM(p.sum) AS DOUBLE) as totalRevenue
+				 FROM sells s
+				 JOIN positions p ON p.doc_id = s.doc_id
+				 WHERE s.close_date >= ?
+				 GROUP BY s.store_uuid, p.product_name`
+			).bind(sinceStr).all<{ store_uuid: string; product_name: string; totalQty: number; totalRevenue: number }>();
+
+			// Build sales map: store_uuid → product_name → {qty, revenue}
+			const salesMap = new Map<string, Map<string, { qty: number; revenue: number }>>();
+			for (const row of (salesRows.results || [])) {
+				if (!salesMap.has(row.store_uuid)) salesMap.set(row.store_uuid, new Map());
+				salesMap.get(row.store_uuid)!.set(row.product_name, { qty: row.totalQty, revenue: row.totalRevenue });
+			}
+
+			// Get current stock
+			const stockRows = await db.prepare(
+				"SELECT store_uuid, store_name, name, CAST(COALESCE(quantity, 0) AS DOUBLE) as quantity FROM product_stock"
+			).all<{ store_uuid: string; store_name: string; name: string; quantity: number }>();
+
+			type StockItem = { name: string; quantity: number; shopName: string };
+			type OutItem = { name: string; soldQty: number; velocity: number; lostRevenuePerDay: number; shopName: string };
+			const deadStock: StockItem[] = [];
+			const lowStock: StockItem[] = [];
+			const outOfStock: OutItem[] = [];
+			const byShop = new Map<string, { shopUuid: string; shopName: string; deadStock: StockItem[]; lowStock: StockItem[]; outOfStock: OutItem[] }>();
+
+			for (const row of (stockRows.results || [])) {
+				const storeSales = salesMap.get(row.store_uuid);
+				const prodSales = storeSales?.get(row.name);
+				const soldQty = prodSales?.qty || 0;
+				const velocity = soldQty / days;
+
+				if (!byShop.has(row.store_uuid)) {
+					byShop.set(row.store_uuid, {
+						shopUuid: row.store_uuid,
+						shopName: row.store_name || row.store_uuid,
+						deadStock: [],
+						lowStock: [],
+						outOfStock: [],
+					});
+				}
+				const shop = byShop.get(row.store_uuid)!;
+
+				if (row.quantity === 0 && soldQty > 0) {
+					const lostPerDay = (prodSales?.revenue || 0) / days;
+					const item: OutItem = {
+						name: row.name,
+						soldQty: Math.round(soldQty),
+						velocity: Math.round(velocity * 100) / 100,
+						lostRevenuePerDay: Math.round(lostPerDay),
+						shopName: row.store_name || row.store_uuid,
+					};
+					outOfStock.push(item);
+					shop.outOfStock.push(item);
+				} else if (row.quantity > 0 && soldQty === 0) {
+					const item: StockItem = { name: row.name, quantity: row.quantity, shopName: row.store_name || row.store_uuid };
+					deadStock.push(item);
+					shop.deadStock.push(item);
+				} else if (row.quantity > 0 && velocity > 0) {
+					const daysLeft = row.quantity / velocity;
+					if (daysLeft < 7) {
+						const item: StockItem = { name: row.name, quantity: row.quantity, shopName: row.store_name || row.store_uuid };
+						lowStock.push(item);
+						shop.lowStock.push(item);
+					}
+				}
+			}
+
+			deadStock.sort((a, b) => b.quantity - a.quantity);
+			lowStock.sort((a, b) => a.quantity - b.quantity);
+			outOfStock.sort((a, b) => b.lostRevenuePerDay - a.lostRevenuePerDay);
+
+			for (const [, s] of byShop) {
+				s.deadStock.sort((a, b) => b.quantity - a.quantity);
+				s.deadStock = s.deadStock.slice(0, 10);
+				s.lowStock.sort((a, b) => a.quantity - b.quantity);
+				s.lowStock = s.lowStock.slice(0, 10);
+				s.outOfStock.sort((a, b) => b.lostRevenuePerDay - a.lostRevenuePerDay);
+				s.outOfStock = s.outOfStock.slice(0, 10);
+			}
+
+			return c.json({
+				date: new Date().toISOString().slice(0, 10),
+				deadStockCount: deadStock.length,
+				lowStockCount: lowStock.length,
+				outOfStockCount: outOfStock.length,
+				totalLostPerDay: Math.round(outOfStock.reduce((s, i) => s + i.lostRevenuePerDay, 0)),
+			deadStock: deadStock,
+			lowStock: lowStock,
+			outOfStock: outOfStock,
+				byShop: Array.from(byShop.values()),
+			});
+		} catch (error) {
+			logger.error("stock-health failed", { error });
+			return c.json({ error: "STOCK_HEALTH_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/stock-transfer", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const days = Math.max(1, Math.min(90, Number(payload.days) || 14));
+			const db = c.get("db");
+
+			const since = new Date();
+			since.setDate(since.getDate() - days);
+			const sinceStr = since.toISOString().slice(0, 10);
+
+			// All sales in period
+			const salesRows = await db.prepare(
+				`SELECT s.store_uuid, st.store_name, p.product_name, CAST(SUM(p.quantity) AS DOUBLE) as totalQty
+				 FROM sells s
+				 JOIN positions p ON p.doc_id = s.doc_id
+				 LEFT JOIN (SELECT DISTINCT store_uuid, store_name FROM product_stock) st ON st.store_uuid = s.store_uuid
+				 WHERE s.close_date >= ?
+				 GROUP BY s.store_uuid, st.store_name, p.product_name`
+			).bind(sinceStr).all<{ store_uuid: string; store_name: string; product_name: string; totalQty: number }>();
+
+			// salesMap: product_name → store_uuid → {storeName, qty}
+			const salesByProduct = new Map<string, Map<string, { storeName: string; qty: number }>>();
+			for (const row of (salesRows.results || [])) {
+				if (!salesByProduct.has(row.product_name)) {
+					salesByProduct.set(row.product_name, new Map());
+				}
+				salesByProduct.get(row.product_name)!.set(row.store_uuid, {
+					storeName: row.store_name || row.store_uuid,
+					qty: row.totalQty,
+				});
+			}
+
+			// All stock
+			const stockRows = await db.prepare(
+				"SELECT store_uuid, store_name, name, CAST(COALESCE(quantity, 0) AS DOUBLE) as quantity FROM product_stock WHERE quantity > 0"
+			).all<{ store_uuid: string; store_name: string; name: string; quantity: number }>();
+
+			type TransferRec = {
+				productName: string;
+				fromShop: string;
+				fromShopName: string;
+				deadQuantity: number;
+				toShop: string;
+				toShopName: string;
+				soldQty14d: number;
+				velocity: number;
+				toShopQuantity: number;
+			};
+			const recommendations: TransferRec[] = [];
+
+			for (const stock of (stockRows.results || [])) {
+				const productSales = salesByProduct.get(stock.name);
+				if (!productSales) continue;
+				const ownSales = productSales.get(stock.store_uuid);
+				if (ownSales && ownSales.qty > 0) continue; // not dead in this store
+
+				// Find other stores where this product sells
+				for (const [otherUuid, otherData] of productSales.entries()) {
+					if (otherUuid === stock.store_uuid) continue;
+					if (otherData.qty <= 0) continue;
+
+					// Check stock in target store
+					const targetStockRow = (stockRows.results || []).find(
+						r => r.store_uuid === otherUuid && r.name === stock.name
+					);
+
+					recommendations.push({
+						productName: stock.name,
+						fromShop: stock.store_uuid,
+						fromShopName: stock.store_name || stock.store_uuid,
+						deadQuantity: stock.quantity,
+						toShop: otherUuid,
+						toShopName: otherData.storeName,
+						soldQty14d: Math.round(otherData.qty),
+						velocity: Math.round(otherData.qty / days * 100) / 100,
+						toShopQuantity: targetStockRow?.quantity || 0,
+					});
+				}
+			}
+
+			recommendations.sort((a, b) => b.soldQty14d - a.soldQty14d);
+
+			return c.json({
+				date: new Date().toISOString().slice(0, 10),
+				recommendations: recommendations.slice(0, 30),
+			});
+		} catch (error) {
+			logger.error("stock-transfer failed", { error });
+			return c.json({ error: "STOCK_TRANSFER_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/deadstock-export", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { items } = payload as { items?: Array<{ name: string; quantity: number; shopName: string }> };
+
+			if (!items || !Array.isArray(items) || items.length === 0) {
+				return c.json({ error: "No items provided" }, 400);
+			}
+
+			const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+			const filename = `deadstock-export-${timestamp}.json`;
+			const exportData = {
+				exportedAt: new Date().toISOString(),
+				totalItems: items.length,
+				items: items.map(item => ({
+					name: item.name,
+					quantity: item.quantity,
+					shopName: item.shopName,
+				})),
+			};
+
+			return c.json(exportData);
+		} catch (error) {
+			logger.error("deadstock-export failed", { error });
+			return c.json({ error: "DEADSTOCK_EXPORT_FAILED" }, 500);
 		}
 	})
 
@@ -2826,7 +3061,7 @@ export const aiRoutes = new Hono<IEnv>()
 			}
 
 			const docsByShop = await Promise.all(
-				resolvedShopUuids.map(async (shopUuid) => {
+				resolvedShopUuids.map(async (shopUuid: any) => {
 					try {
 						return await getDocumentsFromIndexFirst(
 							db,
@@ -4270,7 +4505,7 @@ export const aiRoutes = new Hono<IEnv>()
 			];
 
 			const docsByShop = await Promise.all(
-				resolvedShopUuids.map((shopUuid) =>
+				resolvedShopUuids.map((shopUuid: any) =>
 					getDocumentsFromIndexFirst(db, evo, shopUuid, rangeSince, rangeUntil, {
 						types: ["SELL", "PAYBACK"],
 						skipFetchIfStale: true,
@@ -4663,7 +4898,7 @@ export const aiRoutes = new Hono<IEnv>()
 		const since = formatDateWithTime(sevenDaysAgo, false);
 		const until = formatDateWithTime(sevenDaysAgo, true);
 
-		const shopQueries = shopsUuid.map((shopId) => ({
+		const shopQueries = shopsUuid.map((shopId: any) => ({
 			shopId,
 			since,
 			until,
@@ -4699,7 +4934,7 @@ export const aiRoutes = new Hono<IEnv>()
 
 		const shopUuids = await evo.getShopUuids();
 		const docsByShop = await Promise.all(
-			shopUuids.map((shopUuid) =>
+			shopUuids.map((shopUuid: any) =>
 				getDocumentsFromIndexFirst(c.get("db"), evo, shopUuid, start, end, {
 					types: ["SELL", "PAYBACK"],
 				}),
@@ -4723,7 +4958,7 @@ export const aiRoutes = new Hono<IEnv>()
 
 		const shopUuids = await evo.getShopUuids();
 		const docsByShop = await Promise.all(
-			shopUuids.map((shopUuid) =>
+			shopUuids.map((shopUuid: any) =>
 				getDocumentsFromIndexFirst(c.get("db"), evo, shopUuid, start, end, {
 					types: ["SELL", "PAYBACK"],
 				}),
@@ -5427,7 +5662,7 @@ export const aiRoutes = new Hono<IEnv>()
 			}
 
 			const shops = await c.var.evotor.getShopNameUuids();
-			const shopNameMap = new Map((shops || []).map((item) => [item.uuid, item.name]));
+			const shopNameMap = new Map((shops || []).map((item: any) => [item.uuid, item.name]));
 
 			const listPhotosByPrefix = async (prefix: string) => {
 				let cursor: string | undefined;
@@ -5494,10 +5729,10 @@ export const aiRoutes = new Hono<IEnv>()
 							age < OPENING_DIGEST_TTL_MS &&
 							!hasLegacyPhotoErrors
 						) {
-							shopDigests.push({
-								shopUuid: opening.shopUuid,
-								shopName: shopNameMap.get(opening.shopUuid) || opening.shopUuid,
-								openedAt: opening.date,
+						shopDigests.push({
+							shopUuid: opening.shopUuid,
+							shopName: String(shopNameMap.get(opening.shopUuid) || opening.shopUuid),
+							openedAt: opening.date,
 							openedByName: opening.openedByName || opening.userId,
 							photoCount: cached.photoCount,
 							digest: cached.digest,
@@ -5561,16 +5796,16 @@ export const aiRoutes = new Hono<IEnv>()
 					}
 				}
 
-				const digest = photoResults.length
-					? await summarizeShopPhotos(
-							c,
-							shopNameMap.get(opening.shopUuid) || opening.shopUuid,
-							photoResults.map((item) => ({
-								category: item.category,
-								text: item.description,
-							})),
-						)
-					: "Фото не найдены за выбранную дату.";
+			const digest = photoResults.length
+				? await summarizeShopPhotos(
+						c,
+						String(shopNameMap.get(opening.shopUuid) || opening.shopUuid),
+						photoResults.map((item) => ({
+							category: item.category,
+							text: item.description,
+						})),
+					)
+				: "Фото не найдены за выбранную дату.";
 
 				await saveOpeningPhotoDigestCache(c.env.DB, {
 					date: isoDate,
@@ -5585,11 +5820,11 @@ export const aiRoutes = new Hono<IEnv>()
 					modelSummarize: PHOTO_SUMMARIZE_MODEL,
 				});
 
-				shopDigests.push({
-					shopUuid: opening.shopUuid,
-					shopName: shopNameMap.get(opening.shopUuid) || opening.shopUuid,
-					openedAt: opening.date,
-					openedByName: opening.openedByName || opening.userId,
+			shopDigests.push({
+				shopUuid: opening.shopUuid,
+				shopName: String(shopNameMap.get(opening.shopUuid) || opening.shopUuid),
+				openedAt: opening.date,
+				openedByName: opening.openedByName || opening.userId,
 					photoCount: photoResults.length,
 					digest: digest || "Не удалось собрать дайджест",
 					photos: photoResults,

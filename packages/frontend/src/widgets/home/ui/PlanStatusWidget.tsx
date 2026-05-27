@@ -7,6 +7,9 @@ import {
   ChevronDown,
   ChevronUp,
   ShoppingBag,
+  Truck,
+  ArrowRight,
+  Loader2,
 } from "lucide-react";
 import { useGetReportAndPlan } from "@/hooks/useReportData";
 import { useGetShopNames } from "@/hooks/useGetShopNames";
@@ -26,12 +29,23 @@ export function PlanStatusWidget() {
   const { data: workingByShopsData } = useWorkingByShops();
 
   const [expandedShop, setExpandedShop] = useState<string | null>(null);
+  const [transferShop, setTransferShop] = useState<string | null>(null);
+  const [transferData, setTransferData] = useState<Array<{
+    productName: string; fromShop: string; fromShopName: string;
+    deadQuantity: number; toShop: string; toShopName: string;
+    soldQty14d: number; velocity: number;
+  }> | null>(null);
+  const [transferLoading, setTransferLoading] = useState(false);
   const isMiniApp = isTelegramMiniApp();
 
   const toggleExpand = useCallback(
     (shopName: string) => {
       const willOpen = expandedShop !== shopName;
       setExpandedShop(willOpen ? shopName : null);
+      if (!willOpen) {
+        setTransferShop(null);
+        setTransferData(null);
+      }
 
       if (isMiniApp) {
         telegram.WebApp.HapticFeedback.impactOccurred("light");
@@ -39,6 +53,27 @@ export function PlanStatusWidget() {
     },
     [expandedShop, isMiniApp]
   );
+
+  const handleTransferClick = useCallback(async (shopName: string) => {
+    if (transferShop === shopName) {
+      setTransferShop(null);
+      return;
+    }
+    setTransferShop(shopName);
+    setTransferLoading(true);
+    try {
+      const resp = await fetch("/api/ai/director/stock-transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        setTransferData(json.recommendations || []);
+      }
+    } catch { /* silent */ }
+    setTransferLoading(false);
+  }, [transferShop]);
 
   // Безопасное получение данных плана
   const planData = useMemo(
@@ -118,10 +153,11 @@ export function PlanStatusWidget() {
                       <p
                         className={`text-[9px] font-medium text-${card.statusColor}-600 dark:text-${card.statusColor}-400 leading-tight mt-0.5`}
                       >
-                        {isCardLoading ? "Загрузка..." : card.statusText}
-                      </p>
-                      <p className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5">
-                        {sellerName ? `В смене: ${sellerName}` : "Смена не открыта"}
+                        {isCardLoading
+                          ? "Загрузка..."
+                          : sellerName
+                            ? `${card.statusText} — ${sellerName}`
+                            : card.statusText}
                       </p>
                     </div>
                   </div>
@@ -251,6 +287,58 @@ export function PlanStatusWidget() {
                               </span>
                             </div>
                           ))}
+                        </div>
+                      )}
+
+                      {/* Transfer recommendations button */}
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-center gap-1.5 rounded-md bg-purple-50 dark:bg-purple-900/20 px-2 py-1.5 text-[10px] font-medium text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleTransferClick(card.shopName);
+                        }}
+                      >
+                        <Truck className="w-3 h-3" />
+                        Рекомендации по перемещению
+                      </button>
+
+                      {/* Transfer list */}
+                      {transferShop === card.shopName && (
+                        <div className="space-y-1 max-h-40 overflow-auto pr-1">
+                          {transferLoading ? (
+                            <div className="flex items-center justify-center py-2 text-[10px] text-gray-400">
+                              <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                              Загрузка...
+                            </div>
+                          ) : (transferData || []).filter(
+                              (r) => r.fromShopName === card.shopName
+                            ).length === 0 ? (
+                            <div className="text-[10px] text-gray-400 py-1">
+                              Нет рекомендаций для этого магазина
+                            </div>
+                          ) : (
+                            (transferData || [])
+                              .filter((r) => r.fromShopName === card.shopName)
+                              .map((rec, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center gap-1.5 text-[10px] py-1 border-b border-gray-100 dark:border-gray-700 last:border-0"
+                                >
+                                  <ArrowRight className="w-3 h-3 text-purple-500 shrink-0" />
+                                  <span className="text-gray-700 dark:text-gray-300 truncate flex-1">
+                                    {rec.productName}
+                                  </span>
+                                  <span className="text-purple-600 dark:text-purple-400 font-semibold shrink-0 text-right leading-tight">
+                                    → {rec.toShopName}
+                                    <br />
+                                    <span className="text-[9px] text-gray-400 font-normal">
+                                      {rec.deadQuantity} шт / {rec.soldQty14d} шт за 14д
+                                    </span>
+                                  </span>
+                                </div>
+                              ))
+                          )}
                         </div>
                       )}
                     </div>

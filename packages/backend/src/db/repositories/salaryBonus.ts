@@ -1,4 +1,4 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 interface SalaryBonus {
 	salary: number;
@@ -6,7 +6,7 @@ interface SalaryBonus {
 	data: string;
 }
 
-export async function createSalaryBonusTable(db: D1Database): Promise<void> {
+export async function createSalaryBonusTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery = `
             CREATE TABLE IF NOT EXISTS salary_bonus (
@@ -26,7 +26,7 @@ export async function saveSalaryAndBonus(
 	data: string,
 	salary: number,
 	bonus: number,
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	try {
 		const checkQuery = "SELECT * FROM salary_bonus WHERE data = ?;";
@@ -56,7 +56,7 @@ export async function saveSalaryAndBonus(
 
 export async function getSalaryAndBonus(
 	date: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<SalaryBonus | null> {
 	try {
 		const query = `

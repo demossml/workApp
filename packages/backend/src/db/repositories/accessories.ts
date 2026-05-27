@@ -1,9 +1,9 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 // Uses acc_group_settings table to avoid conflict with main DuckDB accessories(group_uuid, group_name)
 const TABLE = "acc_group_settings";
 
-export async function createAccessoriesTable(db: D1Database): Promise<void> {
+export async function createAccessoriesTable(db: AppDB): Promise<void> {
 	try {
 		const createTableQuery = `
             CREATE TABLE IF NOT EXISTS ${TABLE} (
@@ -21,7 +21,7 @@ export async function createAccessoriesTable(db: D1Database): Promise<void> {
 
 export async function saveOrUpdateUUIDs(
 	uuids: string[],
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	try {
 		const deleteQuery = `DELETE FROM ${TABLE};`;
@@ -41,7 +41,7 @@ export async function saveOrUpdateUUIDs(
 	}
 }
 
-export async function getAllUuid(db: D1Database): Promise<string[]> {
+export async function getAllUuid(db: AppDB): Promise<string[]> {
 	try {
 		const selectQuery = `SELECT group_uuid FROM ${TABLE};`;
 		const statement = db.prepare(selectQuery);

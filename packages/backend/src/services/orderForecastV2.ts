@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { IEnv } from "../types";
 import { getDocumentsFromIndexFirst } from "./indexDocumentsFallback";
 
@@ -126,7 +125,7 @@ export async function buildOrderForecastV2(
 		input.shopUuid,
 		input.groups,
 	)) as StockProductMap;
-	const allowed = new Set(productUuids || []);
+	const allowed = new Set(productUuids || []) as Set<string>;
 
 	const fromTs = `${input.startDate}T00:00:00.000+0000`;
 	const toTs = `${input.endDate}T23:59:59.000+0000`;
@@ -201,7 +200,6 @@ export async function buildOrderForecastV2(
 		const targetStock =
 			adjustedDailyDemand * (input.leadTimeDays + input.forecastHorizonDays) +
 			safetyStock;
-
 		const stockRow = stockByProduct[productUuid] || {};
 		const currentStock = Number(stockRow.quantity || 0);
 		const inTransit = 0;

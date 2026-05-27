@@ -94,7 +94,7 @@ export const schedulesRoutes = new Hono<IEnv>()
 		await createIndexDocumentsTable(c.get("db"));
 		await createIndexOnType(c.get("db"));
 
-		const dataPromises = shopsUuid.map((uuid) =>
+		const dataPromises = shopsUuid.map((uuid: any) =>
 			getData(date, uuid, c.get("db")),
 		);
 		const dataResults = await Promise.all(dataPromises);

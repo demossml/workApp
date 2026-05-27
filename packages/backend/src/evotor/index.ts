@@ -25,8 +25,8 @@ import type {
 	// TransactionSale,
 } from "./types";
 
-import type { D1Database } from "@cloudflare/workers-types";
 import type { KVStore } from "../kv-store";
+import type { AppDB } from "../db-duckdb.js";
 
 /**
  * Класс Evotor для работы с API Эвотор
@@ -1567,7 +1567,7 @@ export class Evotor {
 		since: string,
 		until: string,
 		productUuids: string[],
-		db?: D1Database,
+		db?: AppDB,
 	): Promise<Record<string, number>> {
 		try {
 			const documents = db
@@ -1618,7 +1618,7 @@ export class Evotor {
 	 * @throws Пробрасывает ошибку, если не удаётся получить документы или выполнить расчёт.
 	 */
 	async getSalesSumQuantitySum(
-		db: D1Database,
+		db: AppDB,
 		shopId: string,
 		since: string,
 		until: string,
@@ -1749,7 +1749,7 @@ export class Evotor {
 		since: string,
 		until: string,
 		productUuids: string[],
-		db?: D1Database,
+		db?: AppDB,
 	): Promise<number> {
 		try {
 			const documents = db
@@ -1790,7 +1790,7 @@ export class Evotor {
 	 * @throws {Error} - В случае ошибки при получении данных.
 	 */
 	async getSalesToday(
-		db?: D1Database,
+		db?: AppDB,
 	): Promise<Record<string, Record<string, number>>> {
 		try {
 			const newDate = new Date(); // Получаем текущую дату
@@ -1883,7 +1883,7 @@ export class Evotor {
 		shopUuids: string[],
 		since: string,
 		until: string,
-		db?: D1Database,
+		db?: AppDB,
 	): Promise<Record<string, Record<string, number>>> {
 		// Словарь категорий выплат
 		const paymentCategory: Record<number, string> = {
@@ -1949,7 +1949,7 @@ export class Evotor {
 		shopUuids: string[],
 		since: string,
 		until: string,
-		db?: D1Database,
+		db?: AppDB,
 	): Promise<{
 		salesDataByShopName: Record<
 			string,

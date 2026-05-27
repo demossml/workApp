@@ -5,6 +5,7 @@ import {
   PlanStatusWidget,
   QuickActionsWidget,
   TodayAlertsWidget,
+  StockHealthWidget,
 } from "@widgets/home";
 import { DashboardSummaryWidget } from "@widgets/dashboard";
 import { buildHomeAccessModel } from "@features/dashboard/model/homePageModel";
@@ -66,6 +67,9 @@ export default function Home() {
 
         {/* Критические оповещения - только для админов */}
         {isSuperAdmin && <TodayAlertsWidget />}
+
+        {/* Состояние остатков — мёртвый сток + заканчиваются */}
+        {(isSuperAdmin || isAdmin) && <StockHealthWidget />}
 
         {/* Быстрые действия - в зависимости от роли */}
         <QuickActionsWidget employeeRole={data.employeeRole} />

@@ -1,8 +1,8 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 let schemaEnsured = false;
 
-async function ensureAiHistorySchema(db: D1Database): Promise<void> {
+async function ensureAiHistorySchema(db: AppDB): Promise<void> {
 	if (schemaEnsured) return;
 
 	await db
@@ -52,7 +52,7 @@ async function ensureAiHistorySchema(db: D1Database): Promise<void> {
 }
 
 export async function saveAiShiftSummary(
-	db: D1Database,
+	db: AppDB,
 	input: {
 		shopUuid: string;
 		date: string;
@@ -85,7 +85,7 @@ export async function saveAiShiftSummary(
 }
 
 export async function saveAiAlert(
-	db: D1Database,
+	db: AppDB,
 	input: {
 		shopUuid: string;
 		alertType: "tempo_alert" | "anomaly" | "dead_stock";
@@ -105,7 +105,7 @@ export async function saveAiAlert(
 }
 
 export async function listAiShiftSummaries(
-	db: D1Database,
+	db: AppDB,
 	input?: {
 		shopUuid?: string;
 		date?: string;
@@ -172,7 +172,7 @@ export async function listAiShiftSummaries(
 }
 
 export async function listAiAlerts(
-	db: D1Database,
+	db: AppDB,
 	input?: {
 		shopUuid?: string;
 		alertType?: "tempo_alert" | "anomaly" | "dead_stock";

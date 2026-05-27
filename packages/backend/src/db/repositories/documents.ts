@@ -1,6 +1,5 @@
-// @ts-nocheck
-import type { D1Database } from "@cloudflare/workers-types";
 import type { IndexDocument, Transaction } from "../../evotor/types";
+import type { AppDB } from "../../db-duckdb.js";
 
 function normalizeIsoOffset(value: string): string {
 	return value
@@ -25,7 +24,7 @@ function parseTransactions(value: unknown): Transaction[] {
 }
 
 export async function getDocumentsByPeriod(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 	since: string,
 	until: string,
@@ -64,7 +63,7 @@ export async function getDocumentsByPeriod(
 }
 
 export async function getDocumentsByCashOutcomeByPeriod(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 	since: string,
 	until: string,
@@ -105,7 +104,7 @@ export async function getDocumentsByCashOutcomeByPeriod(
 }
 
 export async function getDocumentsBySalesPeriod(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 	since: string,
 	until: string,
@@ -146,7 +145,7 @@ export async function getDocumentsBySalesPeriod(
 }
 
 export async function getDocumentsBySales(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 	since: string,
 	until: string,

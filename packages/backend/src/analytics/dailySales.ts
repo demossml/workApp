@@ -1,10 +1,9 @@
-// @ts-nocheck
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../db-duckdb.js";
 
 type ShopDate = { shopId: string; date: string };
 
 export async function recomputeDailySales(
-	db: D1Database,
+	db: AppDB,
 	shopDates: ShopDate[],
 ): Promise<void> {
 	if (shopDates.length === 0) return;

@@ -1,9 +1,6 @@
-// @ts-nocheck
-import type {
-	D1Database,
-	D1PreparedStatement,
-} from "@cloudflare/workers-types";
 import type { IndexDocument } from "../../evotor/types";
+import { DuckPreparedStatement } from "../../db-duckdb.js";
+import type { AppDB } from "../../db-duckdb.js";
 
 interface ShopLastDocument {
 	shop_id: string;
@@ -17,7 +14,7 @@ function normalizeIsoOffset(value: string): string {
 		.replace(/Z$/, "+0000");
 }
 
-export async function createIndexDocumentsTable(db: D1Database): Promise<void> {
+export async function createIndexDocumentsTable(db: AppDB): Promise<void> {
 	try {
 		await db.batch([
 			db.prepare(`
@@ -47,7 +44,7 @@ export async function createIndexDocumentsTable(db: D1Database): Promise<void> {
 	}
 }
 
-export async function createIndexOnType(db: D1Database): Promise<void> {
+export async function createIndexOnType(db: AppDB): Promise<void> {
 	try {
 		await db.batch([
 			db.prepare(`
@@ -70,7 +67,7 @@ export async function createIndexOnType(db: D1Database): Promise<void> {
 }
 
 export async function saveNewIndexDocuments(
-	db: D1Database,
+	db: AppDB,
 	documents: IndexDocument[],
 ): Promise<void> {
 	if (!documents?.length) {
@@ -110,7 +107,7 @@ export async function saveNewIndexDocuments(
 					doc.transactions ? JSON.stringify(doc.transactions) : null,
 				);
 			})
-			.filter((stmt): stmt is D1PreparedStatement => stmt !== null);
+			.filter((stmt): stmt is DuckPreparedStatement => stmt !== null);
 
 		if (statements.length === 0) {
 			return;
@@ -124,7 +121,7 @@ export async function saveNewIndexDocuments(
 }
 
 export async function getLatestCloseDates(
-	db: D1Database,
+	db: AppDB,
 	shopIds: string[],
 ): Promise<ShopLastDocument[]> {
 	if (!shopIds?.length) {
@@ -156,7 +153,7 @@ export async function getLatestCloseDates(
 		const now = new Date();
 		now.setUTCHours(3, 0, 0, 0);
 
-		function formatDate(date: Date): string {
+		const formatDate = (date: Date): string => {
 			return date.toISOString().replace("Z", "+0000");
 		}
 

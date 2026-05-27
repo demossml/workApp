@@ -652,6 +652,13 @@ export default function DashboardSummary2({
     React.useState<DirectorRecommendationsResponse | null>(null);
   const [directorReport, setDirectorReport] =
     React.useState<DirectorReportResponse | null>(null);
+  const [stockHealth, setStockHealth] =
+    React.useState<{
+      deadStockCount: number;
+      lowStockCount: number;
+      deadStock: Array<{ name: string; quantity: number; shopName: string }>;
+      lowStock: Array<{ name: string; quantity: number; velocity: number; daysLeft: number; shopName: string }>;
+    } | null>(null);
 
   const directorDate = safeUntil;
 
@@ -715,6 +722,30 @@ export default function DashboardSummary2({
       cancelled = true;
     };
   }, [directorDate, safeSince, safeUntil, showAiDirector]);
+
+  // Fetch stock health
+  React.useEffect(() => {
+    if (!showAiDirector) return;
+    let cancelled = false;
+    const fetchStockHealth = async () => {
+      try {
+        const resp = await fetch("/api/ai/director/stock-health", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (cancelled) return;
+        if (resp.ok) {
+          const json = await resp.json();
+          setStockHealth(json);
+        }
+      } catch {
+        // silent
+      }
+    };
+    void fetchStockHealth();
+    return () => { cancelled = true; };
+  }, [directorDate, showAiDirector]);
 
   const accessoryShopOptions = React.useMemo(
     () => (accessoriesSales.data?.byShop || []).map((shop) => shop.shopName),
@@ -840,10 +871,10 @@ export default function DashboardSummary2({
     setExpandedCard(expandedCard === cardId ? null : cardId);
   };
 
-  const directorToday = directorSummary?.periods.today.metrics;
-  const directorYesterday = directorSummary?.periods.yesterday.metrics;
-  const directorWeekAgo = directorSummary?.periods.weekAgo.metrics;
-  const directorAvg = directorSummary?.periods.avg.metrics;
+  const directorToday = directorSummary?.periods?.today?.metrics;
+  const directorYesterday = directorSummary?.periods?.yesterday?.metrics;
+  const directorWeekAgo = directorSummary?.periods?.weekAgo?.metrics;
+  const directorAvg = directorSummary?.periods?.avg?.metrics;
 
   const pctChange = (current?: number, previous?: number) => {
     if (!previous || !Number.isFinite(previous)) return null;
@@ -1235,7 +1266,7 @@ export default function DashboardSummary2({
           <div className="rounded-xl bg-white dark:bg-gray-800 p-4 shadow">
             <div className="text-xs text-gray-500">Чеки</div>
             <div className="text-2xl font-bold text-gray-900 dark:text-white">
-              {directorToday ? Math.round(directorToday.checks).toLocaleString("ru-RU") : "—"}
+              {directorToday ? `${Math.round(directorToday.checks).toLocaleString("ru-RU")} шт` : "—"}
             </div>
             <div className="text-xs text-gray-500">
               к вчера: {formatPct(directorChecksChange)}
@@ -1406,6 +1437,7 @@ export default function DashboardSummary2({
             </div>
           </div>
         )}
+
         </section>
       )}
     </>

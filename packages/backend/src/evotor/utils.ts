@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
 	getDocumentsByCashOutcomeByPeriod,
 	getDocumentsBySales,
@@ -6,8 +5,8 @@ import {
 } from "../db/repositories/documents";
 import { logger } from "../logger";
 import { aggregateShopFinancialFromDocuments } from "../contracts/financialAggregation";
+import type { AppDB } from "../db-duckdb.js";
 
-import type { D1Database } from "@cloudflare/workers-types";
 
 /**
  * Получает данные по выплатам в магазине с разбивкой по категориям.
@@ -21,7 +20,7 @@ import type { D1Database } from "@cloudflare/workers-types";
  * @throws {Error} - В случае ошибки при получении данных.
  */
 export async function getDocumentsByCashOutcomeData(
-	db: D1Database,
+	db: AppDB,
 	evo: any,
 	shopUuids: string[],
 	since: string,
@@ -76,7 +75,7 @@ export async function getDocumentsByCashOutcomeData(
 }
 
 export async function getSalesgardenReportData(
-	db: D1Database,
+	db: AppDB,
 	evo: any,
 	shopUuids: string[],
 	since: string,
@@ -302,7 +301,7 @@ interface ShopChartData {
 }
 
 export async function getSalesDataG(
-	db: D1Database,
+	db: AppDB,
 	evo: any,
 	shopUuids: string[],
 	since: string,
@@ -434,7 +433,7 @@ export async function getSalesDataG(
  * @throws В случае ошибки при запросе или расчётах.
  */
 // export async function getSalesStats(
-// 	db: D1Database,
+// 	db: AppDB,
 // 	shopId: string,
 // 	since: string,
 // 	until: string,

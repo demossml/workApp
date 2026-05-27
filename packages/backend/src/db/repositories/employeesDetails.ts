@@ -1,8 +1,9 @@
-import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types";
 import type { Employee } from "../../evotor/types";
+import { DuckPreparedStatement } from "../../db-duckdb.js";
+import type { AppDB } from "../../db-duckdb.js";
 
 export async function ensureEmployeesDetailsTable(
-	db: D1Database,
+	db: AppDB,
 ): Promise<void> {
 	await db
 		.prepare(
@@ -17,7 +18,7 @@ export async function ensureEmployeesDetailsTable(
 }
 
 export async function upsertEmployeesDetails(
-	db: D1Database,
+	db: AppDB,
 	employees: Employee[],
 ): Promise<void> {
 	if (!employees.length) return;
@@ -27,7 +28,7 @@ export async function upsertEmployeesDetails(
 		"INSERT INTO employees_details (uuid, id, name, last_name, patronymic_name, phone, role, role_id, user_id, stores, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(uuid) DO UPDATE SET id = excluded.id, name = excluded.name, last_name = excluded.last_name, patronymic_name = excluded.patronymic_name, phone = excluded.phone, role = excluded.role, role_id = excluded.role_id, user_id = excluded.user_id, stores = excluded.stores, updated_at = datetime('now')",
 	);
 
-	const statements: D1PreparedStatement[] = employees
+	const statements: DuckPreparedStatement[] = employees
 		.filter((employee) => employee?.uuid)
 		.map((employee) =>
 			stmt.bind(
@@ -75,7 +76,7 @@ function parseStores(raw: string | null): string[] {
 }
 
 export async function getEmployeeDetailsByUserId(
-	db: D1Database,
+	db: AppDB,
 	userId: string,
 ): Promise<EmployeeDetailsRow | null> {
 	await ensureEmployeesDetailsTable(db);
@@ -89,7 +90,7 @@ export async function getEmployeeDetailsByUserId(
 }
 
 export async function listEmployeeDetails(
-	db: D1Database,
+	db: AppDB,
 ): Promise<EmployeeDetailsRow[]> {
 	await ensureEmployeesDetailsTable(db);
 	const result = await db
@@ -101,7 +102,7 @@ export async function listEmployeeDetails(
 }
 
 export async function listEmployeeDetailsByShop(
-	db: D1Database,
+	db: AppDB,
 	shopId: string,
 ): Promise<EmployeeDetailsRow[]> {
 	await ensureEmployeesDetailsTable(db);

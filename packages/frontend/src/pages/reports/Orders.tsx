@@ -6,7 +6,7 @@ import { useMe } from "../../hooks/useApi";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { Button, Calendar, Popover, PopoverContent, PopoverTrigger } from "../../components/ui";
 import { ErrorState, LoadingState } from "@shared/ui/states";
-import { DynamicTable, GroupSelector, PeriodSelector, ShopSelector } from "@widgets/reports";
+import { DynamicTable, GroupSelector } from "@widgets/reports";
 import {
   fetchEvotorShops,
   fetchGroupsByShop,
@@ -15,13 +15,10 @@ import {
 } from "@shared/api";
 
 const ORDER_TABLE_COLUMNS = [
+  "shopName",
   "productName",
   "smaQuantity",
   "quantity",
-  "availableStock",
-  "safetyStock",
-  "reorderPoint",
-  "targetStock",
   "orderQuantity",
   "sum",
   "confidencePct",
@@ -31,13 +28,6 @@ const ORDER_TABLE_COLUMNS = [
 interface GroupOption {
   name: string;
   uuid: string;
-}
-
-interface ReportData {
-  order: Record<string, { [key: string]: number | string[] }>;
-  startDate: string;
-  endDate: string;
-  shopName: string;
 }
 
 type OrderV2Response = {
@@ -74,21 +64,31 @@ type OrderV2Response = {
   }>;
 };
 
+type FlatRow = {
+  shopName: string;
+  productName: string;
+  smaQuantity: number;
+  quantity: number;
+  orderQuantity: number;
+  sum: number;
+  confidencePct: number;
+  reasonCodes: string[];
+};
+
 export default function Orders() {
   const queryClient = useQueryClient();
   const [shopOptions, setShopOptions] = useState<Record<string, string>>({});
-  const [selectedShop, setSelectedShop] = useState<string | null>(null);
+  const [selectedShops, setSelectedShops] = useState<string[]>([]);
   const [groupOptions, setGroupOptions] = useState<GroupOption[]>([]);
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
   const [isLoadingShops, setIsLoadingShops] = useState(false);
   const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
-  const [selectedPeriod, setSelectedPeriod] = useState<number | null>(null);
-  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [analysisWeeks, setAnalysisWeeks] = useState<number>(4);
+  const [tableData, setTableData] = useState<FlatRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showInstructions, setShowInstructions] = useState(false);
 
-  const [dateMode, setDateMode] = useState<"lastWeek" | "period">("lastWeek");
   const [period, setPeriod] = useState<DateRange | undefined>(undefined);
   const [tempPeriod, setTempPeriod] = useState<DateRange | undefined>(undefined);
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
@@ -120,42 +120,6 @@ export default function Orders() {
       month: "short",
     });
 
-  const getLastWeekRange = () => {
-    const today = new Date();
-    const day = today.getDay();
-    const mondayOffset = day === 0 ? -6 : 1 - day;
-    const thisWeekMonday = new Date(today);
-    thisWeekMonday.setDate(today.getDate() + mondayOffset);
-
-    const start = new Date(thisWeekMonday);
-    start.setDate(thisWeekMonday.getDate() - 7);
-
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-
-    return {
-      startDate: formatLocalDate(start),
-      endDate: formatLocalDate(end),
-    };
-  };
-
-  useEffect(() => {
-    if (dateMode === "lastWeek") {
-      const range = getLastWeekRange();
-      setStartDate(range.startDate);
-      setEndDate(range.endDate);
-      setPeriod(undefined);
-      setTempPeriod(undefined);
-      setShowPeriodPicker(false);
-    }
-  }, [dateMode]);
-
-  useEffect(() => {
-    if (dateMode !== "period" || !period?.from || !period?.to) return;
-    setStartDate(formatLocalDate(period.from));
-    setEndDate(formatLocalDate(period.to));
-  }, [dateMode, period]);
-
   useEffect(() => {
     const fetchSalesData = async () => {
       setIsLoadingShops(true);
@@ -168,10 +132,10 @@ export default function Orders() {
         });
         setShopOptions(result.shopOptions);
 
-        if (Object.keys(result.shopOptions).length > 0) {
-          const defaultShopUuid = Object.keys(result.shopOptions)[0];
-          setSelectedShop(defaultShopUuid);
-          await fetchGroups(defaultShopUuid);
+        const shopUuids = Object.keys(result.shopOptions);
+        if (shopUuids.length > 0) {
+          setSelectedShops(shopUuids); // Select all by default
+          await fetchGroupsForShop(shopUuids[0]);
         }
       } catch (err) {
         console.error(err);
@@ -186,7 +150,7 @@ export default function Orders() {
     }
   }, [queryClient, userId]);
 
-  const fetchGroups = async (shopUuid: string) => {
+  const fetchGroupsForShop = async (shopUuid: string) => {
     setIsLoadingGroups(true);
     setError(null);
     try {
@@ -209,69 +173,73 @@ export default function Orders() {
     }
   };
 
+  useEffect(() => {
+    if (!period?.from || !period?.to) return;
+    setStartDate(formatLocalDate(period.from));
+    setEndDate(formatLocalDate(period.to));
+  }, [period]);
+
+  const toggleShop = (uuid: string) => {
+    setSelectedShops((prev) =>
+      prev.includes(uuid)
+        ? prev.filter((s) => s !== uuid)
+        : [...prev, uuid]
+    );
+  };
+
   const isFormValid =
     !!startDate &&
     !!endDate &&
-    !!selectedShop &&
-    !!selectedPeriod &&
+    selectedShops.length > 0 &&
     selectedGroups.length > 0;
 
   const submitForecast = async () => {
-    if (!isFormValid) {
-      setError("Выберите период, магазин, группы и количество периодов SMA.");
+    if (!isFormValid || !startDate || !endDate) {
+      setError("Выберите период заказа, магазины и группы.");
       return;
     }
 
     setIsLoadingReport(true);
     setError(null);
     try {
-      const report = (await queryClient.fetchQuery({
-        queryKey: queryKeys.reports.orders.forecast({
-          startDate,
-          endDate,
-          shopUuid: selectedShop,
-          groups: selectedGroups,
-          period: selectedPeriod,
-          userId,
-        }),
-        queryFn: () =>
+      // Run forecasts for all selected shops in parallel
+      const results = await Promise.all(
+        selectedShops.map((shopUuid) =>
           fetchOrderForecastV2({
             startDate,
             endDate,
-            shopUuid: selectedShop,
+            shopUuid,
             groups: selectedGroups,
-            forecastHorizonDays: selectedPeriod || 7,
-            leadTimeDays: 2,
+            analysisWeeks,
+            leadTimeDays: 0,
             serviceLevel: 0.95,
-          }),
-        staleTime: 60_000,
-      })) as
-        | OrderV2Response
-        | { code: string; message: string; details?: unknown };
-      if (!("items" in report)) {
-        throw new Error(report.message || "Некорректный ответ сервера");
+          })
+        )
+      );
+
+      // Merge all results into a flat table with shopName column
+      const shopName = (uuid: string) => shopOptions[uuid] || uuid;
+      const allRows: FlatRow[] = [];
+
+      for (let i = 0; i < results.length; i++) {
+        const report = results[i] as OrderV2Response | { code: string; message: string };
+        if (!("items" in report)) continue;
+        const name = shopName(selectedShops[i]);
+        for (const item of report.items) {
+          allRows.push({
+            shopName: name,
+            productName: item.productName,
+            smaQuantity: Number(item.avgDailyDemand.toFixed(2)),
+            quantity: Number(item.currentStock.toFixed(2)),
+            orderQuantity: Number(item.recommendedOrderRounded.toFixed(2)),
+            sum: Number(item.orderCost.toFixed(2)),
+            confidencePct: Number((item.confidence * 100).toFixed(1)),
+            reasonCodes: item.reasonCodes,
+          });
+        }
       }
-      const orderMap: Record<string, { [key: string]: number | string[] }> = {};
-      for (const item of report.items) {
-        orderMap[item.productName] = {
-          smaQuantity: Number(item.avgDailyDemand.toFixed(2)),
-          quantity: Number(item.currentStock.toFixed(2)),
-          availableStock: Number(item.availableStock.toFixed(2)),
-          safetyStock: Number(item.safetyStock.toFixed(2)),
-          reorderPoint: Number(item.reorderPoint.toFixed(2)),
-          targetStock: Number(item.targetStock.toFixed(2)),
-          orderQuantity: Number(item.recommendedOrderRounded.toFixed(2)),
-          sum: Number(item.orderCost.toFixed(2)),
-          confidencePct: Number((item.confidence * 100).toFixed(1)),
-          reasonCodes: item.reasonCodes,
-        };
-      }
-      setReportData({
-        order: orderMap,
-        startDate: report.period.startDate,
-        endDate: report.period.endDate,
-        shopName: shopOptions[selectedShop] || selectedShop,
-      });
+
+      setTableData(allRows);
     } catch (err) {
       console.error(err);
       setError("Не удалось получить прогноз закупки");
@@ -280,89 +248,18 @@ export default function Orders() {
     }
   };
 
-  const normalizedProducts = useMemo(
-    () =>
-      reportData
-        ? Object.values(reportData.order).filter(
-            (product): product is {
-              orderQuantity: number;
-              smaQuantity: number;
-              quantity: number;
-              sum: number;
-            } =>
-              !!product &&
-              typeof product === "object" &&
-              typeof product.orderQuantity === "number" &&
-              typeof product.smaQuantity === "number" &&
-              typeof product.quantity === "number" &&
-              typeof product.sum === "number"
-          )
-        : [],
-    [reportData]
-  );
-
   const totalSum = useMemo(
-    () => normalizedProducts.reduce((sum, product) => sum + product.sum, 0),
-    [normalizedProducts]
+    () => (tableData || []).reduce((sum, row) => sum + row.sum, 0),
+    [tableData]
   );
 
-  const tableData = useMemo(
-    () =>
-      reportData
-        ? Object.entries(reportData.order)
-            .filter(
-              (
-                entry
-              ): entry is [
-                string,
-                {
-                  orderQuantity: number;
-                  smaQuantity: number;
-                  quantity: number;
-                  sum: number;
-                  availableStock?: number;
-                  safetyStock?: number;
-                  reorderPoint?: number;
-                  targetStock?: number;
-                  confidencePct?: number;
-                  reasonCodes?: string[];
-                },
-              ] => {
-                const product = entry[1];
-                return (
-                  !!product &&
-                  typeof product === "object" &&
-                  typeof product.orderQuantity === "number" &&
-                  typeof product.smaQuantity === "number" &&
-                  typeof product.quantity === "number" &&
-                  typeof product.sum === "number"
-                );
-              }
-            )
-            .map(([productName, product]) => ({
-              productName,
-              smaQuantity: product.smaQuantity,
-              quantity: product.quantity,
-              availableStock:
-                typeof product.availableStock === "number" ? product.availableStock : 0,
-              safetyStock:
-                typeof product.safetyStock === "number" ? product.safetyStock : 0,
-              reorderPoint:
-                typeof product.reorderPoint === "number" ? product.reorderPoint : 0,
-              targetStock:
-                typeof product.targetStock === "number" ? product.targetStock : 0,
-              orderQuantity: product.orderQuantity,
-              sum: product.sum,
-              confidencePct:
-                typeof product.confidencePct === "number" ? product.confidencePct : 0,
-              reasonCodes: Array.isArray(product.reasonCodes) ? product.reasonCodes : [],
-            }))
-        : [],
-    [reportData]
+  const shopNames = useMemo(
+    () => (tableData ? [...new Set(tableData.map((r) => r.shopName))].join(", ") : ""),
+    [tableData]
   );
 
   if (isLoadingReport) return <LoadingState />;
-  if (error && !reportData) return <ErrorState error={error} />;
+  if (error && !tableData) return <ErrorState error={error} />;
 
   if (!Object.keys(shopOptions).length && isLoadingShops) {
     return (
@@ -372,7 +269,7 @@ export default function Orders() {
     );
   }
 
-  if (reportData) {
+  if (tableData) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -384,24 +281,26 @@ export default function Orders() {
           paddingBottom: "calc(var(--app-bottom-clearance) + 0.75rem)",
         }}
       >
-        <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4">
-          <p className="text-sm text-slate-300">
-            {reportData.shopName}, {formatCompactDate(reportData.startDate)} -{" "}
-            {formatCompactDate(reportData.endDate)}
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            {shopNames}
           </p>
-          <p className="mt-1 text-xl font-semibold text-white">
+          <p className="text-xs text-slate-400">
+            {formatCompactDate(startDate!)} – {formatCompactDate(endDate!)}
+          </p>
+          <p className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">
             {totalSum.toLocaleString("ru-RU")} ₽
           </p>
           <p className="text-xs text-slate-400">
-            Позиций в прогнозе: {tableData.length}
+            Позиций: {tableData.length}
           </p>
           <button
             type="button"
             onClick={() => {
-              setReportData(null);
+              setTableData(null);
               setError(null);
             }}
-            className="mt-3 text-sm text-blue-400 hover:text-blue-300"
+            className="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-500"
           >
             Сформировать новый прогноз
           </button>
@@ -424,109 +323,115 @@ export default function Orders() {
       }}
     >
       <div className="text-center">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-100">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
           Прогноз закупки
         </h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Выберите период, магазин и группы для расчёта заказа
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Выберите период, магазины и группы для расчёта заказа
         </p>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4 flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => setDateMode("lastWeek")}
-            className={`h-11 rounded-xl border text-sm font-semibold transition ${
-              dateMode === "lastWeek"
-                ? "border-blue-500 bg-blue-600 text-white"
-                : "border-slate-700 text-slate-200 hover:border-blue-500/60"
-            }`}
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col gap-4">
+        {/* Period picker */}
+        <Popover open={showPeriodPicker} onOpenChange={setShowPeriodPicker}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              className="w-full justify-start border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              {period?.from && period?.to
+                ? `${formatDate(period.from)} – ${formatDate(period.to)}`
+                : "Выберите период заказа"}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            className="w-auto p-0 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
           >
-            Прошлая неделя
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setDateMode("period");
-              setShowPeriodPicker(true);
-            }}
-            className={`h-11 rounded-xl border text-sm font-semibold transition ${
-              dateMode === "period"
-                ? "border-blue-500 bg-blue-600 text-white"
-                : "border-slate-700 text-slate-200 hover:border-blue-500/60"
-            }`}
-          >
-            Период
-          </button>
-        </div>
-
-        {dateMode === "period" && (
-          <Popover open={showPeriodPicker} onOpenChange={setShowPeriodPicker}>
-            <PopoverTrigger asChild>
+            <Calendar
+              mode="range"
+              selected={tempPeriod ?? period}
+              onSelect={setTempPeriod}
+              numberOfMonths={1}
+              className="text-slate-900 dark:text-slate-100"
+            />
+            <div className="flex gap-2 p-3 border-t border-slate-200 dark:border-slate-800">
               <Button
                 variant="outline"
-                className="w-full justify-start border-slate-700 bg-slate-900/70 text-slate-200 hover:bg-slate-800"
+                className="flex-1 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+                onClick={() => {
+                  setTempPeriod(period);
+                  setShowPeriodPicker(false);
+                }}
               >
-                {period?.from && period?.to
-                  ? `${formatDate(period.from)} - ${formatDate(period.to)}`
-                  : "Выберите диапазон дат"}
+                Отмена
               </Button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="start"
-              className="w-auto p-0 bg-slate-950/95 border border-white/10"
-            >
-              <Calendar
-                mode="range"
-                selected={tempPeriod ?? period}
-                onSelect={setTempPeriod}
-                numberOfMonths={1}
-                className="text-slate-100"
-              />
-              <div className="flex gap-2 p-3 border-t border-white/10">
-                <Button
-                  variant="outline"
-                  className="flex-1 border-slate-700 bg-slate-900/80 text-slate-200 hover:bg-slate-800"
-                  onClick={() => {
-                    setTempPeriod(period);
-                    setShowPeriodPicker(false);
-                  }}
-                >
-                  Отмена
-                </Button>
-                <Button
-                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white"
-                  onClick={() => {
-                    if (tempPeriod?.from && tempPeriod?.to) {
-                      setPeriod(tempPeriod);
-                    }
-                    setShowPeriodPicker(false);
-                  }}
-                >
-                  Применить
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
-        )}
+              <Button
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white"
+                onClick={() => {
+                  if (tempPeriod?.from && tempPeriod?.to) {
+                    setPeriod(tempPeriod);
+                  }
+                  setShowPeriodPicker(false);
+                }}
+              >
+                Применить
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
 
-        <div className="text-xs text-slate-300">
-          Выбранный диапазон:{" "}
-          {startDate && endDate
-            ? `${formatCompactDate(startDate)} - ${formatCompactDate(endDate)}`
-            : "не выбран"}
+        <div className="text-xs text-slate-500 dark:text-slate-400">
+          Товар должен быть в наличии с{" "}
+          <span className="text-slate-700 dark:text-slate-200 font-medium">
+            {startDate && endDate
+              ? `${formatCompactDate(startDate)} по ${formatCompactDate(endDate)}`
+              : "—"}
+          </span>
         </div>
 
-        <PeriodSelector onPeriodChange={setSelectedPeriod} />
+        {/* Shop multi-select */}
+        <div>
+          <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">Магазины</p>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(shopOptions).map(([uuid, name]) => (
+              <button
+                key={uuid}
+                type="button"
+                onClick={() => toggleShop(uuid)}
+                className={`h-9 px-3 rounded-lg border text-sm font-medium transition ${
+                  selectedShops.includes(uuid)
+                    ? "border-blue-500 bg-blue-600 text-white"
+                    : "border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-blue-400"
+                }`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        </div>
 
-        <ShopSelector
-          shopOptions={shopOptions}
-          isLoadingShops={isLoadingShops}
-          fetchGroups={fetchGroups}
-          selectedShop={selectedShop}
-          setSelectedShop={setSelectedShop}
-        />
+        {/* Analysis weeks selector */}
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-600 dark:text-slate-300">Анализ за</span>
+          <div className="flex gap-1">
+            {[2, 3, 4, 6, 8].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setAnalysisWeeks(n)}
+                className={`h-9 w-10 rounded-lg border text-sm font-medium transition ${
+                  analysisWeeks === n
+                    ? "border-blue-500 bg-blue-600 text-white"
+                    : "border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-blue-400"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-slate-400">нед.</span>
+        </div>
 
         <GroupSelector
           groupOptions={groupOptions}
@@ -541,7 +446,7 @@ export default function Orders() {
           className={`h-11 rounded-xl text-sm font-semibold transition ${
             isFormValid
               ? "bg-blue-600 hover:bg-blue-500 text-white"
-              : "bg-slate-700 text-slate-400 cursor-not-allowed"
+              : "bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
           }`}
           disabled={!isFormValid}
         >
@@ -551,26 +456,27 @@ export default function Orders() {
         <button
           type="button"
           onClick={() => setShowInstructions((prev) => !prev)}
-          className="text-sm text-blue-400 hover:text-blue-300"
+          className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-500"
         >
           {showInstructions ? "Скрыть инструкцию" : "Инструкция"}
         </button>
       </div>
 
       {error && (
-        <div className="text-sm text-red-400 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2">
+        <div className="text-sm text-red-600 dark:text-red-400 rounded-xl border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950 px-3 py-2">
           {error}
         </div>
       )}
 
       {showInstructions && (
-        <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4 text-sm text-slate-300 space-y-2">
-          <p className="font-semibold text-slate-100">Как работает прогноз</p>
-          <p>1. Выберите период истории продаж, магазин и группы товаров.</p>
-          <p>2. Укажите горизонт прогноза (в днях) через селектор периодов SMA.</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-sm text-slate-600 dark:text-slate-300 space-y-2">
+          <p className="font-semibold text-slate-900 dark:text-slate-100">Как работает прогноз</p>
+          <p>1. Выберите период, на который нужен товар (например, среда–пятница).</p>
+          <p>2. Выберите магазины — можно все или несколько.</p>
+          <p>3. Укажите, за сколько прошлых недель анализировать продажи.</p>
           <p>
-            3. Система рассчитает рекомендуемый заказ с учетом страхового запаса,
-            точки заказа и целевого уровня остатков.
+            4. Система проанализирует продажи за такие же дни недели в прошлых
+            периодах и рассчитает рекомендуемый заказ с учётом страхового запаса.
           </p>
         </div>
       )}

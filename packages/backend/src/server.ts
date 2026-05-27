@@ -1,4 +1,3 @@
-// @ts-nocheck
 const { serve } = require("@hono/node-server");
 const { serveStatic } = require("@hono/node-server/serve-static");
 const { Hono } = require("hono");
@@ -19,7 +18,7 @@ const kv = new KVStore();
 const dbAdapter = createD1Adapter();
 
 // Inject env bindings
-app.use("*", async (c, next) => {
+app.use("*", async (c: any, next: any) => {
   c.env = c.env || {};
   c.env.DB = dbAdapter;
   c.env.BOT_TOKEN = process.env.BOT_TOKEN || "";
@@ -44,10 +43,10 @@ if (fs.existsSync(distPath)) {
   app.get("*", serveStatic({ path: "index.html", root: distPath }));
 }
 
-app.get("/", (c) => c.json({ message: "Evo Backend (workApp)" }));
+app.get("/", (c: any) => c.json({ message: "Evo Backend (workApp)" }));
 app.onError(errorHandler);
 
-ensureSchema().catch((err) => console.error("Schema init error:", err));
+ensureSchema().catch((err: any) => console.error("Schema init error:", err));
 
 console.log(`Evo Backend (workApp) on port ${port}`);
 serve({ fetch: app.fetch, port });

@@ -1,4 +1,4 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../../db-duckdb.js";
 
 export interface OpenShopRecord {
 	id: number;
@@ -31,7 +31,7 @@ export interface OpenShopReportRow {
 export async function getData(
 	date: string,
 	shopUuid: string,
-	db: D1Database,
+	db: AppDB,
 ): Promise<OpenShopRecord | null> {
 	try {
 		const query = `
@@ -55,7 +55,7 @@ export async function getData(
 }
 
 export async function getOpeningsByPeriod(
-	db: D1Database,
+	db: AppDB,
 	sinceIso: string,
 	untilIso: string,
 ): Promise<OpenShopReportRow[]> {
