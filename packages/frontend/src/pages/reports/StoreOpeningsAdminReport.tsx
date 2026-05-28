@@ -22,6 +22,7 @@ interface OpeningRecord {
   employeeId: string;
   employeeName: string;
   openedAt: string;
+  isLate?: boolean;
   photoCount: number;
   requiredPhotoCount: number;
   hasCashCheck: boolean;
@@ -364,7 +365,10 @@ export default function StoreOpeningsAdminReport() {
                   <tr key={`${row.shopUuid}-${row.openedAt}`} className="border-t border-gray-200 dark:border-gray-700">
                     <td className="p-2">{row.shopName}</td>
                     <td className="p-2">{row.employeeName}</td>
-                    <td className="p-2">{new Date(row.openedAt).toLocaleString("ru-RU")}</td>
+                    <td className={`p-2${row.isLate ? " text-red-600 dark:text-red-400 font-semibold" : ""}`}>
+                      {new Date(row.openedAt).toLocaleString("ru-RU")}
+                      {row.isLate ? " ⚠️ опоздание" : ""}
+                    </td>
                     <td className="p-2">{row.photoCount}/{row.requiredPhotoCount}</td>
                     <td className="p-2">
                       <button
@@ -404,8 +408,9 @@ export default function StoreOpeningsAdminReport() {
                 <div className="text-sm text-gray-600 dark:text-gray-300">
                   {row.employeeName}
                 </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
+                <div className={`text-xs${row.isLate ? " text-red-600 dark:text-red-400 font-semibold" : " text-gray-500 dark:text-gray-400"}`}>
                   {new Date(row.openedAt).toLocaleString("ru-RU")}
+                  {row.isLate ? " ⚠️ опоздание" : ""}
                 </div>
                 <div className="text-sm">
                   Фото: {row.photoCount}/{row.requiredPhotoCount}

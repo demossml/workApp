@@ -10,6 +10,7 @@ import {
 	AiDirectorEmployeeAnalysisRequestSchema,
 	AiDirectorEmployeeDeepAnalysisRequestSchema,
 	AiDirectorDemandForecastRequestSchema,
+	AiDirectorBriefingRequestSchema,
 	AiDirectorExplainSalesRequestSchema,
 	AiDirectorHeatmapRequestSchema,
 	AiDirectorOverviewRequestSchema,
@@ -2472,6 +2473,41 @@ export const aiRoutes = new Hono<IEnv>()
 			const { shopUuids } = validate(AiDirectorHeatmapRequestSchema, payload);
 			const db = c.get("db");
 			const rows = await getSalesHourly(db, shopUuids);
+
+			// Fallback: if sales_hourly is empty, compute from receipts directly
+			if (rows.length === 0) {
+				const ninetyDaysAgo = new Date();
+				ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+				const sinceStr = ninetyDaysAgo.toISOString().slice(0, 19).replace("T", " ");
+				const rawRows = await db.prepare(
+					`SELECT r.shop_id, r.close_date, r.type, r.total
+					FROM receipts r
+					WHERE r.close_date >= ? AND r.type = 'SELL'`
+				).bind(sinceStr).all<{ shop_id: string; close_date: string; type: string; total: number }>();
+				const cellMap = new Map<string, { shopId: string; dayOfWeek: number; hour: number; revenue: number; checks: number }>();
+				for (const row of (rawRows.results || [])) {
+					const d = new Date(row.close_date);
+					if (isNaN(d.getTime())) continue;
+					const dayOfWeek = d.getDay(); // 0=Sun, 6=Sat
+					const hour = d.getHours();
+					const key = `${row.shop_id}|${dayOfWeek}|${hour}`;
+					const existing = cellMap.get(key);
+					if (existing) {
+						existing.revenue += Number(row.total || 0);
+						existing.checks += 1;
+					} else {
+						cellMap.set(key, {
+							shopId: String(row.shop_id),
+							dayOfWeek,
+							hour,
+							revenue: Number(row.total || 0),
+							checks: 1,
+						});
+					}
+				}
+				return c.json({ rows: Array.from(cellMap.values()) });
+			}
+
 			return c.json({ rows });
 		} catch (error) {
 			logger.error("AI director heatmap failed", { error });
@@ -2931,7 +2967,7 @@ export const aiRoutes = new Hono<IEnv>()
 				),
 			);
 
-			const rating = resolvedShopUuids
+			let rating = resolvedShopUuids
 				.map((shopUuid, idx) => {
 					const docs = docsByShop[idx] || [];
 					const metrics = aggregateDirectorMetrics(docs);
@@ -2944,6 +2980,36 @@ export const aiRoutes = new Hono<IEnv>()
 					};
 				})
 				.sort((a, b) => b.revenue - a.revenue);
+
+			// Fallback: if index documents returned all zeros, query receipts directly
+			const totalFromIndex = rating.reduce((sum, r) => sum + r.revenue, 0);
+			if (totalFromIndex === 0) {
+				const receiptSql = db.prepare(
+					`SELECT
+						r.shop_id as store_uuid,
+						s.name as store_name,
+						COALESCE(SUM(CASE WHEN r.type = 'SELL' THEN r.total ELSE 0 END), 0) as revenue,
+						COALESCE(SUM(CASE WHEN r.type = 'SELL' THEN 1 ELSE 0 END), 0) as checks
+					FROM receipts r
+					JOIN stores s ON s.store_uuid = r.shop_id
+					WHERE r.close_date >= ? AND r.close_date <= ?
+					GROUP BY r.shop_id, s.name
+					ORDER BY revenue DESC`
+				);
+				const receiptRows = await receiptSql.bind(
+					`${resolvedSince}T00:00:00.000+0000`,
+					`${resolvedUntil}T23:59:59.000+0000`,
+				).all<{ store_uuid: string; store_name: string; revenue: number; checks: number }>();
+				if ((receiptRows.results || []).length > 0) {
+					rating = (receiptRows.results || []).map((row) => ({
+						shopUuid: row.store_uuid,
+						shopName: row.store_name || shopNamesMap[row.store_uuid] || row.store_uuid,
+						revenue: Number(row.revenue || 0),
+						checks: Number(row.checks || 0),
+						averageCheck: Number(row.checks || 0) > 0 ? Number(row.revenue || 0) / Number(row.checks || 0) : 0,
+					})).sort((a, b) => b.revenue - a.revenue);
+				}
+			}
 
 			return c.json({
 				since: resolvedSince,
@@ -4903,6 +4969,247 @@ export const aiRoutes = new Hono<IEnv>()
 		} catch (error) {
 			logger.error("AI director dashboard failed", { error });
 			return c.json({ error: "AI_DIRECTOR_DASHBOARD_FAILED" }, 500);
+		}
+	})
+
+	.post("/director/briefing", async (c) => {
+		try {
+			const payload = await c.req.json().catch(() => ({}));
+			const { date, shopUuids, refresh } = validate(
+				AiDirectorBriefingRequestSchema,
+				payload,
+			);
+
+			const today = toIsoDate(new Date());
+			const targetDate = date ?? today;
+
+			// KV cache: return cached briefing unless refresh=true
+			const kv = (c.env as any).KV;
+			const cacheKey = `briefing:${targetDate}`;
+			if (!refresh && kv) {
+				try {
+					const cached = await kv.get(cacheKey);
+					if (cached) {
+						const parsed = JSON.parse(cached);
+						return c.json(parsed);
+					}
+				} catch (_) { /* miss — generate fresh */ }
+			}
+			const yesterday = shiftDateKey(targetDate, -1);
+			const weekAgoKey = shiftDateKey(targetDate, -7);
+
+			const db = c.get("db");
+			const baseUrl = new URL(c.req.url);
+			const forwardHeaders = new Headers();
+			for (const headerName of ["initData", "telegram-id", "authorization", "cookie"]) {
+				const value = c.req.header(headerName);
+				if (value) forwardHeaders.set(headerName, value);
+			}
+			forwardHeaders.set("content-type", "application/json");
+
+			const postInternal = async (path: string, body: Record<string, unknown>) => {
+				const url = new URL(`/api/ai${path}`, baseUrl.origin);
+				const response = await fetch(url.toString(), {
+					method: "POST",
+					headers: forwardHeaders,
+					body: JSON.stringify(body),
+				});
+				if (!response.ok) {
+					logger.warn("Briefing internal call failed", { path, status: response.status });
+					return {};
+				}
+				return (await response.json()) as Record<string, any>;
+			};
+
+			// Query receipts directly (bypasses broken index document path)
+			const queryDayRevenue = async (dateKey: string) => {
+				const since = `${dateKey}T00:00:00.000+0000`;
+				const until = `${dateKey}T23:59:59.000+0000`;
+				const stmt = db.prepare(
+					`SELECT
+						s.store_uuid,
+						s.name as store_name,
+						COALESCE(SUM(CASE WHEN r.type = 'SELL' THEN r.total ELSE 0 END), 0) as revenue,
+						COALESCE(SUM(CASE WHEN r.type = 'SELL' THEN 1 ELSE 0 END), 0) as checks,
+						COALESCE(SUM(CASE WHEN r.type = 'PAYBACK' THEN ABS(r.total) ELSE 0 END), 0) as refunds
+					FROM receipts r
+					JOIN stores s ON s.store_uuid = r.shop_id
+					WHERE r.close_date >= ? AND r.close_date <= ?
+					GROUP BY s.store_uuid, s.name
+					ORDER BY revenue DESC`
+				);
+				const result = await stmt.bind(since, until).all<{
+					store_uuid: string;
+					store_name: string;
+					revenue: number;
+					checks: number;
+					refunds: number;
+				}>();
+				return (result.results || []).map((row) => ({
+					shopUuid: row.store_uuid,
+					shopName: row.store_name,
+					revenue: Number(row.revenue || 0),
+					checks: Number(row.checks || 0),
+					averageCheck: Number(row.checks || 0) > 0 ? Number(row.revenue || 0) / Number(row.checks || 0) : 0,
+					refunds: Number(row.refunds || 0),
+				}));
+			};
+
+			// Gather data in parallel
+			const [todayRatings, yesterdayRatings, weekAgoRatings, forecastRaw, stockRaw] = await Promise.all([
+				queryDayRevenue(targetDate),
+				queryDayRevenue(yesterday),
+				queryDayRevenue(weekAgoKey),
+				postInternal("/director/demand-forecast", { date: targetDate, ...(shopUuids ? { shopUuids } : {}) }).catch(() => ({})),
+				postInternal("/director/stock-health", { days: 14 }).catch(() => ({})),
+			]);
+
+			const forecast = forecastRaw as Record<string, any>;
+			const stockHealth = stockRaw as Record<string, any>;
+
+			const formatHumanDate = (iso: string) => {
+				const d = new Date(`${iso}T00:00:00Z`);
+				return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+			};
+
+			// Build structured context for LLM
+			const context = {
+				date: formatHumanDate(targetDate),
+				dayOfWeek: new Date(`${targetDate}T00:00:00Z`).toLocaleDateString("ru-RU", { weekday: "long" }),
+				today: { rating: todayRatings },
+				yesterday: { rating: yesterdayRatings },
+				weekAgo: { rating: weekAgoRatings },
+				employees: [] as any[],
+				forecast: {
+					forecast: Number(forecast.forecast || 0),
+					weather: forecast.weather || null,
+					weatherFactor: typeof forecast.weatherFactor === "number" ? forecast.weatherFactor : undefined,
+					warning: typeof forecast.warning === "string" ? forecast.warning : null,
+				},
+				stock: {
+					deadCount: Array.isArray((stockHealth as any).deadStock) ? (stockHealth as any).deadStock.length : 0,
+					lowCount: Array.isArray((stockHealth as any).lowStock) ? (stockHealth as any).lowStock.length : 0,
+					outCount: Array.isArray((stockHealth as any).outOfStock) ? (stockHealth as any).outOfStock.length : 0,
+					topDead: Array.isArray((stockHealth as any).deadStock)
+						? (stockHealth as any).deadStock.slice(0, 5)
+						: [],
+					topOut: Array.isArray((stockHealth as any).outOfStock)
+						? (stockHealth as any).outOfStock.slice(0, 5)
+						: [],
+				},
+			};
+
+			const systemPrompt = `Ты AI-директор сети розничных магазинов. Твоя задача — составлять короткий, но содержательный брифинг для владельца бизнеса на указанную дату.
+
+**Формат брифинга (строго соблюдай, каждый раздел с заголовком и эмодзи):**
+
+📊 **Сводка за ${context.date} (${context.dayOfWeek})**
+Одной строкой: общая выручка, чеков, средний чек. Сравнение со вчерашним днём (рост/падение в %). Если данных за вчера нет — сравнивай с ближайшим доступным днём.
+
+🏪 **Магазины**
+Топ-3 по выручке с цифрами. Если какой-то магазин просел >15% — выдели отдельно с причиной.
+
+👥 **Сотрудники**
+Лучший сотрудник по выручке. Если у кого-то возвраты >5% или другие проблемы — отметь. Если данных по сотрудникам нет — напиши «Нет данных по сотрудникам (требуется синхронизация с Эвотор)».
+
+📦 **Товары**
+Сколько dead stock, сколько out-of-stock, сколько на исходе. 2-3 конкретные позиции, требующие внимания.
+
+🌤 **Прогноз на сегодня**
+Прогноз выручки (с учётом погоды). Если погода влияет — как именно.
+
+⚡ **Главное сегодня**
+2-3 самых важных действия на день: что проверить, кому позвонить, что заказать.
+
+**Правила:**
+- КРАТКО. Владелец читает это за 30 секунд утром с телефона.
+- ТОЛЬКО цифры из данных. Никаких домыслов.
+- Если данных по какому-то разделу нет — пропусти раздел.
+- Используй названия магазинов, имена сотрудников, названия товаров как есть в данных.
+- Сравнения: сегодня vs вчера, сегодня vs неделю назад.`;
+
+			const userMessage = JSON.stringify(context);
+
+			let briefing = "";
+			try {
+				const deepseekKey = (c.env as any).DEEPSEEK_API_KEY as string | undefined;
+				if (!deepseekKey) {
+					logger.warn("Briefing: DEEPSEEK_API_KEY not set, using Cloudflare AI fallback");
+					throw new Error("DEEPSEEK_API_KEY missing");
+				}
+
+				const deepseekRes = await fetch("https://api.deepseek.com/v1/chat/completions", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"Authorization": `Bearer ${deepseekKey}`,
+					},
+					body: JSON.stringify({
+						model: "deepseek-chat",
+						max_tokens: 1500,
+						temperature: 0.3,
+						messages: [
+							{ role: "system", content: systemPrompt },
+							{ role: "user", content: userMessage },
+						],
+					}),
+				});
+
+				if (!deepseekRes.ok) {
+					const errText = await deepseekRes.text().catch(() => "");
+					logger.warn("Briefing DeepSeek API failed", { status: deepseekRes.status, error: errText.slice(0, 200) });
+					throw new Error(`DeepSeek API ${deepseekRes.status}`);
+				}
+
+				const deepseekJson = await deepseekRes.json() as Record<string, any>;
+				const choice = deepseekJson?.choices?.[0]?.message?.content;
+				if (typeof choice === "string" && choice.trim()) {
+					briefing = choice.trim();
+				}
+			} catch (err) {
+				logger.warn("Briefing LLM failed, falling back to structured data", { error: err });
+			}
+
+			if (!briefing) {
+				// Fallback: return structured data without LLM
+				const todayRatingArr = todayRatings;
+				const totalRevenue = todayRatingArr.reduce((sum: number, r: any) => sum + (Number(r.revenue) || 0), 0);
+				const totalChecks = todayRatingArr.reduce((sum: number, r: any) => sum + (Number(r.checks) || 0), 0);
+				const yesterdayRatingArr = yesterdayRatings;
+				const yesterdayRevenue = yesterdayRatingArr.reduce((sum: number, r: any) => sum + (Number(r.revenue) || 0), 0);
+				const changePct = yesterdayRevenue > 0 ? ((totalRevenue - yesterdayRevenue) / yesterdayRevenue * 100).toFixed(1) : "—";
+
+				briefing = [
+					`📊 **Сводка за ${context.date} (${context.dayOfWeek})**`,
+					`Выручка: ${totalRevenue.toFixed(0)} ₽ | Чеков: ${totalChecks} | Средний чек: ${totalChecks > 0 ? (totalRevenue / totalChecks).toFixed(0) : 0} ₽`,
+					yesterdayRevenue > 0 ? `vs ${context.yesterday?.rating?.[0] ? 'вчера' : 'предыдущий день'}: ${changePct}%` : '',
+					"",
+					`🏪 **Магазины:**`,
+					...todayRatingArr.slice(0, 3).map((r: any) => `  • ${r.shopName}: ${Number(r.revenue || 0).toFixed(0)} ₽ (${r.checks} чеков)`),
+					"",
+					`📦 **Склад:** dead: ${context.stock.deadCount}, out: ${context.stock.outCount}, low: ${context.stock.lowCount}`,
+					"",
+					`🌤 **Прогноз:** ${context.forecast.forecast.toFixed(0)} ₽`,
+				].join("\n");
+			}
+
+			const result = {
+				date: targetDate,
+				briefing,
+				context,
+			};
+
+			// Cache for 24h
+			if (kv) {
+				try {
+					await kv.put(cacheKey, JSON.stringify(result), { expirationTtl: 86400 });
+				} catch (_) { /* non-critical */ }
+			}
+
+			return c.json(result);
+		} catch (error) {
+			logger.error("AI director briefing failed", { error });
+			return c.json({ error: "AI_DIRECTOR_BRIEFING_FAILED" }, 500);
 		}
 	})
 

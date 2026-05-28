@@ -231,6 +231,15 @@ export const AiDirectorStockMonitorRequestSchema = z.object({
 });
 
 /**
+ * POST /api/ai/director/briefing
+ */
+export const AiDirectorBriefingRequestSchema = z.object({
+	date: DateStringSchema.optional(),
+	shopUuids: z.array(UuidSchema).min(1).optional(),
+	refresh: z.boolean().optional(),
+});
+
+/**
  * POST /api/ai/dashboard-summary2-insights
  */
 const DashboardSummary2RiskShopSchema = z.object({

@@ -27,6 +27,7 @@ app.use("*", async (c: any, next: any) => {
   c.env.DB = dbAdapter;
   c.env.BOT_TOKEN = process.env.BOT_TOKEN || "";
   c.env.EVOTOR_API_TOKEN = process.env.EVOTOR_API_TOKEN || "";
+  c.env.DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
   c.env.KV = kv;
   c.env.R2_PUBLIC_URL = "/files";
   c.env.DISABLE_EVOTOR_CRON = "1";

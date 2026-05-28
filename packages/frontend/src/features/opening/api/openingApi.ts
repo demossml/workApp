@@ -28,9 +28,30 @@ export type ShopOpeningStatus = {
   openedByName?: string | null;
   openedAt?: string | null;
   openedTime?: string | null;
+  isLate?: boolean;
   canSelect?: boolean;
   blockedReason?: string | null;
 };
+
+export type PosSession = {
+  shopUuid: string;
+  shopName: string;
+  openedAt: string;
+  openedTime: string;
+  openedByName: string;
+  isLate: boolean;
+};
+
+export async function fetchPosSessions(): Promise<PosSession[]> {
+  try {
+    const response = await client.api.stores["pos-sessions"].$post({ json: {} });
+    if (!response.ok) return [];
+    const data = (await response.json()) as { sessions?: PosSession[] };
+    return Array.isArray(data.sessions) ? data.sessions : [];
+  } catch {
+    return [];
+  }
+}
 
 export async function fetchShopsOpeningStatus(date: string) {
   const response = await client.api.stores["shops-opening-status"].$post({

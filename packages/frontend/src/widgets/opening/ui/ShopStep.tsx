@@ -121,8 +121,8 @@ export default function ShopStep({
                   </span>
                 )}
                 {shop.canSelect !== false && shop.isOpenedToday && (
-                  <span className="text-xs text-green-600 dark:text-green-400">
-                    Уже открыт{shop.openedByName ? `: ${shop.openedByName}` : ""}{shop.openedTime ? ` в ${shop.openedTime}` : ""}
+                  <span className={`text-xs${shop.isLate ? " text-red-600 dark:text-red-400 font-semibold" : " text-green-600 dark:text-green-400"}`}>
+                    Уже открыт{shop.openedByName ? `: ${shop.openedByName}` : ""}{shop.openedTime ? ` в ${shop.openedTime}` : ""}{shop.isLate ? " ⚠️ опоздание" : ""}
                   </span>
                 )}
               </div>

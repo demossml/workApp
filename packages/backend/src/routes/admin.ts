@@ -9,6 +9,8 @@ import {
 	getDataMode,
 	setDataMode,
 } from "../dataMode";
+import { runEvotorDocumentsIndexingJob } from "../jobs/indexEvotorDocuments";
+import { logger } from "../logger";
 
 const SetDataModeSchema = z.object({
 	mode: DataModeSchema,
@@ -49,5 +51,15 @@ export const adminRoutes = new Hono<IEnv>()
 				message: "Failed to update data mode",
 			});
 			return jsonError(c, status, body.code, body.message, body.details);
+		}
+	})
+	.post("/sync-index", async (c) => {
+		try {
+			logger.info("Manual index sync triggered");
+			await runEvotorDocumentsIndexingJob(c.env as any);
+			return c.json({ ok: true, message: "Index sync completed" });
+		} catch (error) {
+			logger.error("Manual index sync failed", { error });
+			return jsonError(c, 500, "SYNC_FAILED", "Index sync failed");
 		}
 	});

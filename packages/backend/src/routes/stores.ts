@@ -95,6 +95,14 @@ export const storesRoutes = new Hono<IEnv>()
 				const mm = String(mskDate.getUTCMinutes()).padStart(2, "0");
 				return `${hh}:${mm}`;
 			};
+			const isLateOpening = (iso?: string | null) => {
+				if (!iso) return false;
+				const dateObj = new Date(iso);
+				if (Number.isNaN(dateObj.getTime())) return false;
+				const mskHours = dateObj.getUTCHours() + 3;
+				const mskMinutes = dateObj.getUTCMinutes();
+				return mskHours > 7 || (mskHours === 7 && mskMinutes > 50);
+			};
 
 			const shopsNameAndUuid = shops.map((shop) => {
 				const opening = openingByShop.get(shop.uuid);
@@ -119,6 +127,7 @@ export const storesRoutes = new Hono<IEnv>()
 					openedByName: opening?.openedByName ?? null,
 					openedAt: opening?.date ?? null,
 					openedTime,
+					isLate: isLateOpening(opening?.date ?? null),
 					canSelect: !isOpenedByAnotherUser && !isBlockedByOwnDailyLimit,
 					blockedReason,
 				};
@@ -127,6 +136,63 @@ export const storesRoutes = new Hono<IEnv>()
 			return c.json({ shopsNameAndUuid });
 		} catch (err) {
 			logger.error("Ошибка в /api/stores/shops-opening-status:", err);
+			return c.json({ error: "Ошибка сервера" }, 500);
+		}
+	})
+
+	// POS sessions: real OPEN_SESSION documents from Evotor (DuckDB)
+	.post("/pos-sessions", async (c) => {
+		try {
+			const today = new Date();
+			const since = today.toISOString().slice(0, 10) + "T00:00:00+03:00";
+			const until = new Date(today.getTime() + 86400000).toISOString().slice(0, 10) + "T00:00:00+03:00";
+
+			const db = c.env.DB;
+			const rows = await db
+				.prepare(
+					`SELECT s.store_uuid, s.store_name, s.open_date, s.open_user_uuid,
+						COALESCE(e.first_name || ' ' || e.last_name, s.open_user_uuid) as employee_name
+					 FROM sessions s
+					 LEFT JOIN employees e ON e.uuid = s.open_user_uuid
+					 WHERE s.open_date >= ? AND s.open_date < ?
+					 ORDER BY s.open_date ASC`
+				)
+				.bind(since, until)
+				.all<{
+					store_uuid: string; store_name: string; open_date: string;
+					open_user_uuid: string; employee_name: string;
+				}>();
+
+			// Deduplicate: first session per store
+			const seen = new Set<string>();
+			const sessions: Array<{
+				shopUuid: string; shopName: string; openedAt: string;
+				openedTime: string; openedByName: string; isLate: boolean;
+			}> = [];
+
+			for (const row of rows.results || []) {
+				if (seen.has(row.store_uuid)) continue;
+				seen.add(row.store_uuid);
+
+				const openedDate = new Date(row.open_date);
+				const mskHours = openedDate.getUTCHours() + 3;
+				const mskMinutes = openedDate.getUTCMinutes();
+				const hh = String(mskHours).padStart(2, "0");
+				const mm = String(mskMinutes).padStart(2, "0");
+
+				sessions.push({
+					shopUuid: row.store_uuid,
+					shopName: row.store_name,
+					openedAt: row.open_date,
+					openedTime: `${hh}:${mm}`,
+					openedByName: row.employee_name,
+					isLate: mskHours > 7 || (mskHours === 7 && mskMinutes > 50),
+				});
+			}
+
+			return c.json({ sessions });
+		} catch (err) {
+			logger.error("Ошибка в /api/stores/pos-sessions:", err);
 			return c.json({ error: "Ошибка сервера" }, 500);
 		}
 	})
@@ -146,6 +212,18 @@ export const storesRoutes = new Hono<IEnv>()
 				.map((row) => row.name)
 				.filter(Boolean);
 			return c.json({ shopsName });
+		}
+	})
+
+	// Store UUIDs + names for heatmap/store selectors
+	.get("/list", async (c) => {
+		try {
+			const dict = (await c.var.evotor.getShopNameUuidsDict()) || {};
+			const list = Object.entries(dict).map(([uuid, name]) => ({ uuid, name }));
+			return c.json({ stores: list });
+		} catch (error) {
+			logger.warn("stores/list failed", { error });
+			return c.json({ stores: [] });
 		}
 	})
 
@@ -391,6 +469,11 @@ export const storesRoutes = new Hono<IEnv>()
 			const records = await Promise.all(Array.from(grouped.values()).map(async (row) => {
 				const openedAt = String(row.date || "");
 				const dayKey = formatDate(new Date(openedAt));
+				// MSK time check: open after 07:50 = late
+				const openedDate = new Date(openedAt);
+				const mskHours = openedDate.getUTCHours() + 3;
+				const mskMinutes = openedDate.getUTCMinutes();
+				const isLate = mskHours > 7 || (mskHours === 7 && mskMinutes > 50);
 				const shopUuid = String(row.shopUuid || "");
 				const employeeId = String(row.userId || "");
 
@@ -425,6 +508,7 @@ export const storesRoutes = new Hono<IEnv>()
 							employeeNamesMap[employeeId] ||
 							employeeId),
 					openedAt,
+					isLate,
 					photoCount,
 					requiredPhotoCount,
 					hasCashCheck,

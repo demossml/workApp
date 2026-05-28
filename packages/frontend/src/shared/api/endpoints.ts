@@ -73,6 +73,13 @@ export async function fetchShopNames() {
   return (data.shopsName || []) as string[];
 }
 
+export async function fetchStoreList(): Promise<{ uuid: string; name: string }[]> {
+  const res = await client.api.stores["list"].$get();
+  if (!res.ok) return [];
+  const data = await res.json() as { stores?: { uuid: string; name: string }[] };
+  return data.stores || [];
+}
+
 function getTodayDateString() {
   const today = new Date();
   const yyyy = today.getFullYear();

@@ -25,6 +25,7 @@ export {
   fetchSalesTodayGraph,
   fetchSchedules,
   fetchShopNames,
+  fetchStoreList,
   fetchShops,
   fetchWorkingByShops,
   updateDataMode,

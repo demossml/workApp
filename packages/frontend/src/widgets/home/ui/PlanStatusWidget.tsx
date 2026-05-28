@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   TrendingUp,
@@ -10,6 +10,8 @@ import {
   Truck,
   ArrowRight,
   Loader2,
+  Clock,
+  User,
 } from "lucide-react";
 import { useGetReportAndPlan } from "@/hooks/useReportData";
 import { useGetShopNames } from "@/hooks/useGetShopNames";
@@ -22,6 +24,10 @@ import {
   getRenderShopNames,
   type PlanInfo,
 } from "@features/dashboard/model/planStatusModel";
+import {
+  fetchPosSessions,
+  type PosSession,
+} from "@features/opening/api";
 
 export function PlanStatusWidget() {
   const { data: shopNames = [], isLoading: shopsLoading } = useGetShopNames();
@@ -37,6 +43,26 @@ export function PlanStatusWidget() {
   }> | null>(null);
   const [transferLoading, setTransferLoading] = useState(false);
   const isMiniApp = isTelegramMiniApp();
+
+  // Opening status for today (from POS sessions)
+  const [openingShops, setOpeningShops] = useState<PosSession[]>([]);
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await fetchPosSessions();
+        setOpeningShops(data);
+      } catch { /* silent */ }
+    };
+    void load();
+  }, []);
+
+  const openingByShop = useMemo(() => {
+    const map: Record<string, PosSession> = {};
+    for (const shop of openingShops) {
+      map[shop.shopName] = shop;
+    }
+    return map;
+  }, [openingShops]);
 
   const toggleExpand = useCallback(
     (shopName: string) => {
@@ -150,6 +176,38 @@ export function PlanStatusWidget() {
                       <h3 className="font-bold text-gray-800 dark:text-white leading-none text-xs">
                         {card.shopName}
                       </h3>
+                      {/* Статус открытия (из POS OPEN_SESSION) */}
+                      {(() => {
+                        const opening = openingByShop[card.shopName];
+                        if (!opening) {
+                          return (
+                            <p className="text-[9px] text-gray-400 dark:text-gray-500 leading-tight mt-0.5 flex items-center gap-0.5">
+                              <Clock className="w-2.5 h-2.5" />
+                              Не открыт
+                            </p>
+                          );
+                        }
+                        const isLate = opening.isLate === true;
+                        return (
+                          <p
+                            className={`text-[9px] font-semibold leading-tight mt-0.5 flex items-center gap-0.5 ${
+                              isLate
+                                ? "text-red-600 dark:text-red-400"
+                                : "text-green-600 dark:text-green-400"
+                            }`}
+                          >
+                            <Clock className="w-2.5 h-2.5" />
+                            {opening.openedTime || "—"}
+                            {opening.openedByName && (
+                              <>
+                                <User className="w-2.5 h-2.5 ml-0.5" />
+                                {opening.openedByName.split(" ")[0]}
+                              </>
+                            )}
+                            {isLate && " ⚠️"}
+                          </p>
+                        );
+                      })()}
                       <p
                         className={`text-[9px] font-medium text-${card.statusColor}-600 dark:text-${card.statusColor}-400 leading-tight mt-0.5`}
                       >

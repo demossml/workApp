@@ -274,28 +274,85 @@ export class DuckDBDataService {
   }
 
   async getCashByShops(): Promise<Record<string, number>> {
-    const r = await this.db.prepare(`
-      SELECT COALESCE(st.name, s.store_uuid) as name, COALESCE(SUM(p.sum), 0) as cash
-      FROM payments p JOIN sells s ON p.doc_id = s.doc_id
-      LEFT JOIN stores st ON st.store_uuid = s.store_uuid
-      WHERE p.payment_type = 'CASH'
-      GROUP BY s.store_uuid, st.name
-    `).all<{ name: string; cash: number }>();
+    // Correct formula: last Z-report cash + cash sales after - cash outcomes after + paybacks after
+    const fprints = await this.db.prepare(`
+      SELECT f.store_uuid, f.store_name, f.cash, f.close_date as fprint_date
+      FROM fprints f
+      WHERE (f.store_uuid, f.close_date) IN (
+        SELECT store_uuid, MAX(close_date) FROM fprints GROUP BY store_uuid
+      )
+    `).all<{ store_uuid: string; store_name: string; cash: number; fprint_date: string }>();
+
     const result: Record<string, number> = {};
-    for (const row of r.results) result[row.name] = row.cash;
+
+    for (const fp of fprints.results) {
+      const cashSales = await this.db.prepare(`
+        SELECT CAST(COALESCE(SUM(p.sum), 0) AS DOUBLE) as val
+        FROM payments p JOIN sells s ON p.doc_id = s.doc_id
+        WHERE s.store_uuid = ? AND p.payment_type = 'CASH' AND s.close_date > ?
+      `).bind(fp.store_uuid, fp.fprint_date).first<{ val: number }>();
+
+      const cashOut = await this.db.prepare(`
+        SELECT CAST(COALESCE(SUM(sum), 0) AS DOUBLE) as val
+        FROM cash_outcomes WHERE store_uuid = ? AND close_date > ?
+      `).bind(fp.store_uuid, fp.fprint_date).first<{ val: number }>();
+
+      const paybacks = await this.db.prepare(`
+        SELECT CAST(COALESCE(SUM(cash_returned), 0) AS DOUBLE) as val
+        FROM paybacks WHERE store_uuid = ? AND close_date > ?
+      `).bind(fp.store_uuid, fp.fprint_date).first<{ val: number }>();
+
+      const balance = (fp.cash || 0)
+        + (cashSales?.val || 0)
+        - (cashOut?.val || 0)
+        + (paybacks?.val || 0);
+
+      const name = fp.store_name || fp.store_uuid;
+      result[name] = Math.round(balance);
+    }
+
     return result;
   }
 
   async getCashByShopsForPeriod(since: string, until: string): Promise<Record<string, number>> {
-    const r = await this.db.prepare(`
-      SELECT COALESCE(st.name, s.store_uuid) as name, COALESCE(SUM(p.sum), 0) as cash
-      FROM payments p JOIN sells s ON p.doc_id = s.doc_id
-      LEFT JOIN stores st ON st.store_uuid = s.store_uuid
-      WHERE p.payment_type = 'CASH' AND s.close_date >= ? AND s.close_date < ?
-      GROUP BY s.store_uuid, st.name
-    `).bind(since, until).all<{ name: string; cash: number }>();
+    // Same FPRINT-based formula as getCashByShops, but bounded by period end
+    const fprints = await this.db.prepare(`
+      SELECT f.store_uuid, f.store_name, f.cash, f.close_date as fprint_date
+      FROM fprints f
+      WHERE (f.store_uuid, f.close_date) IN (
+        SELECT store_uuid, MAX(close_date) FROM fprints WHERE close_date < ? GROUP BY store_uuid
+      )
+    `).bind(until).all<{ store_uuid: string; store_name: string; cash: number; fprint_date: string }>();
+
     const result: Record<string, number> = {};
-    for (const row of r.results) result[row.name] = row.cash;
+
+    for (const fp of fprints.results) {
+      const cashSales = await this.db.prepare(`
+        SELECT CAST(COALESCE(SUM(p.sum), 0) AS DOUBLE) as val
+        FROM payments p JOIN sells s ON p.doc_id = s.doc_id
+        WHERE s.store_uuid = ? AND p.payment_type = 'CASH'
+          AND s.close_date > ? AND s.close_date < ?
+      `).bind(fp.store_uuid, fp.fprint_date, until).first<{ val: number }>();
+
+      const cashOut = await this.db.prepare(`
+        SELECT CAST(COALESCE(SUM(sum), 0) AS DOUBLE) as val
+        FROM cash_outcomes WHERE store_uuid = ? AND close_date > ? AND close_date < ?
+      `).bind(fp.store_uuid, fp.fprint_date, until).first<{ val: number }>();
+
+      const paybacks = await this.db.prepare(`
+        SELECT CAST(COALESCE(SUM(cash_returned), 0) AS DOUBLE) as val
+        FROM paybacks WHERE store_uuid = ? AND close_date > ? AND close_date < ?
+      `).bind(fp.store_uuid, fp.fprint_date, until).first<{ val: number }>();
+
+      const balance = (fp.cash || 0)
+        + (cashSales?.val || 0)
+        - (cashOut?.val || 0)
+        + (paybacks?.val || 0);
+
+      const name = fp.store_name || fp.store_uuid;
+      result[name] = Math.round(balance);
+    }
+
     return result;
   }
 
