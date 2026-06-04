@@ -21,6 +21,7 @@ const DeadStocks = lazy(() => import("@/pages/deadstock/DeadStock"));
 const StoreOpeningsAdminReport = lazy(() => import("@/pages/reports/StoreOpeningsAdminReport"));
 const AiDirectorPage = lazy(() => import("@/pages/ai/AiDirector"));
 const PeriodComparison = lazy(() => import("@/pages/reports/PeriodComparison"));
+const SellerPerformancePage = lazy(() => import("@/pages/SellerPerformance"));
 
 export function AppRouter() {
   const aiAvailable = useDataSourceStore((state) => state.aiAvailable);
@@ -56,6 +57,7 @@ export function AppRouter() {
           element={aiAvailable ? <AiDirectorPage /> : <Navigate to="/" replace />}
         />
         <Route path="/evotor/period-comparison" element={<PeriodComparison />} />
+        <Route path="/evotor/seller-performance" element={<SellerPerformancePage />} />
       </Routes>
     </Suspense>
   );

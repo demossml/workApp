@@ -10,6 +10,8 @@ import {
 import { DashboardSummaryWidget } from "@widgets/dashboard";
 import { buildHomeAccessModel } from "@features/dashboard/model/homePageModel";
 import { useDataSourceStore } from "@shared/model/dataSourceStore";
+import { SellerPerformanceWidget } from "@widgets/home/SellerPerformanceWidget";
+import { MyPerformanceWidget } from "@widgets/home/MyPerformanceWidget";
 import { isTelegramMiniApp } from "../helpers/telegram";
 
 export default function Home() {
@@ -51,6 +53,12 @@ export default function Home() {
   return (
     <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-20 sm:pt-24 px-4 sm:px-6 pb-24">
       <div className="w-full max-w-7xl">
+
+        {/* Мои показатели — для всех продавцов */}
+        <MyPerformanceWidget />
+
+        {/* Эффективность продавцов */}
+        {isSuperAdmin && <SellerPerformanceWidget />}
 
         {/* План продаж - карточки статусов */}
         {(isSuperAdmin || isCashier || isAdmin) && <PlanStatusWidget />}
