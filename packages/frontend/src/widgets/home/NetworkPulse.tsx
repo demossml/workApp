@@ -1,76 +1,66 @@
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Building2, Clock } from "lucide-react";
+import { Building2, User, Clock } from "lucide-react";
 
 // ── types ──
 
 interface ShopRow {
   uuid: string;
   name: string;
-  revenue: number;
-  checks: number;
   vapePlan: number;
   vapeFact: number;
   vapePct: number;
-  openedAt: string | null;
+  openedTime: string | null;
+  openedBy: string | null;
   isLate: boolean;
+  isOpen: boolean;
 }
 
 interface NetworkPulseData {
   shops: ShopRow[];
-  totalRevenue: number;
-  totalChecks: number;
+  totalVape: number;
 }
 
 // ── fetch ──
 
 async function fetchNetworkPulse(): Promise<NetworkPulseData> {
-  const today = new Date().toISOString().slice(0, 10);
-
-  const [summaryRes, planRes, sessionsRes] = await Promise.all([
-    fetch("/api/ai/director/summary", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: today }),
-    }).then((r) => r.json()),
+  const [planRes, sessionsRes] = await Promise.all([
     fetch("/api/evotor/plan-for-today").then((r) => r.json()),
     fetch("/api/stores/pos-sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: today }),
+      body: JSON.stringify({ date: new Date().toISOString().slice(0, 10) }),
     }).then((r) => r.json()),
   ]);
 
   const sessions = sessionsRes?.sessions ?? [];
   const salesData = planRes?.salesData ?? {};
+
   const shops: ShopRow[] = Object.entries(salesData).map(([shopName, shop]: [string, any]) => {
     const session = sessions.find(
       (s: any) => s.shopName === shopName
     );
     const vapeFact = shop?.dataSales ?? 0;
     const vapePlan = shop?.datePlan ?? 0;
-    const vapePct =
-      vapePlan > 0
-        ? Math.min(Math.round((vapeFact / vapePlan) * 100), 100)
-        : 0;
+    const vapePct = vapePlan > 0
+      ? Math.min(Math.round((vapeFact / vapePlan) * 100), 100)
+      : 0;
+
     return {
       uuid: shopName,
       name: shopName,
-      revenue: vapeFact,
-      checks: 0,
       vapePlan,
       vapeFact,
       vapePct,
-      openedAt: session?.openedAt ?? null,
+      openedTime: session?.openedTime ?? null,
+      openedBy: session?.openedByName ?? null,
       isLate: session?.isLate ?? false,
+      isOpen: !!session,
     };
   });
 
-  // Merge real revenue from summary
-  // (summary doesn't give per-shop breakdown in this endpoint)
-  const totalRevenue = shops.reduce((s: number, sh: ShopRow) => s + sh.revenue, 0);
-
-  return { shops, totalRevenue, totalChecks: 0 };
+  const totalVape = shops.reduce((s, sh) => s + sh.vapeFact, 0);
+  return { shops, totalVape };
 }
 
 // ── hook ──
@@ -94,6 +84,13 @@ function fmtRub(n: number): string {
   return `${Math.round(n)} ₽`;
 }
 
+function fmtFirstName(fullName: string | null): string {
+  if (!fullName) return "";
+  const parts = fullName.split(" ");
+  // "Федорова Карина 1133134176" → "Федорова"
+  return parts[0] || fullName;
+}
+
 // ── component ──
 
 export function NetworkPulse() {
@@ -104,10 +101,7 @@ export function NetworkPulse() {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 animate-pulse">
         <div className="h-3 w-24 bg-gray-200 dark:bg-gray-700 rounded mb-3" />
         {[1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="h-8 bg-gray-100 dark:bg-gray-750 rounded-lg mb-2"
-          />
+          <div key={i} className="h-10 bg-gray-100 dark:bg-gray-750 rounded-lg mb-2" />
         ))}
       </div>
     );
@@ -119,21 +113,26 @@ export function NetworkPulse() {
       animate={{ opacity: 1, y: 0 }}
       className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden"
     >
+      {/* Header */}
       <div className="px-4 py-2 bg-gray-50 dark:bg-gray-750 flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide">
         <Building2 className="w-3.5 h-3.5" />
         Сеть сегодня
+        <span className="ml-auto font-normal normal-case text-gray-400">
+          {data.shops.filter((s) => s.isOpen).length}/{data.shops.length} открыто
+        </span>
       </div>
 
-      <div className="p-3 space-y-1">
+      {/* Store rows */}
+      <div className="p-3 space-y-0.5">
         {data.shops.map((shop) => (
           <div
             key={shop.uuid}
-            className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+            className="flex items-center gap-2.5 py-2 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
           >
             {/* Status dot */}
             <div
               className={`w-2 h-2 rounded-full shrink-0 ${
-                shop.openedAt
+                shop.isOpen
                   ? shop.isLate
                     ? "bg-amber-500"
                     : "bg-emerald-500"
@@ -141,31 +140,46 @@ export function NetworkPulse() {
               }`}
             />
 
-            {/* Name + time */}
+            {/* Name + time + employee */}
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-medium text-gray-800 dark:text-gray-100 truncate">
+              <div className="text-xs font-semibold text-gray-800 dark:text-gray-100 truncate">
                 {shop.name}
               </div>
-              <div className="text-[10px] text-gray-400">
-                {shop.openedAt
-                  ? `${shop.openedAt}${shop.isLate ? " ⚠️" : ""}`
-                  : "Не открыт"}
+              <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                {shop.isOpen ? (
+                  <>
+                    <Clock className="w-2.5 h-2.5 shrink-0" />
+                    <span>{shop.openedTime}</span>
+                    {shop.isLate && (
+                      <span className="text-amber-500 font-medium">опоздание</span>
+                    )}
+                    {shop.openedBy && (
+                      <>
+                        <span className="text-gray-300 dark:text-gray-600">·</span>
+                        <User className="w-2.5 h-2.5 shrink-0" />
+                        <span>{fmtFirstName(shop.openedBy)}</span>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-red-400">Не открыт</span>
+                )}
               </div>
             </div>
 
-            {/* Revenue */}
-            <div className="text-right shrink-0">
+            {/* Vape revenue */}
+            <div className="text-right shrink-0 min-w-[48px]">
               <div className="text-xs font-bold text-gray-800 dark:text-gray-100">
-                {fmtRub(shop.revenue)}
+                {fmtRub(shop.vapeFact)}
               </div>
-              <div className="text-[10px] text-gray-400">вейпы</div>
+              <div className="text-[9px] text-gray-400">вейпы</div>
             </div>
 
             {/* Plan progress bar */}
-            <div className="w-16 shrink-0">
+            <div className="w-14 shrink-0">
               <div className="w-full h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
                 <div
-                  className={`h-full rounded-full ${
+                  className={`h-full rounded-full transition-all duration-500 ${
                     shop.vapePct >= 80
                       ? "bg-emerald-500"
                       : shop.vapePct >= 50
@@ -185,7 +199,7 @@ export function NetworkPulse() {
 
       {/* Footer */}
       <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700 flex justify-between text-[10px] text-gray-500 dark:text-gray-400">
-        <span>Итого вейпы: {fmtRub(data.totalRevenue)}</span>
+        <span>Итого вейпы: {fmtRub(data.totalVape)}</span>
         <span>{data.shops.length} магазина</span>
       </div>
     </motion.div>
