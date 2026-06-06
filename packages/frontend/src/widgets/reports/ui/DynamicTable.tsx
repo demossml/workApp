@@ -1,4 +1,4 @@
-import React, { Fragment, useRef, useState } from "react";
+import React, { Fragment, useRef, useState, useCallback } from "react";
 import { motion, useScroll, useSpring } from "framer-motion";
 
 interface TableData {

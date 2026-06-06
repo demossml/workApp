@@ -4,6 +4,7 @@ import { Cherry } from "lucide-react";
 import { useAccessoriesSales, type AccessoriesSalesData } from "@/hooks/dashboard/useAccessoriesSales";
 import { useEmployeeRole, useMe } from "@/hooks/useApi";
 import { LoadingTile } from "./widgetUtils";
+import { buildAccessoriesSummaryStats } from "@features/dashboard/model/dashboardSummaryModel";
 
 interface Props { since: string; until: string; expanded: boolean; onToggle: () => void }
 
@@ -20,11 +21,67 @@ function AccCard({ value }: { value: number }) {
   );
 }
 
-function AccDetails({ data, shopFilter, onShopFilterChange, shopOptions, productScope, onProductScopeChange }: {
-  data: AccessoriesSalesData; shopFilter: string; onShopFilterChange: (v: string) => void;
+function AccessoriesSummaryStats({ data }: { data: AccessoriesSalesData }) {
+  const { totalQty, avgPrice, totalProducts, topShare, byShop } =
+    buildAccessoriesSummaryStats(data);
+
+  return (
+    <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+      <div className="bg-blue-100 dark:bg-blue-900 rounded-lg p-4 flex flex-col items-center justify-center min-h-[92px] col-span-1">
+        <div className="text-xs text-gray-700 dark:text-gray-300 mb-2">
+          Суммы по магазинам
+        </div>
+        <div className="flex flex-col gap-1 w-full items-center">
+          {byShop.map((shop) => (
+            <div
+              key={shop.shopName}
+              className="flex flex-row items-center justify-between w-full text-xs font-semibold text-blue-800 dark:text-blue-200"
+            >
+              <span className="truncate max-w-[60%] text-gray-800 dark:text-gray-200">
+                {shop.shopName}
+              </span>
+              <span className="ml-2 whitespace-nowrap">
+                {shop.sum.toLocaleString()} ₽
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="bg-gray-800 dark:bg-gray-700 rounded-lg p-4 flex flex-col items-center justify-center min-h-[92px]">
+        <div className="text-white text-2xl font-bold mb-1">
+          {totalProducts}
+        </div>
+        <div className="text-xs text-gray-300 dark:text-gray-400">
+          ВСЕГО ТОВАРОВ
+        </div>
+      </div>
+      <div className="bg-gray-800 dark:bg-gray-700 rounded-lg p-4 flex flex-col items-center justify-center min-h-[92px]">
+        <div className="text-white text-2xl font-bold mb-1">{topShare}%</div>
+        <div className="text-xs text-gray-300 dark:text-gray-400">
+          ДОЛЯ ТОП-3
+        </div>
+      </div>
+      <div className="bg-gray-800 dark:bg-gray-700 rounded-lg p-4 flex flex-col items-center justify-center min-h-[92px]">
+        <div className="text-white text-2xl font-bold mb-1">{avgPrice}</div>
+        <div className="text-xs text-gray-300 dark:text-gray-400">СР. ЦЕНА</div>
+      </div>
+      <div className="bg-gray-800 dark:bg-gray-700 rounded-lg p-4 flex flex-col items-center justify-center min-h-[92px]">
+        <div className="text-white text-2xl font-bold mb-1">{totalQty}</div>
+        <div className="text-xs text-gray-300 dark:text-gray-400">
+          ПРОДАНО ШТ
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccDetails({ data, fullData, shopFilter, onShopFilterChange, shopOptions, productScope, onProductScopeChange }: {
+  data: AccessoriesSalesData; fullData: AccessoriesSalesData;
+  shopFilter: string; onShopFilterChange: (v: string) => void;
   shopOptions: string[]; productScope: "accessories" | "nonAccessories"; onProductScopeChange: (v: "accessories" | "nonAccessories") => void;
 }) {
-  const sorted = [...data.total].sort((a, b) => b.sum - a.sum);
+  const sourceList = productScope === "nonAccessories" ? (data.nonAccessoriesTotal || []) : data.total;
+  const sorted = [...sourceList].sort((a, b) => b.sum - a.sum);
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -56,6 +113,7 @@ function AccDetails({ data, shopFilter, onShopFilterChange, shopOptions, product
           </li>
         ))}
       </ul>
+      <AccessoriesSummaryStats data={fullData} />
     </div>
   );
 }
@@ -76,10 +134,18 @@ export function AccessoriesWidget({ since, until, expanded, onToggle }: Props) {
   const filtered = useMemo(() => {
     if (!data) return null;
     if (shopFilter === "all") return data;
-    return { ...data, total: data.total.filter((i: any) => i.shopName === shopFilter) };
+    return {
+      ...data,
+      total: data.total.filter((i: any) => i.shopName === shopFilter),
+      nonAccessoriesTotal: (data.nonAccessoriesTotal || []).filter((i: any) => i.shopName === shopFilter),
+    };
   }, [data, shopFilter]);
 
-  const tileValue = useMemo(() => filtered ? filtered.total.reduce((s: number, i: any) => s + i.sum, 0) : 0, [filtered]);
+  const tileValue = useMemo(() => {
+    if (!filtered) return 0;
+    const list = scope === "nonAccessories" ? (filtered.nonAccessoriesTotal || []) : filtered.total;
+    return list.reduce((s: number, i: any) => s + i.sum, 0);
+  }, [filtered, scope]);
 
   if (loading) return <LoadingTile title="Аксессуары" Icon={Cherry} tone="cyan" />;
   if (error) return <div className="text-red-500 text-sm p-2">Ошибка: {error}</div>;
@@ -92,7 +158,7 @@ export function AccessoriesWidget({ since, until, expanded, onToggle }: Props) {
       </div>
       {expanded && filtered && (
         <div className="mt-3">
-          <AccDetails data={filtered} shopFilter={shopFilter} onShopFilterChange={setShopFilter}
+          <AccDetails data={filtered} fullData={data} shopFilter={shopFilter} onShopFilterChange={setShopFilter}
             shopOptions={shopOptions} productScope={scope} onProductScopeChange={setScope} />
         </div>
       )}

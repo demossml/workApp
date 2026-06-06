@@ -19,7 +19,7 @@ import { BestShopWidget } from "@widgets/home/BestShopWidget";
 import { TopProductWidget } from "@widgets/home/TopProductWidget";
 import { AccessoriesWidget } from "@widgets/home/AccessoriesWidget";
 import { isTelegramMiniApp } from "../helpers/telegram";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 type WidgetKey = "revenue" | "tempo" | "finance" | "best" | "products" | "accessories";
 
