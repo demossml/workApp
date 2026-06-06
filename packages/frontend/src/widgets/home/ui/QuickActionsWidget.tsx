@@ -70,6 +70,7 @@ export function QuickActionsWidget({ employeeRole }: QuickActionsWidgetProps) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {availableActions.map((action) => {
           const badge = getBadgeValue(action);
+          const isDisabled = false; // AI Director removed — all actions available
 
           return (
             <button
