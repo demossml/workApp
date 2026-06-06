@@ -6,12 +6,10 @@ import { ExpensesCard } from "@/widgets/dashboard/cards/ExpensesCard";
 import { FinancialReportDetails } from "@/widgets/dashboard/cards/FinancialReportDetails";
 import { LoadingTile } from "./widgetUtils";
 import { ShoppingCart } from "lucide-react";
-import { useState } from "react";
 
-interface Props { since: string; until: string }
+interface Props { since: string; until: string; expanded: boolean; onToggle: () => void }
 
-export function FinanceWidget({ since, until }: Props) {
-  const [open, setOpen] = useState(false);
+export function FinanceWidget({ since, until, expanded, onToggle }: Props) {
   const { data: role } = useEmployeeRole();
   const { data: ws } = useCurrentWorkShop();
   const isSuperAdmin = role?.employeeRole === "SUPERADMIN";
@@ -25,16 +23,16 @@ export function FinanceWidget({ since, until }: Props) {
 
   return (
     <div>
-      <div className={open ? "ring-2 ring-orange-500 scale-[1.01] rounded-xl" : "hover:-translate-y-0.5"} style={{ transition: "all 0.3s" }}>
+      <div onClick={onToggle} className={`rounded-xl transition-all duration-300 ${expanded ? "ring-2 ring-orange-500 scale-[1.01]" : "hover:-translate-y-0.5 cursor-pointer"}`}>
         <ExpensesCard
           value={filtered.grandTotalCashOutcome}
-          onClick={() => setOpen(!open)}
+          onClick={() => {}}
           label="Фин. отчёт"
           cashBalanceByShop={filtered.cashBalanceByShop}
           salesDataByShopName={filtered.salesDataByShopName}
         />
       </div>
-      {open && (
+      {expanded && (
         <div className="mt-3">
           <FinancialReportDetails
             salesDataByShopName={filtered.salesDataByShopName}

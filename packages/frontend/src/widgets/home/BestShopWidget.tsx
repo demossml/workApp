@@ -7,10 +7,9 @@ import { LoadingTile } from "./widgetUtils";
 import { Store } from "lucide-react";
 import { useState } from "react";
 
-interface Props { since: string; until: string; dateMode: "today" | "yesterday" | "period" }
+interface Props { since: string; until: string; dateMode: "today" | "yesterday" | "period"; expanded: boolean; onToggle: () => void }
 
-export function BestShopWidget({ since, until, dateMode }: Props) {
-  const [open, setOpen] = useState(false);
+export function BestShopWidget({ since, until, dateMode, expanded, onToggle }: Props) {
   const [mode, setMode] = useState<LeaderMode>("day");
   const { data: role } = useEmployeeRole();
   const { data: ws } = useCurrentWorkShop();
@@ -18,31 +17,22 @@ export function BestShopWidget({ since, until, dateMode }: Props) {
   const shopUuid = isSuperAdmin ? undefined : ws?.uuid || undefined;
 
   const insights = useDashboardHomeInsights({ since, until, dateMode, shopUuid, enabled: true });
-  const { data: aiInsights, bestShop, loading } = insights;
-
+  const { bestShop, loading } = insights;
   const dayLeader = bestShop.dayLeader;
   const weekLeader = bestShop.weekLeader;
   const activeRows = mode === "week" ? bestShop.weekRows : bestShop.dayRows;
 
-  if (loading && !dayLeader && !weekLeader)
-    return <LoadingTile title="Лучший магазин" Icon={Store} tone="purple" />;
-  if (!dayLeader && !weekLeader)
-    return <LoadingTile title="Лучший магазин" Icon={Store} tone="purple" />;
+  if (loading && !dayLeader && !weekLeader) return <LoadingTile title="Лучший магазин" Icon={Store} tone="purple" />;
+  if (!dayLeader && !weekLeader) return <LoadingTile title="Лучший магазин" Icon={Store} tone="purple" />;
 
   return (
     <div>
-      <div className={open ? "ring-2 ring-purple-500 scale-[1.01] rounded-xl" : "hover:-translate-y-0.5"} style={{ transition: "all 0.3s" }}>
-        <BestShopCard dayLeader={dayLeader} weekLeader={weekLeader} mode={mode} onClick={() => setOpen(!open)} />
+      <div onClick={onToggle} className={`rounded-xl transition-all duration-300 ${expanded ? "ring-2 ring-purple-500 scale-[1.01]" : "hover:-translate-y-0.5 cursor-pointer"}`}>
+        <BestShopCard dayLeader={dayLeader} weekLeader={weekLeader} mode={mode} onClick={() => {}} />
       </div>
-      {open && (
+      {expanded && (
         <div className="mt-3">
-          <BestShopDetails
-            shops={activeRows}
-            mode={mode}
-            dayLeader={dayLeader}
-            weekLeader={weekLeader}
-            onModeChange={setMode}
-          />
+          <BestShopDetails shops={activeRows} mode={mode} dayLeader={dayLeader} weekLeader={weekLeader} onModeChange={setMode} />
         </div>
       )}
     </div>

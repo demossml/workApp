@@ -19,7 +19,9 @@ import { BestShopWidget } from "@widgets/home/BestShopWidget";
 import { TopProductWidget } from "@widgets/home/TopProductWidget";
 import { AccessoriesWidget } from "@widgets/home/AccessoriesWidget";
 import { isTelegramMiniApp } from "../helpers/telegram";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+
+type WidgetKey = "revenue" | "tempo" | "finance" | "best" | "products" | "accessories";
 
 function getTodayRange(): DateFilterValue {
   const d = new Date();
@@ -31,6 +33,11 @@ export default function Home() {
   const { data, error, isLoading } = useEmployeeRole();
   const miniApp = isTelegramMiniApp();
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(getTodayRange);
+  const [expanded, setExpanded] = useState<WidgetKey | null>(null);
+
+  const toggle = useCallback((key: WidgetKey) => {
+    setExpanded((prev) => (prev === key ? null : key));
+  }, []);
 
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState error={error.message} />;
@@ -50,52 +57,52 @@ export default function Home() {
   const { isCashier, isAdmin, isSuperAdmin } = buildHomeAccessModel(data.employeeRole);
   const { since, until, dateMode } = dateFilter;
 
+  const isExpanded = (key: WidgetKey) => expanded === key;
+
   return (
     <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-20 sm:pt-24 px-4 sm:px-6 pb-24">
       <div className="w-full max-w-7xl space-y-4">
 
-        {/* Приветствие */}
         <DailyBriefing />
-
-        {/* Эффективность продавцов */}
         {isSuperAdmin && <SellerPerformanceWidget />}
-
-        {/* Выбор даты (общий для всех виджетов) */}
         <DateFilter value={dateFilter} onChange={setDateFilter} />
-
-        {/* План продаж */}
         <PlanStatusWidget />
 
-        {/* Виджеты v3.1 — каждый независимый */}
         <div className="grid grid-cols-2 gap-4">
-          <RevenueWidget since={since} until={until} />
+          <div className={isExpanded("revenue") ? "col-span-2" : ""}>
+            <RevenueWidget since={since} until={until} expanded={isExpanded("revenue")} onToggle={() => toggle("revenue")} />
+          </div>
 
           {(isSuperAdmin || isAdmin) && (
-            <SalesTempoWidget since={since} until={until} />
+            <div className={isExpanded("tempo") ? "col-span-2" : ""}>
+              <SalesTempoWidget since={since} until={until} expanded={isExpanded("tempo")} onToggle={() => toggle("tempo")} />
+            </div>
           )}
 
           {(isSuperAdmin || isAdmin) && (
-            <FinanceWidget since={since} until={until} />
+            <div className={isExpanded("finance") ? "col-span-2" : ""}>
+              <FinanceWidget since={since} until={until} expanded={isExpanded("finance")} onToggle={() => toggle("finance")} />
+            </div>
           )}
 
           {(isSuperAdmin || isAdmin) && (
-            <BestShopWidget since={since} until={until} dateMode={dateMode} />
+            <div className={isExpanded("best") ? "col-span-2" : ""}>
+              <BestShopWidget since={since} until={until} dateMode={dateMode} expanded={isExpanded("best")} onToggle={() => toggle("best")} />
+            </div>
           )}
 
-          <TopProductWidget since={since} until={until} />
+          <div className={isExpanded("products") ? "col-span-2" : ""}>
+            <TopProductWidget since={since} until={until} expanded={isExpanded("products")} onToggle={() => toggle("products")} />
+          </div>
 
-          <AccessoriesWidget since={since} until={until} />
+          <div className={isExpanded("accessories") ? "col-span-2" : ""}>
+            <AccessoriesWidget since={since} until={until} expanded={isExpanded("accessories")} onToggle={() => toggle("accessories")} />
+          </div>
         </div>
 
-        {/* Оповещения */}
         {isSuperAdmin && <TodayAlertsWidget />}
-
-        {/* Остатки */}
         {(isSuperAdmin || isAdmin) && <StockHealthWidget />}
-
-        {/* Быстрые действия */}
         <QuickActionsWidget employeeRole={data.employeeRole} />
-
         <LastUpdated />
       </div>
     </div>
@@ -111,10 +118,7 @@ function LastUpdated() {
     <div className="text-center mt-6 mb-2">
       <span className="text-[10px] text-gray-400 dark:text-gray-500">
         {fetching > 0 ? (
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-            Обновление...
-          </span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse" />Обновление...</span>
         ) : `Данные от ${timeStr}`}
       </span>
     </div>

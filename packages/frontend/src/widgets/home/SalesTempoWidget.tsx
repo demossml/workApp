@@ -8,12 +8,10 @@ import { useAccessoriesSales } from "@/hooks/dashboard/useAccessoriesSales";
 import { useMe } from "@/hooks/useApi";
 import { LoadingTile } from "./widgetUtils";
 import { DollarSign } from "lucide-react";
-import { useState } from "react";
 
-interface Props { since: string; until: string }
+interface Props { since: string; until: string; expanded: boolean; onToggle: () => void }
 
-export function SalesTempoWidget({ since, until }: Props) {
-  const [open, setOpen] = useState(false);
+export function SalesTempoWidget({ since, until, expanded, onToggle }: Props) {
   const { data: role } = useEmployeeRole();
   const { data: ws } = useCurrentWorkShop();
   const isSuperAdmin = role?.employeeRole === "SUPERADMIN";
@@ -29,37 +27,24 @@ export function SalesTempoWidget({ since, until }: Props) {
   prevSince.setDate(prevSince.getDate() - (new Date(until).getDate() - new Date(since).getDate()));
   const prevS = prevSince.toISOString().slice(0, 10);
   const prevU = prevUntil.toISOString().slice(0, 10);
-
   const prevData = useSalesData({ since: prevS, until: prevU, shopUuid, enabled: true, pollIntervalMs: 0 });
   const prevFiltered = useFilteredSalesData(prevData.data, isSuperAdmin, ws ?? null);
 
-  const accessories = useAccessoriesSales({
-    role: role?.employeeRole || "CASHIER",
-    userId: me.data?.id ?? "",
-    since,
-    until,
-    enabled: open,
-  });
+  const accessories = useAccessoriesSales({ role: role?.employeeRole || "CASHIER", userId: me.data?.id ?? "", since, until, enabled: expanded });
 
   if (loading || !filtered) return <LoadingTile title="Темп продаж" Icon={DollarSign} tone="indigo" />;
 
   const salesDeltaPct = prevFiltered?.netRevenue
-    ? Math.round(((filtered.netRevenue - prevFiltered.netRevenue) / prevFiltered.netRevenue) * 100)
-    : 0;
+    ? Math.round(((filtered.netRevenue - prevFiltered.netRevenue) / prevFiltered.netRevenue) * 100) : 0;
 
   return (
     <div>
-      <div className={open ? "ring-2 ring-slate-500 scale-[1.01] rounded-xl" : "hover:-translate-y-0.5"} style={{ transition: "all 0.3s" }}>
-        <RevenueTempoCard salesDeltaPct={salesDeltaPct} onClick={() => setOpen(!open)} pace={0} />
+      <div onClick={onToggle} className={`rounded-xl transition-all duration-300 ${expanded ? "ring-2 ring-slate-500 scale-[1.01]" : "hover:-translate-y-0.5 cursor-pointer"}`}>
+        <RevenueTempoCard salesDeltaPct={salesDeltaPct} onClick={() => {}} pace={0} />
       </div>
-      {open && (
+      {expanded && (
         <div className="mt-3">
-          <RevenueTempoDetails
-            since={since}
-            currentData={filtered}
-            previousData={prevFiltered}
-            accessoriesData={accessories.data}
-          />
+          <RevenueTempoDetails since={since} currentData={filtered} previousData={prevFiltered} accessoriesData={accessories.data} />
         </div>
       )}
     </div>

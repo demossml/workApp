@@ -6,12 +6,10 @@ import { TopProductCard, type TopProductMetricMode, type TopProductRefundFilter 
 import { TopProductsDetails } from "@/widgets/dashboard/cards/TopProductsDetails";
 import { LoadingTile, EmptyTile } from "./widgetUtils";
 import { Package } from "lucide-react";
-import { useState } from "react";
 
-interface Props { since: string; until: string }
+interface Props { since: string; until: string; expanded: boolean; onToggle: () => void }
 
-export function TopProductWidget({ since, until }: Props) {
-  const [open, setOpen] = useState(false);
+export function TopProductWidget({ since, until, expanded, onToggle }: Props) {
   const { data: role } = useEmployeeRole();
   const { data: ws } = useCurrentWorkShop();
   const isSuperAdmin = role?.employeeRole === "SUPERADMIN";
@@ -19,33 +17,20 @@ export function TopProductWidget({ since, until }: Props) {
 
   const { data, loading } = useSalesData({ since, until, shopUuid, enabled: true });
   const filtered = useFilteredSalesData(data, isSuperAdmin, ws ?? null);
-
   const metricMode: TopProductMetricMode = "revenue";
   const refundFilter: TopProductRefundFilter = "all";
 
   if (loading || !filtered) return <LoadingTile title="Топ продукт" Icon={Package} tone="pink" />;
-
-  if (!filtered.topProducts?.length)
-    return <EmptyTile title="Топ продукт" Icon={Package} tone="pink" />;
+  if (!filtered.topProducts?.length) return <EmptyTile title="Топ продукт" Icon={Package} />;
 
   return (
     <div>
-      <div className={open ? "ring-2 ring-pink-500 scale-[1.01] rounded-xl" : "hover:-translate-y-0.5"} style={{ transition: "all 0.3s" }}>
-        <TopProductCard
-          topProducts={filtered.topProducts}
-          previousTopProducts={[]}
-          metricMode={metricMode}
-          refundFilter={refundFilter}
-          onClick={() => setOpen(!open)}
-        />
+      <div onClick={onToggle} className={`rounded-xl transition-all duration-300 ${expanded ? "ring-2 ring-pink-500 scale-[1.01]" : "hover:-translate-y-0.5 cursor-pointer"}`}>
+        <TopProductCard topProducts={filtered.topProducts} previousTopProducts={[]} metricMode={metricMode} refundFilter={refundFilter} onClick={() => {}} />
       </div>
-      {open && (
+      {expanded && (
         <div className="mt-3">
-          <TopProductsDetails
-            topProducts={filtered.topProducts}
-            metricMode={metricMode}
-            refundFilter={refundFilter}
-          />
+          <TopProductsDetails topProducts={filtered.topProducts} metricMode={metricMode} refundFilter={refundFilter} />
         </div>
       )}
     </div>

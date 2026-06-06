@@ -6,14 +6,12 @@ import { useCurrentWorkShop } from "@/hooks/useCurrentWorkShop";
 import { RevenueCard } from "@/widgets/dashboard/cards/RevenueCard";
 import { RevenueDetailsAdmin } from "@/widgets/dashboard/cards/RevenueDetailsAdmin";
 import { RevenueDetailsUser } from "@/widgets/dashboard/cards/RevenueDetailsUser";
-import { LoadingTile, type LucideIcon } from "./widgetUtils";
+import { LoadingTile } from "./widgetUtils";
 import { DollarSign } from "lucide-react";
-import { useState } from "react";
 
-interface Props { since: string; until: string }
+interface Props { since: string; until: string; expanded: boolean; onToggle: () => void }
 
-export function RevenueWidget({ since, until }: Props) {
-  const [open, setOpen] = useState(false);
+export function RevenueWidget({ since, until, expanded, onToggle }: Props) {
   const { data: role } = useEmployeeRole();
   const { data: ws } = useCurrentWorkShop();
   const isSuperAdmin = role?.employeeRole === "SUPERADMIN";
@@ -28,10 +26,10 @@ export function RevenueWidget({ since, until }: Props) {
 
   return (
     <div>
-      <div className={open ? "ring-2 ring-blue-500 scale-[1.01] rounded-xl" : "hover:-translate-y-0.5"} style={{ transition: "all 0.3s" }}>
-        <RevenueCard value={netSales} onClick={() => setOpen(!open)} />
+      <div onClick={onToggle} className={`rounded-xl transition-all duration-300 ${expanded ? "ring-2 ring-blue-500 scale-[1.01]" : "hover:-translate-y-0.5 cursor-pointer"}`}>
+        <RevenueCard value={netSales} onClick={() => {}} />
       </div>
-      {open && (
+      {expanded && (
         <div className="mt-3">
           {isSuperAdmin ? (
             <RevenueDetailsAdmin
@@ -41,8 +39,7 @@ export function RevenueWidget({ since, until }: Props) {
               netRevenue={filtered.netRevenue}
               averageCheck={filtered.averageCheck}
               totalChecks={filtered.totalChecks}
-              since={since}
-              until={until}
+              since={since} until={until}
             />
           ) : (
             <RevenueDetailsUser salesDataByShopName={filtered.salesDataByShopName} />

@@ -5,17 +5,12 @@ import { useAccessoriesSales, type AccessoriesSalesData } from "@/hooks/dashboar
 import { useEmployeeRole, useMe } from "@/hooks/useApi";
 import { LoadingTile } from "./widgetUtils";
 
-interface Props { since: string; until: string }
+interface Props { since: string; until: string; expanded: boolean; onToggle: () => void }
 
-// ── AccessoriesCard (inline — simple card) ──
-function AccCard({ value, onClick }: { value: number; onClick: () => void }) {
+function AccCard({ value }: { value: number }) {
   return (
-    <motion.div
-      whileHover={{ scale: 1.03, y: -2 }}
-      whileTap={{ scale: 0.98 }}
-      className="bg-blue-100 dark:bg-blue-900 rounded-lg p-4 cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800 transition h-[120px] flex flex-col justify-between"
-      onClick={onClick}
-    >
+    <motion.div whileHover={{ scale: 1.03, y: -2 }} whileTap={{ scale: 0.98 }}
+      className="bg-blue-100 dark:bg-blue-900 rounded-lg p-4 h-[120px] flex flex-col justify-between">
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm text-gray-600 dark:text-gray-300">Аксессуары</div>
         <Cherry className="w-6 h-6 text-blue-600 dark:text-blue-400" />
@@ -25,16 +20,9 @@ function AccCard({ value, onClick }: { value: number; onClick: () => void }) {
   );
 }
 
-// ── AccessoriesDetails (inline) ──
-function AccDetails({
-  data, shopFilter, onShopFilterChange, shopOptions, productScope, onProductScopeChange,
-}: {
-  data: AccessoriesSalesData;
-  shopFilter: string;
-  onShopFilterChange: (v: string) => void;
-  shopOptions: string[];
-  productScope: "accessories" | "nonAccessories";
-  onProductScopeChange: (v: "accessories" | "nonAccessories") => void;
+function AccDetails({ data, shopFilter, onShopFilterChange, shopOptions, productScope, onProductScopeChange }: {
+  data: AccessoriesSalesData; shopFilter: string; onShopFilterChange: (v: string) => void;
+  shopOptions: string[]; productScope: "accessories" | "nonAccessories"; onProductScopeChange: (v: "accessories" | "nonAccessories") => void;
 }) {
   const sorted = [...data.total].sort((a, b) => b.sum - a.sum);
   return (
@@ -72,20 +60,12 @@ function AccDetails({
   );
 }
 
-// ── Main widget ──
-export function AccessoriesWidget({ since, until }: Props) {
-  const [open, setOpen] = useState(false);
+export function AccessoriesWidget({ since, until, expanded, onToggle }: Props) {
   const [shopFilter, setShopFilter] = useState("all");
   const [scope, setScope] = useState<"accessories" | "nonAccessories">("accessories");
-
   const { data: role } = useEmployeeRole();
   const me = useMe();
-  const { data, loading, error } = useAccessoriesSales({
-    role: role?.employeeRole || "CASHIER",
-    userId: me.data?.id ?? "",
-    since, until,
-    enabled: true,
-  });
+  const { data, loading, error } = useAccessoriesSales({ role: role?.employeeRole || "CASHIER", userId: me.data?.id ?? "", since, until, enabled: true });
 
   const shopOptions = useMemo(() => {
     const names = new Set<string>();
@@ -96,16 +76,10 @@ export function AccessoriesWidget({ since, until }: Props) {
   const filtered = useMemo(() => {
     if (!data) return null;
     if (shopFilter === "all") return data;
-    return {
-      ...data,
-      total: data.total.filter((i: any) => i.shopName === shopFilter),
-    };
+    return { ...data, total: data.total.filter((i: any) => i.shopName === shopFilter) };
   }, [data, shopFilter]);
 
-  const tileValue = useMemo(() => {
-    if (!filtered) return 0;
-    return filtered.total.reduce((s: number, i: any) => s + i.sum, 0);
-  }, [filtered]);
+  const tileValue = useMemo(() => filtered ? filtered.total.reduce((s: number, i: any) => s + i.sum, 0) : 0, [filtered]);
 
   if (loading) return <LoadingTile title="Аксессуары" Icon={Cherry} tone="cyan" />;
   if (error) return <div className="text-red-500 text-sm p-2">Ошибка: {error}</div>;
@@ -113,19 +87,13 @@ export function AccessoriesWidget({ since, until }: Props) {
 
   return (
     <div>
-      <div className={open ? "ring-2 ring-cyan-500 scale-[1.01] rounded-xl" : "hover:-translate-y-0.5"} style={{ transition: "all 0.3s" }}>
-        <AccCard value={tileValue} onClick={() => setOpen(!open)} />
+      <div onClick={onToggle} className={`rounded-xl transition-all duration-300 ${expanded ? "ring-2 ring-cyan-500 scale-[1.01]" : "hover:-translate-y-0.5 cursor-pointer"}`}>
+        <AccCard value={tileValue} />
       </div>
-      {open && filtered && (
+      {expanded && filtered && (
         <div className="mt-3">
-          <AccDetails
-            data={filtered}
-            shopFilter={shopFilter}
-            onShopFilterChange={setShopFilter}
-            shopOptions={shopOptions}
-            productScope={scope}
-            onProductScopeChange={setScope}
-          />
+          <AccDetails data={filtered} shopFilter={shopFilter} onShopFilterChange={setShopFilter}
+            shopOptions={shopOptions} productScope={scope} onProductScopeChange={setScope} />
         </div>
       )}
     </div>
