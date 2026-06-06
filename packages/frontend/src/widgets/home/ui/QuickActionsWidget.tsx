@@ -80,7 +80,15 @@ export function QuickActionsWidget({ employeeRole }: QuickActionsWidgetProps) {
                 }
                 navigate(action.path);
               }}
-              className={`relative bg-gradient-to-br ${action.color} text-white p-4 rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl hover:scale-105 active:scale-95`}
+              disabled={isDisabled}
+              title={
+                isDisabled ? "Недоступно при работе через Elvator" : undefined
+              }
+              className={`relative bg-gradient-to-br ${action.color} text-white p-4 rounded-lg shadow-lg transition-all duration-200 ${
+                isDisabled
+                  ? "opacity-60 cursor-not-allowed"
+                  : "hover:shadow-xl hover:scale-105 active:scale-95"
+              }`}
             >
               {/* Badge */}
               {badge && (
@@ -96,6 +104,11 @@ export function QuickActionsWidget({ employeeRole }: QuickActionsWidgetProps) {
                   <div className="text-xs opacity-80 mt-1">
                     {action.description}
                   </div>
+                  {isDisabled && (
+                    <div className="text-[11px] mt-1 opacity-90">
+                      Недоступно при работе через Elvator
+                    </div>
+                  )}
                 </div>
               </div>
             </button>

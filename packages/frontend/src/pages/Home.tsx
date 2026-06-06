@@ -8,24 +8,28 @@ import {
   TodayAlertsWidget,
   StockHealthWidget,
 } from "@widgets/home";
+import { DashboardSummaryWidget } from "@widgets/dashboard";
 import { buildHomeAccessModel } from "@features/dashboard/model/homePageModel";
+import { useDataSourceStore } from "@shared/model/dataSourceStore";
 import { SellerPerformanceWidget } from "@widgets/home/SellerPerformanceWidget";
+// import { SalaryWidget } from "@widgets/home/SalaryWidget";
 import { DailyBriefing } from "@widgets/home/DailyBriefing";
-import { MyShiftCard } from "@widgets/home/MyShiftCard";
-import { WeekSalary } from "@widgets/home/WeekSalary";
-import { NetworkPulse } from "@widgets/home/NetworkPulse";
 import { isTelegramMiniApp } from "../helpers/telegram";
 import { useState, useEffect } from "react";
 
 export default function Home() {
   const { data, error, isLoading } = useEmployeeRole();
+  const _dataSource = useDataSourceStore((state) => state.dataSource);
+  void _dataSource;
+  const _aiAvailable = useDataSourceStore((state) => state.aiAvailable);
+  void _aiAvailable;
   const miniApp = isTelegramMiniApp();
 
   // Состояния загрузки и ошибок
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState error={error.message} />;
 
-  // Проверка прав доступа
+  // Проверка прав доступа - улучшенная версия
   if (!data?.employeeRole || data.employeeRole === "null") {
     const shouldShowManualIdInput = !miniApp || data?.employeeRole === "null";
 
@@ -40,6 +44,7 @@ export default function Home() {
           <RegisterUserCard
             onRegister={(id) => {
               console.log("Новый пользователь Telegram ID:", id);
+              // 👉 здесь можно вызвать API для сохранения в БД
             }}
           />
         )}
@@ -52,29 +57,38 @@ export default function Home() {
 
   return (
     <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-20 sm:pt-24 px-4 sm:px-6 pb-24">
-      <div className="w-full max-w-7xl space-y-4">
+      <div className="w-full max-w-7xl">
 
-        {/* === ПРОДАВЕЦ === */}
-        {isCashier && !isSuperAdmin && (
-          <>
-            <MyShiftCard />
-            <WeekSalary />
-            <DailyBriefing />
-            <QuickActionsWidget employeeRole={data.employeeRole} />
-          </>
+        {/* Daily Briefing — персональная сводка */}
+        <DailyBriefing />
+
+        {/* Эффективность продавцов (топ-3 за сегодня, тап → полный дашборд) */}
+        {isSuperAdmin && <SellerPerformanceWidget />}
+
+        {/* Зарплата — SUPERADMIN (тест: Карина Боброва) */}
+        {/* {isSuperAdmin && <SalaryWidget />} */}
+
+        {/* План продаж - карточки статусов (все роли) */}
+        <PlanStatusWidget />
+
+        {/* Детальный отчет по магазинам */}
+        {/* {(isCashier || isAdmin) && <PlanSalesFinancialReport />} */}
+
+        {/* Сводка за день - для всех ролей */}
+        {canSeeMainDashboard && (
+          <DashboardSummaryWidget showAiDirector={false} />
         )}
 
-        {/* === АДМИН / СУПЕРАДМИН === */}
-        {(isAdmin || isSuperAdmin) && (
-          <>
-            <NetworkPulse />
-            <PlanStatusWidget />
-            {isSuperAdmin && <TodayAlertsWidget />}
-            {isSuperAdmin && <SellerPerformanceWidget />}
-            {(isSuperAdmin || isAdmin) && <StockHealthWidget />}
-            <QuickActionsWidget employeeRole={data.employeeRole} />
-          </>
-        )}
+        {/* {isSuperAdmin && <DashboardSummary2 />} */}
+
+        {/* Критические оповещения - только для админов */}
+        {isSuperAdmin && <TodayAlertsWidget />}
+
+        {/* Состояние остатков — мёртвый сток + заканчиваются */}
+        {(isSuperAdmin || isAdmin) && <StockHealthWidget />}
+
+        {/* Быстрые действия - в зависимости от роли */}
+        <QuickActionsWidget employeeRole={data.employeeRole} />
 
         {/* Last updated */}
         <LastUpdated />
@@ -94,11 +108,7 @@ function LastUpdated() {
   }, [fetching]);
 
   const timeStr = lastOk
-    ? lastOk.toLocaleTimeString("ru-RU", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      })
+    ? lastOk.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
     : "--:--:--";
 
   return (

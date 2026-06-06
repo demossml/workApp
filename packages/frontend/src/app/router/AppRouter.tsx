@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router";
+import { useDataSourceStore } from "@shared/model/dataSourceStore";
 
 const Settings = lazy(() => import("@/pages/reports/Settings"));
 const Home = lazy(() => import("@/pages/Home"));
@@ -13,6 +14,7 @@ const StoreOpeningReport = lazy(() => import("@/pages/reports/StoreOpeningReport
 const ProfitReportPage = lazy(() => import("@/pages/reports/ProfitReportPage"));
 const StaffRatingsReport = lazy(() => import("@/pages/reports/StaffRatingsReport"));
 const SalaryReport = lazy(() => import("@/pages/reports/SalaryReport"));
+const SalesTodayReport = lazy(() => import("@/pages/reports/SalesTodayReport"));
 const SchedulesReport = lazy(() => import("@/pages/reports/SchedulesReport"));
 const StoreOpeningPage = lazy(() => import("@/pages/opening/StoreOpeningPage"));
 const DeadStocks = lazy(() => import("@/pages/deadstock/DeadStock"));
@@ -43,7 +45,7 @@ export function AppRouter() {
         <Route path="/evotor/profit" element={<ProfitReportPage />} />
         <Route path="/evotor/staff-analysis" element={<StaffRatingsReport />} />
         <Route path="/evotor/salary-user-report" element={<SalaryReport />} />
-        <Route path="/evotor/sales-today" element={<Navigate to="/evotor/sales-report" replace />} />
+        <Route path="/evotor/sales-today" element={<SalesTodayReport />} />
         <Route path="/evotor/schedules" element={<SchedulesReport />} />
         <Route path="/evotor/open-store" element={<StoreOpeningPage />} />
         <Route path="evotor/dead-stock" element={<DeadStocks />} />

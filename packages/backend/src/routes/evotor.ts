@@ -851,9 +851,6 @@ async function loadFinancialDataByMode(input: {
 
 export const evotorRoutes = new Hono<IEnv>()
 
-// ═══════════════════════════════════════════════
-// 📊 ПРОДАЖИ И МАГАЗИНЫ
-// ═══════════════════════════════════════════════
 	.get("/sales-today", async (c) => {
 		const mode = await getDataModeOrDefault(c.env);
 		const salesData = await c.var.evotor.getSalesToday(c.get("db"));
@@ -1103,10 +1100,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			meta: buildDataModeMeta(mode),
 		});
 	})
-
-// ═══════════════════════════════════════════════
-// 🔌 АКСЕССУАРЫ
-// ═══════════════════════════════════════════════
 	.post("/accessoriesSales/:role/:userId", async (c) => {
 		try {
 			const db = c.get("db");
@@ -1380,10 +1373,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			});
 		}
 	})
-
-// ═══════════════════════════════════════════════
-// 📄 PDF ГЕНЕРАЦИЯ
-// ═══════════════════════════════════════════════
 	.post("/generate-pdf", async (c) => {
 		try {
 			const chatId = c.var.userId || c.req.header("telegram-id") || "";
@@ -1520,10 +1509,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json(body, status as 200);
 		}
 	})
-
-// ═══════════════════════════════════════════════
-// 📈 ПЛАН ПРОДАЖ
-// ═══════════════════════════════════════════════
 	.get("/plan-for-today", async (c) => {
 		try {
 			interface SalesData {
@@ -1732,10 +1717,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			);
 		}
 	})
-
-// ═══════════════════════════════════════════════
-// 🏷️ ГРУППЫ ТОВАРОВ
-// ═══════════════════════════════════════════════
 	.get("/groups", async (c) => {
 		const shopIds: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
 
@@ -1774,10 +1755,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json(body, status as 200);
 		}
 	})
-
-// ═══════════════════════════════════════════════
-// 💰 ЗАРПЛАТА
-// ═══════════════════════════════════════════════
 	.post("/salary", async (c) => {
 		try {
 			const data = await c.req.json();
@@ -1950,10 +1927,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json(body, status as 200);
 		}
 	})
-
-// ═══════════════════════════════════════════════
-// ⚙️ НАСТРОЙКИ
-// ═══════════════════════════════════════════════
 	.post("/submitGroups", async (c) => {
 		try {
 			const data = await c.req.json();
@@ -2072,10 +2045,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ message: "Не удалось сохранить оклад и премию" }, 400);
 		}
 	})
-
-// ═══════════════════════════════════════════════
-// 🏪 ИНФОРМАЦИЯ О МАГАЗИНАХ
-// ═══════════════════════════════════════════════
 	.post("/shops", async (c) => {
 		const shopOptions: Record<string, string> = {};
 
@@ -2119,10 +2088,6 @@ export const evotorRoutes = new Hono<IEnv>()
 		return c.json({ shopOptions, groups });
 	})
 
-
-// ═══════════════════════════════════════════════
-// 🏠 ДАШБОРД
-// ═══════════════════════════════════════════════
 	.post("/dashboard-home-insights", async (c) => {
 		try {
 			const mode = await getDataModeOrDefault(c.env);
@@ -2751,10 +2716,6 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 
-
-// ═══════════════════════════════════════════════
-// 💵 ФИНАНСЫ
-// ═══════════════════════════════════════════════
 	.get("/financial", async (c) => {
 		try {
 			const startDate = c.req.query("since");
@@ -2901,134 +2862,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
 	})
-	// ── TodayPulse: топ-10 + аксессуары + касса (с фильтрами) ──
-	.get("/today-pulse", async (c) => {
-		try {
-			const db = c.get("db");
-			const tzOffsetMinutes = Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180);
-
-			// Параметры: since, until, storeUuid
-			const sinceParam = c.req.query("since")?.trim() || "";
-			const untilParam = c.req.query("until")?.trim() || "";
-			const storeUuid = c.req.query("storeUuid")?.trim() || "";
-
-			let since: string, until: string;
-			if (sinceParam && untilParam) {
-				since = sinceParam;
-				until = untilParam;
-			} else {
-				const todayKey = getLocalDateKey(new Date(), tzOffsetMinutes);
-				const range = buildUtcRangeForLocalDates(todayKey, todayKey, tzOffsetMinutes);
-				since = range.since;
-				until = range.until;
-			}
-
-			const storeFilter = storeUuid ? "AND s.store_uuid = ?" : "";
-			const storeBind = storeUuid ? [storeUuid] : [] as string[];
-
-			// 1. Топ-10 товаров (все товары, не только аксессуары)
-			const topBind = [since, until, ...storeBind];
-			const topRows = await db
-				.prepare(
-					`SELECT s.store_name, p.product_name,
-						CAST(SUM(p.quantity) AS INTEGER) as qty,
-						CAST(SUM(p.sum) AS DOUBLE) as revenue
-					FROM positions p
-					JOIN sells s ON p.doc_id = s.doc_id
-					WHERE s.close_date >= ? AND s.close_date <= ? ${storeFilter}
-					GROUP BY s.store_name, p.product_name
-					ORDER BY revenue DESC
-					LIMIT 10`,
-				)
-				.bind(...topBind)
-				.all<{ store_name: string; product_name: string; qty: number; revenue: number }>();
-
-			const topProducts = (topRows.results || []).map((r) => ({
-				storeName: r.store_name,
-				productName: r.product_name,
-				quantity: Number(r.qty),
-				revenue: Number(r.revenue),
-			}));
-
-			// 2. Все аксессуары
-			const accBind = [since, until, ...storeBind];
-			const accRows = await db
-				.prepare(
-					`SELECT s.store_name, p.product_name,
-						CAST(SUM(p.quantity) AS INTEGER) as qty,
-						CAST(SUM(p.sum) AS DOUBLE) as revenue
-					FROM positions p
-					JOIN sells s ON p.doc_id = s.doc_id
-					JOIN product_groups pg ON pg.product_name = p.product_name AND pg.store_uuid = s.store_uuid
-					JOIN accessories a ON pg.parent_uuid = a.group_uuid
-					WHERE s.close_date >= ? AND s.close_date <= ? ${storeFilter}
-					GROUP BY s.store_name, p.product_name
-					ORDER BY revenue DESC`,
-				)
-				.bind(...accBind)
-				.all<{ store_name: string; product_name: string; qty: number; revenue: number }>();
-
-			const accessories = (accRows.results || []).map((r) => ({
-				storeName: r.store_name,
-				productName: r.product_name,
-				quantity: Number(r.qty),
-				revenue: Number(r.revenue),
-			}));
-
-			// 3. Остаток кассы: Z-отчёт + наличные − изъятия
-			const cashBind = storeUuid
-				? [storeUuid, since, until, storeUuid, since, until, storeUuid]
-				: [since, until, since, until];
-			const cashRows = await db
-				.prepare(
-					`WITH lz AS (
-						SELECT store_uuid, store_name, cash,
-							ROW_NUMBER() OVER (PARTITION BY store_uuid ORDER BY close_date DESC) as rn
-						FROM fprints
-						${storeUuid ? "WHERE store_uuid = ?" : ""}
-					),
-					ci AS (
-						SELECT s.store_uuid,
-							CAST(COALESCE(SUM(p.sum), 0) AS DOUBLE) as v
-						FROM payments p
-						JOIN sells s ON p.doc_id = s.doc_id
-						WHERE p.payment_type = 'CASH'
-							AND s.close_date >= ? AND s.close_date <= ? ${storeFilter}
-						GROUP BY s.store_uuid
-					),
-					co AS (
-						SELECT store_uuid,
-							CAST(COALESCE(SUM(sum), 0) AS DOUBLE) as v
-						FROM cash_outcomes
-						WHERE close_date >= ? AND close_date <= ? ${storeFilter}
-						GROUP BY store_uuid
-					)
-					SELECT
-						COALESCE(lz.store_name, ci.store_uuid, co.store_uuid) as shop,
-						CAST(COALESCE(lz.cash, 0) + COALESCE(ci.v, 0) - COALESCE(co.v, 0) AS DOUBLE) as balance
-					FROM lz
-					LEFT JOIN ci ON lz.store_uuid = ci.store_uuid
-					LEFT JOIN co ON lz.store_uuid = co.store_uuid
-					WHERE lz.rn = 1
-					ORDER BY balance DESC`,
-				)
-				.bind(...cashBind)
-				.all<{ shop: string; balance: number }>();
-
-			const cashByShop: Record<string, number> = {};
-			let totalCash = 0;
-			for (const r of cashRows.results || []) {
-				const bal = Number(r.balance);
-				cashByShop[r.shop] = bal;
-				totalCash += bal;
-			}
-
-			return c.json({ topProducts, accessories, cashByShop, totalCash });
-		} catch (err) {
-			logger.error("today-pulse error", { error: String(err) });
-			return c.json({ error: "Ошибка загрузки данных" }, 500);
-		}
-	})
 	.post("/financial/today/direct", async (c) => {
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
@@ -3059,10 +2892,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
 	})
-
-// ═══════════════════════════════════════════════
-// 🔄 ИНДЕКСАЦИЯ
-// ═══════════════════════════════════════════════
 	.post("/index/warm", async (c) => {
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
@@ -3140,10 +2969,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ error: "INDEX_PULL_TODAY_FAILED" }, 500);
 		}
 	})
-
-// ═══════════════════════════════════════════════
-// 🧾 ЧЕКИ (РЕБИЛД)
-// ═══════════════════════════════════════════════
 	.post("/receipts/rebuild-day", async (c) => {
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
@@ -3217,10 +3042,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ error: "REBUILD_RECEIPTS_FAILED" }, 500);
 		}
 	})
-
-// ═══════════════════════════════════════════════
-// 👤 KPI СОТРУДНИКОВ
-// ═══════════════════════════════════════════════
 	.post("/employee-kpi/backfill-index-range", async (c) => {
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
@@ -3318,10 +3139,6 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ error: "EMPLOYEE_KPI_BACKFILL_FROM_INDEX_FAILED" }, 500);
 		}
 	})
-
-// ═══════════════════════════════════════════════
-// 📦 ЗАКАЗЫ
-// ═══════════════════════════════════════════════
 	.post("/order", async (c) => {
 		try {
 			// Получаем данные из запроса
@@ -3400,10 +3217,6 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 
-
-// ═══════════════════════════════════════════════
-// 📊 ОТЧЁТ О ПРИБЫЛИ
-// ═══════════════════════════════════════════════
 	.post("/profit-report", async (c) => {
 		try {
 			// Получаем данные из запроса
@@ -3531,10 +3344,6 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 
-
-// ═══════════════════════════════════════════════
-// 📋 СКЛАДСКОЙ ОТЧЁТ
-// ═══════════════════════════════════════════════
 	.post("/stock-report", async (c) => {
 		try {
 			const data = await c.req.json();
@@ -3598,10 +3407,6 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 
-
-// ═══════════════════════════════════════════════
-// 📈 ОТЧЁТЫ ПО ПРОДАЖАМ
-// ═══════════════════════════════════════════════
 	.post("/salesResult", async (c) => {
 		try {
     const data = await c.req.json();

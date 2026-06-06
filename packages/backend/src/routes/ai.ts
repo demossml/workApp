@@ -4,20 +4,55 @@ import { logger } from "../logger";
 import {
 	AiInsightsRequestSchema,
 	AiDirectorAlertsRequestSchema,
+	AiDirectorForecastRequestSchema,
+	AiDirectorChatRequestSchema,
 	AiDirectorStoreRatingRequestSchema,
 	AiDirectorEmployeeAnalysisRequestSchema,
+	AiDirectorEmployeeDeepAnalysisRequestSchema,
+	AiDirectorDemandForecastRequestSchema,
 	AiDirectorBriefingRequestSchema,
+	AiDirectorExplainSalesRequestSchema,
 	AiDirectorHeatmapRequestSchema,
 	AiDirectorOverviewRequestSchema,
+	AiDirectorReportRequestSchema,
+	AiDirectorRecommendationsRequestSchema,
 	AiDirectorSummaryRequestSchema,
+	AiDirectorStockMonitorRequestSchema,
+	AiDirectorVelocityRequestSchema,
 	DashboardSummary2InsightsRequestSchema,
+	EmployeeShiftKpiSchema,
+	OpeningPhotoDigestRequestSchema,
+	ProcurementRecommendationsSchema,
 	validate,
 } from "../validation";
+import {
+	AiDirectorDashboardRequestSchema,
+	AiDirectorDashboardResponseSchema,
+} from "../contracts/aiDirectorDashboard";
+import {
+	assert,
+	buildSinceUntilFromDocuments,
+	formatDateWithTime,
+	getPeriodRangeEvotor,
+	getTodayRangeEvotor,
+} from "../utils";
 import { getPreviousPeriodDates } from "../ai/dataEnrichment";
 import {
 	getLatestCloseDates,
 	saveNewIndexDocuments,
 } from "../db/repositories/indexDocuments";
+import {
+	getLatestUserOpeningForDate,
+	getOpeningsByDate,
+} from "../db/repositories/openStores";
+import {
+	listActiveTgSubscriptions,
+	touchTgSubscriptionLastSentAt,
+} from "../db/repositories/tgSubscriptions";
+import {
+	getOpeningPhotoDigestCache,
+	saveOpeningPhotoDigestCache,
+} from "../db/repositories/openingPhotoDigestCache";
 import {
 	analyzeDocsStaffTask,
 	getHoroscopeByDateTask,
@@ -27,8 +62,11 @@ import {
 } from "../ai";
 import type { IndexDocument, Product } from "../evotor/types";
 import { getDocumentsFromIndexFirst } from "../services/indexDocumentsFallback";
+import { sendTelegramMessage } from "../../utils/sendTelegramMessage";
 import { buildAiReportKey } from "../utils/kvCache";
 import { getSalesHourly } from "../db/repositories/salesHourly";
+import { getWeatherSummary, weatherDemandFactor } from "../utils/weather";
+import { buildEmployeeKpiNarrative } from "../ai/employeeKpiNarrative";
 import {
 	listAiAlerts,
 	listAiShiftSummaries,
