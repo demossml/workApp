@@ -13,26 +13,11 @@ import {
 	DashboardSummary2InsightsRequestSchema,
 	validate,
 } from "../validation";
-import {
-	AiDirectorDashboardRequestSchema,
-	AiDirectorDashboardResponseSchema,
 import { getPreviousPeriodDates } from "../ai/dataEnrichment";
 import {
 	getLatestCloseDates,
 	saveNewIndexDocuments,
 } from "../db/repositories/indexDocuments";
-import {
-	getLatestUserOpeningForDate,
-	getOpeningsByDate,
-} from "../db/repositories/openStores";
-import {
-	listActiveTgSubscriptions,
-	touchTgSubscriptionLastSentAt,
-} from "../db/repositories/tgSubscriptions";
-import {
-	getOpeningPhotoDigestCache,
-	saveOpeningPhotoDigestCache,
-} from "../db/repositories/openingPhotoDigestCache";
 import {
 	analyzeDocsStaffTask,
 	getHoroscopeByDateTask,
