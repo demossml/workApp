@@ -42,21 +42,24 @@ async function fetchNetworkPulse(): Promise<NetworkPulseData> {
   ]);
 
   const sessions = sessionsRes?.sessions ?? [];
-  const shops = (planRes?.shops ?? []).map((shop: any) => {
+  const salesData = planRes?.salesData ?? {};
+  const shops: ShopRow[] = Object.entries(salesData).map(([shopName, shop]: [string, any]) => {
     const session = sessions.find(
-      (s: any) => s.shopUuid === shop.shopUuid || s.shopName === shop.shopName
+      (s: any) => s.shopName === shopName
     );
+    const vapeFact = shop?.dataSales ?? 0;
+    const vapePlan = shop?.datePlan ?? 0;
     const vapePct =
-      shop.dailyPlan > 0
-        ? Math.min(Math.round((shop.vapeFact / shop.dailyPlan) * 100), 100)
+      vapePlan > 0
+        ? Math.min(Math.round((vapeFact / vapePlan) * 100), 100)
         : 0;
     return {
-      uuid: shop.shopUuid,
-      name: shop.shopName,
-      revenue: shop.vapeFact ?? 0, // rough — заменю на реальную выручку
+      uuid: shopName,
+      name: shopName,
+      revenue: vapeFact,
       checks: 0,
-      vapePlan: shop.dailyPlan ?? 0,
-      vapeFact: shop.vapeFact ?? 0,
+      vapePlan,
+      vapeFact,
       vapePct,
       openedAt: session?.openedAt ?? null,
       isLate: session?.isLate ?? false,

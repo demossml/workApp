@@ -68,7 +68,6 @@ export default function Home() {
         {(isAdmin || isSuperAdmin) && (
           <>
             <NetworkPulse />
-            <DailyBriefing />
             <PlanStatusWidget />
             {isSuperAdmin && <TodayAlertsWidget />}
             {isSuperAdmin && <SellerPerformanceWidget />}
