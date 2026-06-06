@@ -2901,17 +2901,57 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
 	})
-	// ── TodayPulse: топ аксессуаров + остаток кассы ──
+	// ── TodayPulse: топ-10 + аксессуары + касса (с фильтрами) ──
 	.get("/today-pulse", async (c) => {
 		try {
 			const db = c.get("db");
 			const tzOffsetMinutes = Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180);
-			const todayKey = getLocalDateKey(new Date(), tzOffsetMinutes);
-			const { since, until } = buildUtcRangeForLocalDates(
-				todayKey, todayKey, tzOffsetMinutes,
-			);
 
-			// 1. Топ аксессуаров сегодня
+			// Параметры: since, until, storeUuid
+			const sinceParam = c.req.query("since")?.trim() || "";
+			const untilParam = c.req.query("until")?.trim() || "";
+			const storeUuid = c.req.query("storeUuid")?.trim() || "";
+
+			let since: string, until: string;
+			if (sinceParam && untilParam) {
+				since = sinceParam;
+				until = untilParam;
+			} else {
+				const todayKey = getLocalDateKey(new Date(), tzOffsetMinutes);
+				const range = buildUtcRangeForLocalDates(todayKey, todayKey, tzOffsetMinutes);
+				since = range.since;
+				until = range.until;
+			}
+
+			const storeFilter = storeUuid ? "AND s.store_uuid = ?" : "";
+			const storeBind = storeUuid ? [storeUuid] : [] as string[];
+
+			// 1. Топ-10 товаров (все товары, не только аксессуары)
+			const topBind = [since, until, ...storeBind];
+			const topRows = await db
+				.prepare(
+					`SELECT s.store_name, p.product_name,
+						CAST(SUM(p.quantity) AS INTEGER) as qty,
+						CAST(SUM(p.sum) AS DOUBLE) as revenue
+					FROM positions p
+					JOIN sells s ON p.doc_id = s.doc_id
+					WHERE s.close_date >= ? AND s.close_date <= ? ${storeFilter}
+					GROUP BY s.store_name, p.product_name
+					ORDER BY revenue DESC
+					LIMIT 10`,
+				)
+				.bind(...topBind)
+				.all<{ store_name: string; product_name: string; qty: number; revenue: number }>();
+
+			const topProducts = (topRows.results || []).map((r) => ({
+				storeName: r.store_name,
+				productName: r.product_name,
+				quantity: Number(r.qty),
+				revenue: Number(r.revenue),
+			}));
+
+			// 2. Все аксессуары
+			const accBind = [since, until, ...storeBind];
 			const accRows = await db
 				.prepare(
 					`SELECT s.store_name, p.product_name,
@@ -2921,12 +2961,11 @@ export const evotorRoutes = new Hono<IEnv>()
 					JOIN sells s ON p.doc_id = s.doc_id
 					JOIN product_groups pg ON pg.product_name = p.product_name AND pg.store_uuid = s.store_uuid
 					JOIN accessories a ON pg.parent_uuid = a.group_uuid
-					WHERE s.close_date >= ? AND s.close_date <= ?
+					WHERE s.close_date >= ? AND s.close_date <= ? ${storeFilter}
 					GROUP BY s.store_name, p.product_name
-					ORDER BY revenue DESC
-					LIMIT 15`,
+					ORDER BY revenue DESC`,
 				)
-				.bind(since, until)
+				.bind(...accBind)
 				.all<{ store_name: string; product_name: string; qty: number; revenue: number }>();
 
 			const accessories = (accRows.results || []).map((r) => ({
@@ -2936,13 +2975,17 @@ export const evotorRoutes = new Hono<IEnv>()
 				revenue: Number(r.revenue),
 			}));
 
-			// 2. Остаток кассы: Z-отчёт + сегодняшние наличные − изъятия
+			// 3. Остаток кассы: Z-отчёт + наличные − изъятия
+			const cashBind = storeUuid
+				? [storeUuid, since, until, storeUuid, since, until, storeUuid]
+				: [since, until, since, until];
 			const cashRows = await db
 				.prepare(
 					`WITH lz AS (
 						SELECT store_uuid, store_name, cash,
 							ROW_NUMBER() OVER (PARTITION BY store_uuid ORDER BY close_date DESC) as rn
 						FROM fprints
+						${storeUuid ? "WHERE store_uuid = ?" : ""}
 					),
 					ci AS (
 						SELECT s.store_uuid,
@@ -2950,14 +2993,14 @@ export const evotorRoutes = new Hono<IEnv>()
 						FROM payments p
 						JOIN sells s ON p.doc_id = s.doc_id
 						WHERE p.payment_type = 'CASH'
-							AND s.close_date >= ? AND s.close_date <= ?
+							AND s.close_date >= ? AND s.close_date <= ? ${storeFilter}
 						GROUP BY s.store_uuid
 					),
 					co AS (
 						SELECT store_uuid,
 							CAST(COALESCE(SUM(sum), 0) AS DOUBLE) as v
 						FROM cash_outcomes
-						WHERE close_date >= ? AND close_date <= ?
+						WHERE close_date >= ? AND close_date <= ? ${storeFilter}
 						GROUP BY store_uuid
 					)
 					SELECT
@@ -2969,7 +3012,7 @@ export const evotorRoutes = new Hono<IEnv>()
 					WHERE lz.rn = 1
 					ORDER BY balance DESC`,
 				)
-				.bind(since, until, since, until)
+				.bind(...cashBind)
 				.all<{ shop: string; balance: number }>();
 
 			const cashByShop: Record<string, number> = {};
@@ -2980,7 +3023,7 @@ export const evotorRoutes = new Hono<IEnv>()
 				totalCash += bal;
 			}
 
-			return c.json({ accessories, cashByShop, totalCash });
+			return c.json({ topProducts, accessories, cashByShop, totalCash });
 		} catch (err) {
 			logger.error("today-pulse error", { error: String(err) });
 			return c.json({ error: "Ошибка загрузки данных" }, 500);
