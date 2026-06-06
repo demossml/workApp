@@ -11,6 +11,7 @@ import {
   removeFromQueue,
   updateFileStatus,
   getPendingFiles,
+  clearUploadQueue,
 } from "../../../helpers/uploadQueue";
 import { startBackgroundUpload } from "../../../helpers/backgroundUploader";
 
@@ -689,6 +690,30 @@ export default function PhotoStep({
     setCurrentStep("cash_check");
   };
 
+  // Очистка фото из IndexedDB при ручном удалении
+  const handleRemovePhoto = async (_file: File, index: number, category: keyof PhotoFiles) => {
+    const queueFileKey = `${selectedShop ?? "no-shop"}:${category}_${index}`;
+    try {
+      await removeFromQueue(queueFileKey);
+    } catch (e) {
+      console.warn("Не удалось удалить из очереди:", e);
+    }
+  };
+
+  // Сброс всех фото и очистка очереди
+  const handleResetAll = async () => {
+    try {
+      await clearUploadQueue(userId);
+      setPhotos({ area: [], stock: [], cash: [], mrc: [] });
+      setFileUploadStatus({});
+      setUploadedFiles(new Set());
+      setSlotStatuses({});
+      localStorage.removeItem(statusStorageKey);
+    } catch (e) {
+      console.error("Ошибка сброса:", e);
+    }
+  };
+
   const handleRetryFailed = async () => {
     const categories: Array<keyof PhotoFiles> = ["area", "stock", "cash", "mrc"];
     for (const category of categories) {
@@ -753,6 +778,7 @@ export default function PhotoStep({
           files={photos.area}
           uploadStatuses={getFilesUploadStatus(photos.area, "area")}
           onChange={(files) => handleFilesChange(files, "area")}
+          onRemove={(file, i) => handleRemovePhoto(file, i, "area")}
         />
 
         <PhotoUpload
@@ -761,6 +787,7 @@ export default function PhotoStep({
           files={photos.stock}
           uploadStatuses={getFilesUploadStatus(photos.stock, "stock")}
           onChange={(files) => handleFilesChange(files, "stock")}
+          onRemove={(file, i) => handleRemovePhoto(file, i, "stock")}
         />
 
         <PhotoUpload
@@ -769,6 +796,7 @@ export default function PhotoStep({
           files={photos.cash}
           uploadStatuses={getFilesUploadStatus(photos.cash, "cash")}
           onChange={(files) => handleFilesChange(files, "cash")}
+          onRemove={(file, i) => handleRemovePhoto(file, i, "cash")}
         />
 
         <PhotoUpload
@@ -777,8 +805,22 @@ export default function PhotoStep({
           files={photos.mrc}
           uploadStatuses={getFilesUploadStatus(photos.mrc, "mrc")}
           onChange={(files) => handleFilesChange(files, "mrc")}
+          onRemove={(file, i) => handleRemovePhoto(file, i, "mrc")}
         />
       </div>
+
+      {/* Кнопка сброса всех фото */}
+      {(photos.area.length > 0 || photos.stock.length > 0 || photos.cash.length > 0 || photos.mrc.length > 0) && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={handleResetAll}
+            className="px-4 py-2 rounded-xl bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm font-medium hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+          >
+            🗑️ Сбросить всё и начать заново
+          </button>
+        </div>
+      )}
 
       {/* Статус загрузки */}
       {Object.keys(fileUploadStatus).length > 0 && (

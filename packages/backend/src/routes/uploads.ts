@@ -1,152 +1,77 @@
 import { Hono } from "hono";
 import type { IEnv } from "../types";
 import { logger } from "../logger";
-import {
-	assert,
-	formatDate,
-	getTelegramFile,
-	saveFileToR2,
-} from "../utils";
 import { GetFileSchema, validate } from "../validation";
 import { getData } from "../db/repositories/openShops";
+import { ensureOpeningPhotosSchema } from "../db/repositories/openingPhotos";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { join } from "path";
+import { randomUUID } from "crypto";
 import { jsonError, toApiErrorPayload } from "../errors";
+
+const PENDING_DIR = "/tmp/tg_uploads/pending";
 
 export const uploadsRoutes = new Hono<IEnv>()
 
-	.post("/upload-photos-batch", async (c) => {
-		try {
-			const formData = await c.req.formData();
-
-			const userId = formData.get("userId")?.toString();
-			if (!userId) {
-				return jsonError(c, 400, "VALIDATION_ERROR", "Missing userId");
-			}
-
-			const files = formData.getAll("files") as unknown as File[];
-			const categories = formData.getAll("categories").map(String);
-			const fileKeys = formData.getAll("fileKeys").map(String);
-
-			if (files.length === 0) {
-				return jsonError(c, 400, "VALIDATION_ERROR", "No files uploaded");
-			}
-
-			if (
-				files.length !== categories.length ||
-				files.length !== fileKeys.length
-			) {
-				logger.warn("Invalid batch structure in FormData");
-				return c.json(
-					{
-						code: "VALIDATION_ERROR",
-						message: "Invalid batch structure",
-					},
-					400,
-				);
-			}
-
-			const allowed = ["area", "stock", "cash", "mrc"];
-
-			const now = new Date();
-			const dd = String(now.getDate()).padStart(2, "0");
-			const mm = String(now.getMonth() + 1).padStart(2, "0");
-			const yyyy = now.getFullYear();
-
-			const dateFolder = `evotor/opening/${dd}-${mm}-${yyyy}/${userId}`;
-
-			const saved: { key: string; category: string; fileKey: string }[] = [];
-
-			for (let i = 0; i < files.length; i++) {
-				const file = files[i];
-				const category = categories[i];
-				const fileKey = fileKeys[i];
-
-				if (!allowed.includes(category)) {
-					logger.warn("Invalid category", { category });
-					continue;
-				}
-
-				if (!(file instanceof File)) {
-					logger.warn("Invalid file object");
-					continue;
-				}
-
-				const key = `${dateFolder}/${category}/${file.name}`;
-
-				logger.debug("Saving file", { index: i + 1, total: files.length, key });
-
-				await saveFileToR2(c.env.R2, file, key);
-
-				logger.debug("File saved", { key });
-
-				saved.push({ key, category, fileKey });
-			}
-
-			return c.json({
-				success: true,
-				saved,
-			});
-		} catch (error) {
-			logger.error("Batch upload error", error);
-			const { status, body } = toApiErrorPayload(error, {
-				code: "UPLOAD_BATCH_FAILED",
-				message: "Upload failed",
-			});
-			return c.json(body, status as 200);
-		}
-	})
-
+	// Upload single photo → save to disk, queue for Telegram upload
 	.post("/upload-photos", async (c) => {
 		try {
 			const formData = await c.req.formData();
-
 			const file = formData.get("file") as File | null;
 			const category = formData.get("category")?.toString();
 			const userId = formData.get("userId")?.toString();
 			const shopUuid = formData.get("shopUuid")?.toString();
 			const fileKey = formData.get("fileKey")?.toString();
 
-			if (!userId) {
-				return jsonError(c, 400, "VALIDATION_ERROR", "Missing userId");
-			}
+			if (!userId) return jsonError(c, 400, "VALIDATION_ERROR", "Missing userId");
+			if (!file) return jsonError(c, 400, "VALIDATION_ERROR", "Missing file");
+			if (!category) return jsonError(c, 400, "VALIDATION_ERROR", "Missing category");
+			if (!fileKey) return jsonError(c, 400, "VALIDATION_ERROR", "Missing fileKey");
 
-			if (!file) {
-				return jsonError(c, 400, "VALIDATION_ERROR", "Missing file");
-			}
-
-			if (!category) {
-				return jsonError(c, 400, "VALIDATION_ERROR", "Missing category");
-			}
-			if (!fileKey) {
-				return jsonError(c, 400, "VALIDATION_ERROR", "Missing fileKey");
-			}
-
-			const allowed = ["area", "stock", "cash", "mrc"] as const;
-			type AllowedCategory = (typeof allowed)[number];
-			if (!allowed.includes(category as AllowedCategory)) {
+			const allowed = ["area", "stock", "cash", "mrc"];
+			if (!allowed.includes(category)) {
 				return jsonError(c, 400, "VALIDATION_ERROR", "Invalid category");
 			}
 
+			// Ensure table + pending dir exist
+			const db = c.get("settingsDb")!;
+			await ensureOpeningPhotosSchema(db);
+
+			if (!existsSync(PENDING_DIR)) {
+				mkdirSync(PENDING_DIR, { recursive: true });
+			}
+
+			// Save pending record in DB
 			const now = new Date();
 			const dd = String(now.getDate()).padStart(2, "0");
 			const mm = String(now.getMonth() + 1).padStart(2, "0");
 			const yyyy = now.getFullYear();
+			const dateStr = `${dd}-${mm}-${yyyy}`;
 
-			const resolvedShopUuid = shopUuid || "unknown-shop";
-			const folder = `evotor/opening/${dd}-${mm}-${yyyy}/${resolvedShopUuid}/${userId}/${category}`;
-			const uniqueName = `${Date.now()}_${file.name}`;
-			const key = `${folder}/${uniqueName}`;
+			const result = await db
+				.prepare(
+					`INSERT INTO opening_photos (id, shop_uuid, user_id, date, category, file_key, status)
+					 VALUES (nextval('opening_photos_seq'), ?, ?, ?, ?, ?, 'pending') RETURNING id`
+				)
+				.bind(shopUuid || "unknown", userId, dateStr, category, fileKey)
+				.first<{ id: number }>();
 
-			logger.debug("Saving file", { fileName: file.name, key });
+			const recId = result?.id;
+			if (!recId) throw new Error("Failed to insert photo record");
 
-			await saveFileToR2(c.env.R2, file, key);
+			// Write photo to pending dir
+			const photoPath = join(PENDING_DIR, `${recId}_${randomUUID()}.jpg`);
+			const buffer = Buffer.from(await file.arrayBuffer());
+			writeFileSync(photoPath, buffer);
 
-			logger.debug("File saved successfully", { key });
+			logger.debug("Photo queued for Telegram upload", { recId, fileKey, path: photoPath });
 
 			return c.json({
 				success: true,
 				fileKey,
 				category,
-				key,
+				queued: true,
+				id: recId,
 			});
 		} catch (err) {
 			logger.error("Upload photos error", err);
@@ -158,131 +83,100 @@ export const uploadsRoutes = new Hono<IEnv>()
 		}
 	})
 
-	.post("/upload", async (c) => {
+	// Batch upload — same as single but for multiple files
+	.post("/upload-photos-batch", async (c) => {
 		try {
 			const formData = await c.req.formData();
-			logger.debug("Upload request", {
-				entriesCount: Array.from(formData.entries()).length,
-			});
+			const userId = formData.get("userId")?.toString();
+			if (!userId) return jsonError(c, 400, "VALIDATION_ERROR", "Missing userId");
 
-			const file = formData.get("photos") as File | null;
-			if (!file || !(file instanceof File)) {
-				return jsonError(c, 400, "VALIDATION_ERROR", "Нет файла для загрузки");
+			const files = formData.getAll("files") as unknown as File[];
+			const categories = formData.getAll("categories").map(String);
+			const fileKeys = formData.getAll("fileKeys").map(String);
+
+			if (files.length === 0) return jsonError(c, 400, "VALIDATION_ERROR", "No files");
+			if (files.length !== categories.length || files.length !== fileKeys.length) {
+				return jsonError(c, 400, "VALIDATION_ERROR", "Invalid batch structure");
 			}
 
-			const savedKey = `uploads/${crypto.randomUUID()}_${file.name}`;
-			const arrayBuffer = await file.arrayBuffer();
-			logger.debug("Processing file", {
-				name: file.name,
-				type: file.type,
-				size: file.size,
-			});
+			const allowed = ["area", "stock", "cash", "mrc"];
+			const db = c.get("settingsDb")!;
+			await ensureOpeningPhotosSchema(db);
 
-			await c.env.R2.put(savedKey, arrayBuffer, {
-				httpMetadata: { contentType: file.type || "application/octet-stream" },
-			});
+			if (!existsSync(PENDING_DIR)) {
+				mkdirSync(PENDING_DIR, { recursive: true });
+			}
 
-			const publicUrl = `https://pub-a1a3c60dd9754ffba505cb0039a032fa.r2.dev/${savedKey}`;
-			logger.debug("File saved to R2", { publicUrl });
+			const now = new Date();
+			const dd = String(now.getDate()).padStart(2, "0");
+			const mm = String(now.getMonth() + 1).padStart(2, "0");
+			const yyyy = now.getFullYear();
+			const dateStr = `${dd}-${mm}-${yyyy}`;
 
-			return c.json({
-				url: publicUrl,
-				name: file.name,
-			});
+			const saved: { id: number; category: string; fileKey: string }[] = [];
+
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i];
+				const category = categories[i];
+				const fileKey = fileKeys[i];
+
+				if (!allowed.includes(category)) continue;
+				if (!(file instanceof File)) continue;
+
+				const result = await db
+					.prepare(
+						`INSERT INTO opening_photos (id, shop_uuid, user_id, date, category, file_key, status)
+						 VALUES (nextval('opening_photos_seq'), ?, ?, ?, ?, ?, 'pending') RETURNING id`
+					)
+					.bind(userId, userId, dateStr, category, fileKey)
+					.first<{ id: number }>();
+
+				if (result?.id) {
+					const photoPath = join(PENDING_DIR, `${result.id}_${randomUUID()}.jpg`);
+					const buffer = Buffer.from(await file.arrayBuffer());
+					writeFileSync(photoPath, buffer);
+					saved.push({ id: result.id, category, fileKey });
+				}
+			}
+
+			return c.json({ success: true, saved });
 		} catch (error) {
-			logger.error("Error saving file", { error });
+			logger.error("Batch upload error", error);
 			const { status, body } = toApiErrorPayload(error, {
-				code: "UPLOAD_FAILED",
-				message: "Ошибка сохранения файла",
+				code: "UPLOAD_BATCH_FAILED",
+				message: "Upload failed",
 			});
 			return c.json(body, status as 200);
 		}
 	})
 
+	// Legacy: retrieve photos from old openShops table
 	.post("/getFile", async (c) => {
 		try {
 			const data = await c.req.json();
 			const { date, shop } = validate(GetFileSchema, data);
-
-			const sinceDateOpening: string = formatDate(new Date(date));
-
-			const dataOpening = await getData(sinceDateOpening, shop, c.get("db"));
-
+			const dataOpening = await getData(date, shop, c.get("db"));
 			const dataUrlPhoto: string[] = [];
-
 			const keysPhoto = [
-				"photoCashRegisterPhoto",
-				"photoСabinetsPhoto",
-				"photoShowcasePhoto1",
-				"photoShowcasePhoto2",
-				"photoShowcasePhoto3",
-				"photoMRCInputput",
-				"photoTerritory1",
-				"photoTerritory2",
+				"photoCashRegisterPhoto", "photoСabinetsPhoto",
+				"photoShowcasePhoto1", "photoShowcasePhoto2", "photoShowcasePhoto3",
+				"photoMRCInputput", "photoTerritory1", "photoTerritory2",
 			];
-
 			const dataReport: Record<string, string> = {};
-
-			// Формируем данные о пересчёте денег
-			const countingMoneyKeyBase = "РСХОЖДЕНИЙ ПО КАССЕ (ПЕРЕСЧЕТ ДЕНЕГ)";
 
 			if (dataOpening !== null) {
 				for (const [key, value] of Object.entries(dataOpening)) {
-					if (keysPhoto.includes(key)) {
-						if (value !== null) {
-							const urlFile = await getTelegramFile(value, c.env.BOT_TOKEN);
-							dataUrlPhoto.push(urlFile); // Добавляем значение в результат
-						}
+					if (keysPhoto.includes(key) && value !== null) {
+						dataUrlPhoto.push(String(value));
 					}
-
-					if (
-						dataOpening?.countingMoney === null ||
-						String(dataOpening?.countingMoney) === "converge"
-					) {
-						dataReport[`✅${countingMoneyKeyBase}`] = "НЕТ";
-					}
-					if (
-						dataOpening?.countingMoney === null ||
-						String(dataOpening?.countingMoney) === "more"
-					) {
-						const diffSign = "+";
-						dataReport[`🔴${countingMoneyKeyBase}`] =
-							`${diffSign}${dataOpening.CountingMoneyMessage}`;
-					}
-					if (
-						dataOpening?.countingMoney === null ||
-						String(dataOpening?.countingMoney) === "less"
-					) {
-						const diffSign = "-";
-						dataReport[`🔴${countingMoneyKeyBase}`] =
-							`${diffSign}${dataOpening.CountingMoneyMessage}`;
-					}
-
-					// Дополнительная информация
-					const shopName = await c.var.evotor.getShopName(shop); // Получаем имя магазина
-					const employeeName = await c.var.evotor.getEmployeeLastName(
-						dataOpening.userId,
-					);
-
-					dataReport["МАГАЗИН:"] = shopName;
-					dataReport["СОТРУДНИК:"] = employeeName || "Нет данных";
-					const date = new Date(dataOpening.dateTime);
-					date.setHours(date.getHours() + 3);
-					dataReport["ВРЕМЯ ОТКРЫТИЯ TT"] = date.toISOString().slice(11, 16);
 				}
 			}
-
-			assert(dataReport, "not an employee");
-			assert(dataUrlPhoto, "not an employee");
 
 			return c.json({ dataReport, dataUrlPhoto });
 		} catch (error) {
 			return c.json(
-				{
-					error:
-						error instanceof Error ? error.message : "Invalid request data",
-				},
-				400,
+				{ error: error instanceof Error ? error.message : "Invalid request data" },
+				400
 			);
 		}
 	});

@@ -2744,11 +2744,24 @@ export const aiRoutes = new Hono<IEnv>()
 				s.outOfStock = s.outOfStock.slice(0, 10);
 			}
 
+			const totalProductsResult = await db.prepare(
+				"SELECT COUNT(*) as cnt FROM product_stock"
+			).all<{ cnt: number }>();
+			const totalProducts = Number((totalProductsResult.results?.[0]?.cnt) ?? 0);
+
+			const totalProblems = deadStock.length + lowStock.length + outOfStock.length;
+			const stockScore = totalProducts > 0
+				? Math.round(Math.max(0, 100 - (totalProblems / totalProducts) * 100))
+				: 100;
+
 			const result = {
 				date: new Date().toISOString().slice(0, 10),
 				deadStockCount: deadStock.length,
 				lowStockCount: lowStock.length,
 				outOfStockCount: outOfStock.length,
+				totalProducts,
+				totalProblems,
+				stockScore,
 				totalLostPerDay: Math.round(outOfStock.reduce((s, i) => s + i.lostRevenuePerDay, 0)),
 				deadStock: deadStock,
 				lowStock: lowStock,
@@ -2758,8 +2771,8 @@ export const aiRoutes = new Hono<IEnv>()
 
 			await kv.put(cacheKey, JSON.stringify(result), { expirationTtl: 300 });
 			return c.json(result);
-		} catch (error) {
-			logger.error("stock-health failed", { error });
+		} catch (error: any) {
+			logger.error("stock-health failed", { error: String(error), stack: error?.stack, message: error?.message });
 			return c.json({ error: "STOCK_HEALTH_FAILED" }, 500);
 		}
 	})

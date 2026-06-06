@@ -13,6 +13,8 @@ import {
   type QuickActionModel,
 } from "@features/dashboard/model/quickActionsModel";
 import { useDataSourceStore } from "@shared/model/dataSourceStore";
+import { useStockHealth } from "@/hooks/dashboard/useStockHealth";
+import { isTelegramMiniApp, telegram } from "@/helpers/telegram";
 
 interface QuickActionsWidgetProps {
   employeeRole: string;
@@ -21,8 +23,23 @@ interface QuickActionsWidgetProps {
 export function QuickActionsWidget({ employeeRole }: QuickActionsWidgetProps) {
   const navigate = useNavigate();
   const aiAvailable = useDataSourceStore((state) => state.aiAvailable);
+  const isMiniApp = isTelegramMiniApp();
 
   const availableActions = getAvailableQuickActions(employeeRole);
+
+  // Загружаем данные для бейджей
+  const needsStockBadge = availableActions.some(a => a.badgeKey === "deadStock" || a.badgeKey === "lowStock");
+  const { data: stockData } = useStockHealth(14, { enabled: needsStockBadge });
+
+  const getBadgeValue = (action: QuickActionModel): string | null => {
+    if (action.badgeKey === "deadStock" && stockData?.deadStockCount) {
+      return String(stockData.deadStockCount);
+    }
+    if (action.badgeKey === "lowStock" && stockData?.lowStockCount) {
+      return String(stockData.lowStockCount);
+    }
+    return null;
+  };
 
   const getActionIcon = (action: QuickActionModel) => {
     switch (action.iconKey) {
@@ -56,24 +73,35 @@ export function QuickActionsWidget({ employeeRole }: QuickActionsWidgetProps) {
         {availableActions.map((action) => {
           const isAiDirectorAction = action.path === "/ai/director";
           const isDisabled = isAiDirectorAction && !aiAvailable;
+          const badge = getBadgeValue(action);
 
           return (
             <button
               key={action.path}
               onClick={() => {
                 if (isDisabled) return;
+                if (isMiniApp) {
+                  telegram.WebApp.HapticFeedback.impactOccurred("light");
+                }
                 navigate(action.path);
               }}
               disabled={isDisabled}
               title={
                 isDisabled ? "Недоступно при работе через Elvator" : undefined
               }
-              className={`bg-gradient-to-br ${action.color} text-white p-4 rounded-lg shadow-lg transition-all duration-200 ${
+              className={`relative bg-gradient-to-br ${action.color} text-white p-4 rounded-lg shadow-lg transition-all duration-200 ${
                 isDisabled
                   ? "opacity-60 cursor-not-allowed"
                   : "hover:shadow-xl hover:scale-105 active:scale-95"
               }`}
             >
+              {/* Badge */}
+              {badge && (
+                <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold shadow-md ring-2 ring-white dark:ring-gray-800">
+                  {badge}
+                </span>
+              )}
+
               <div className="flex flex-col items-center text-center gap-2">
                 {getActionIcon(action)}
                 <div>

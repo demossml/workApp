@@ -7,7 +7,7 @@ import {
   Button,
   Select,
 } from "@shared/ui";
-import { DashboardSummaryWidget } from "@widgets/dashboard";
+// import { DashboardSummaryWidget } from "@widgets/dashboard"; // -- unused
 import { fetchStoreList } from "@shared/api";
 
 // ── Types ──────────────────────────────────────────────
@@ -109,8 +109,6 @@ async function fetchAlerts(limit = 20): Promise<AlertItem[]> {
 
 const toIso = (d: Date) => d.toISOString().split("T")[0];
 const formatMoney = (n: number) => Math.round(n).toLocaleString("ru-RU");
-const pctChange = (curr: number, prev: number) =>
-  prev && prev !== 0 ? `${((curr - prev) / prev * 100).toFixed(1)}%` : "—";
 
 export default function AiDirectorPage() {
   const today = toIso(new Date());

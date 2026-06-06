@@ -4,17 +4,19 @@ import {
   ChevronDown, ChevronUp, ArrowLeft, TrendingUp, TrendingDown,
   Store, AlertTriangle, Zap, Target, BarChart3,
   Calendar, ShoppingBag, Users, DollarSign, CheckCircle, XCircle,
-  Filter, ArrowUpDown, Info, HelpCircle, BookOpen,
+  ArrowUpDown, Info, HelpCircle, BookOpen, Download,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell, Legend,
+  BarChart, Bar, Cell,
 } from "recharts";
 import {
-  SELLERS, STORE_BASELINES, DOW_DATA, HYPOTHESES, KPI_SNAPSHOT,
-  type SellerMetrics, type StoreBaseline,
-} from "@/entities/seller-effectiveness/types";
+  type SellerMetrics,
+  type StoreBaseline,
+  type DowData,
+} from "@/hooks/dashboard/useSellerEffectiveness";
+import { useSellerEffectiveness } from "@/hooks/dashboard/useSellerEffectiveness";
 
 // ====== Helpers ======
 
@@ -24,22 +26,10 @@ function fmtRub(n: number): string {
   return `${Math.round(n)} ₽`;
 }
 
-function fmtNum(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${Math.round(n / 1000)}k`;
-  return `${n}`;
-}
-
 function trendArrow(dir: "↑" | "↓" | "→"): { icon: JSX.Element; color: string } {
   if (dir === "↑") return { icon: <TrendingUp className="w-4 h-4" />, color: "text-emerald-500" };
   if (dir === "↓") return { icon: <TrendingDown className="w-4 h-4" />, color: "text-red-500" };
   return { icon: <span className="text-lg">→</span>, color: "text-gray-400" };
-}
-
-function cvBadge(cv: number) {
-  if (cv <= 25) return { label: "✓ Стаб.", cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" };
-  if (cv <= 35) return { label: "⚠ Сред.", cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" };
-  return { label: "✗ Волат.", cls: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" };
 }
 
 function riskBadge(level: "ok" | "warn" | "critical") {
@@ -50,13 +40,54 @@ function riskBadge(level: "ok" | "warn" | "critical") {
 
 // ====== Sub-components ======
 
-function KpiCards({ snapshot }: { snapshot: typeof KPI_SNAPSHOT }) {
+function CriticalAlerts({ sellers }: { sellers: SellerMetrics[] }) {
+  const active = sellers.filter(s => s.daysWorked >= 10);
+  const critical = active.filter(s => s.trendSlope < -100 || s.cv > 40);
+  if (critical.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-xl p-3 space-y-1.5"
+    >
+      <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
+        <AlertTriangle className="w-4 h-4" />
+        <span className="text-xs font-bold">Тревожные алерты</span>
+        <span className="text-[10px] text-red-500 ml-auto">{critical.length} продавцов</span>
+      </div>
+      {critical.map(s => (
+        <div key={s.uuid} className="text-[11px] text-red-600 dark:text-red-300 flex items-center gap-2 bg-red-100/60 dark:bg-red-800/30 rounded px-2 py-1">
+          <span className="font-medium">{s.name.split(" ")[0]}</span>
+          <span className="text-red-400">—</span>
+          {s.trendSlope < -100 && <span>тренд {s.trendSlope} ₽/день</span>}
+          {s.trendSlope < -100 && s.cv > 40 && <span>·</span>}
+          {s.cv > 40 && <span>CV {s.cv}%</span>}
+        </div>
+      ))}
+    </motion.div>
+  );
+}
+
+function KpiCards({ snapshot, prevSnapshot }: { snapshot: any; prevSnapshot: any }) {
+  const deltaRev = prevSnapshot && prevSnapshot.totalRevenue > 0
+    ? Math.round((snapshot.totalRevenue - prevSnapshot.totalRevenue) / prevSnapshot.totalRevenue * 100)
+    : null;
+  const deltaCheck = prevSnapshot && prevSnapshot.avgCheck > 0
+    ? snapshot.avgCheck - prevSnapshot.avgCheck
+    : null;
+
   const cards = [
-    { icon: <DollarSign className="w-5 h-5" />, label: "Общая выручка", value: fmtRub(snapshot.totalRevenue), color: "text-emerald-500" },
-    { icon: <BarChart3 className="w-5 h-5" />, label: "Средняя выручка/день", value: fmtRub(snapshot.avgDailyRev), color: "text-blue-500" },
-    { icon: <ShoppingBag className="w-5 h-5" />, label: "Средний чек", value: `${snapshot.avgCheck} ₽`, color: "text-purple-500" },
-    { icon: <Calendar className="w-5 h-5" />, label: "Всего смен", value: String(snapshot.totalShifts), color: "text-amber-500" },
-    { icon: <Users className="w-5 h-5" />, label: "Активны сегодня", value: String(snapshot.activeToday), color: "text-cyan-500" },
+    { icon: <DollarSign className="w-5 h-5" />, label: "Общая выручка", value: fmtRub(snapshot.totalRevenue), color: "text-emerald-500",
+      delta: deltaRev, deltaFmt: (d: number) => `${d > 0 ? "+" : ""}${d}%` },
+    { icon: <BarChart3 className="w-5 h-5" />, label: "Средняя выручка/день", value: fmtRub(snapshot.avgDailyRev), color: "text-blue-500",
+      delta: null },
+    { icon: <ShoppingBag className="w-5 h-5" />, label: "Средний чек", value: `${snapshot.avgCheck} ₽`, color: "text-purple-500",
+      delta: deltaCheck, deltaFmt: (d: number) => `${d > 0 ? "+" : ""}${d} ₽` },
+    { icon: <Calendar className="w-5 h-5" />, label: "Всего смен", value: String(snapshot.totalShifts), color: "text-amber-500",
+      delta: null },
+    { icon: <Users className="w-5 h-5" />, label: "Активны сегодня", value: String(snapshot.activeToday), color: "text-cyan-500",
+      delta: null },
   ];
   return (
     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -71,23 +102,35 @@ function KpiCards({ snapshot }: { snapshot: typeof KPI_SNAPSHOT }) {
           <div className={`${c.color} mb-1`}>{c.icon}</div>
           <div className="text-[10px] text-gray-500 dark:text-gray-400">{c.label}</div>
           <div className="text-base font-bold text-gray-800 dark:text-gray-100">{c.value}</div>
+          {c.delta != null && (
+            <div className={`text-[10px] font-medium mt-0.5 ${c.delta > 0 ? "text-emerald-500" : c.delta < 0 ? "text-red-500" : "text-gray-400"}`}>
+              {c.delta > 0 ? "↑" : c.delta < 0 ? "↓" : "="} vs пред. период: {c.deltaFmt!(c.delta)}
+            </div>
+          )}
         </motion.div>
       ))}
     </div>
   );
 }
 
-function StoreComparison({ stores, onSelect }: { stores: StoreBaseline[]; onSelect: (s: string) => void }) {
+function StoreComparison({ stores, onSelect, selected }: { stores: StoreBaseline[]; onSelect: (s: string) => void; selected: string }) {
+  const maxRev = Math.max(...stores.map(s => s.avgDailyRev), 1);
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-      {stores.map((s, i) => (
+      {stores.map((s, i) => {
+        const isActive = selected === s.store;
+        return (
         <motion.div
           key={s.store}
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: i * 0.08 }}
-          onClick={() => onSelect(s.store)}
-          className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]"
+          onClick={() => onSelect(isActive ? "all" : s.store)}
+          className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border cursor-pointer hover:shadow-md transition-all active:scale-[0.98] ${
+            isActive
+              ? "border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/30"
+              : "border-gray-100 dark:border-gray-700"
+          }`}
         >
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-semibold text-sm text-gray-800 dark:text-gray-100">{s.store}</h3>
@@ -99,11 +142,11 @@ function StoreComparison({ stores, onSelect }: { stores: StoreBaseline[]; onSele
             <span className="text-gray-500">Чек <span className="font-medium text-gray-700 dark:text-gray-300">{s.avgCheck} ₽</span></span>
             <span className="text-gray-500">CV <span className={`font-medium ${s.cv > 30 ? "text-red-500" : "text-emerald-500"}`}>{s.cv}%</span></span>
           </div>
-          <div className="mt-1.5 w-full h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-            <div className="h-full rounded-full bg-blue-500" style={{ width: `${Math.min(s.avgDailyRev / 32000 * 100, 100)}%` }} />
+            <div className="mt-1.5 w-full h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div className="h-full rounded-full bg-blue-500" style={{ width: `${Math.min(s.avgDailyRev / maxRev * 100, 100)}%` }} />
           </div>
         </motion.div>
-      ))}
+      )})}
     </div>
   );
 }
@@ -142,7 +185,9 @@ function SellerTable({ sellers, filter, sortBy, onSort }: {
   ];
 
   return (
-    <div className="overflow-x-auto -mx-1">
+    <>
+      {/* Desktop: table */}
+      <div className="hidden sm:block overflow-x-auto -mx-1">
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-gray-100 dark:border-gray-700">
@@ -161,13 +206,14 @@ function SellerTable({ sellers, filter, sortBy, onSort }: {
               </th>
             ))}
             <th className="text-right p-2 text-gray-400 font-medium">Тренд</th>
+            <th className="text-center p-2 text-gray-400 font-medium">Δ</th>
             <th className="text-center p-2 text-gray-400 font-medium">Риск</th>
           </tr>
         </thead>
         <tbody>
           {sorted.map((s, idx) => {
             const t = trendArrow(s.trendDirection);
-            const cv = cvBadge(s.cv);
+            // cv badge computed but not displayed in this view
             const risk = riskBadge(s.riskLevel);
             const isAdmin = s.uuid === "475039971";
             return (
@@ -203,6 +249,18 @@ function SellerTable({ sellers, filter, sortBy, onSort }: {
                   </span>
                 </td>
                 <td className="p-2 text-center">
+                  {s.deltaRank != null ? (
+                    <span className={`inline-flex items-center gap-0.5 font-semibold text-[11px] ${
+                      s.deltaRank > 0 ? "text-emerald-500" : s.deltaRank < 0 ? "text-red-500" : "text-gray-400"
+                    }`}>
+                      {s.deltaRank > 0 ? <TrendingUp className="w-3 h-3" /> : s.deltaRank < 0 ? <TrendingDown className="w-3 h-3" /> : <span>→</span>}
+                      {s.deltaRank > 0 ? "+" : ""}{s.deltaRank}
+                    </span>
+                  ) : (
+                    <span className="text-gray-300 text-[11px]">—</span>
+                  )}
+                </td>
+                <td className="p-2 text-center">
                   <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded ${risk.cls}`}>
                     {risk.icon}{risk.label}
                   </span>
@@ -213,24 +271,93 @@ function SellerTable({ sellers, filter, sortBy, onSort }: {
         </tbody>
       </table>
     </div>
+
+    {/* Mobile: cards */}
+    <div className="block sm:hidden space-y-2">
+      {sorted.map((s, idx) => {
+        const t = trendArrow(s.trendDirection);
+        const risk = riskBadge(s.riskLevel);
+        const isAdmin = s.uuid === "475039971";
+        return (
+          <motion.div
+            key={s.uuid}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.04 }}
+            className={`bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 ${isAdmin ? "opacity-50" : ""}`}
+          >
+            {/* Top row: rank + name + risk */}
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-bold text-gray-400 w-6">#{idx + 1}</span>
+                <div>
+                  <div className="font-semibold text-sm text-gray-800 dark:text-gray-100">{s.name}</div>
+                  <div className="text-[10px] text-gray-400">{s.daysWorked}д · {s.storeLabels.join(", ")}</div>
+                </div>
+              </div>
+              <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded ${risk.cls}`}>
+                {risk.icon}{risk.label}
+              </span>
+            </div>
+
+            {/* Main KPI: big revenue number */}
+            <div className="flex items-baseline gap-2 mb-2">
+              <span className="text-xl font-bold text-gray-800 dark:text-gray-100">{fmtRub(s.avgDailyRev)}</span>
+              <span className="text-xs text-gray-400">₽/день</span>
+              {s.deltaRank != null && (
+                <span className={`ml-auto text-xs font-semibold ${
+                  s.deltaRank > 0 ? "text-emerald-500" : s.deltaRank < 0 ? "text-red-500" : "text-gray-400"
+                }`}>
+                  {s.deltaRank > 0 ? "↑" : s.deltaRank < 0 ? "↓" : "="}{Math.abs(s.deltaRank)}
+                </span>
+              )}
+            </div>
+
+            {/* Metrics row */}
+            <div className="flex gap-3 text-[11px] text-gray-600 dark:text-gray-300 flex-wrap">
+              <span>Чек <b className="text-gray-800 dark:text-gray-100">{s.avgCheck} ₽</b></span>
+              <span className={s.cv > 35 ? "text-red-500" : s.cv > 30 ? "text-amber-500" : "text-emerald-500"}>
+                CV <b>{s.cv}%</b>
+              </span>
+              <span>Vape <b className="text-purple-500">{s.vapeShare}%</b></span>
+              <span className={s.efficiencyVsStore >= 100 ? "text-emerald-500" : "text-gray-400"}>
+                Эфф <b>{s.efficiencyVsStore > 0 ? `${s.efficiencyVsStore}%` : "—"}</b>
+              </span>
+              {s.rubPerHour != null && (
+                <span>₽/ч <b className="text-gray-800 dark:text-gray-100">{fmtRub(s.rubPerHour)}</b></span>
+              )}
+            </div>
+
+            {/* Trend row */}
+            <div className="flex items-center gap-2 mt-1.5 text-[10px]">
+              <span className={`inline-flex items-center gap-1 ${t.color}`}>
+                {t.icon}
+                <span>{s.trendSlope > 0 ? "+" : ""}{s.trendSlope} ₽/д</span>
+              </span>
+            </div>
+          </motion.div>
+        );
+      })}
+    </div>
+  </>
   );
 }
 
 function SellerDetail({ seller, onClose }: { seller: SellerMetrics; onClose: () => void }) {
   const t = trendArrow(seller.trendDirection);
-  const risk = riskBadge(seller.riskLevel);
+  // risk badge computed but not displayed in detail view
   const isAdmin = seller.uuid === "475039971";
-  // Sparkline data — synthetic from store trend + variance
+  // Sparkline — real daily revenue from backend
   const sparkData = useMemo(() => {
-    const pts: { day: string; value: number }[] = [];
-    const n = Math.min(seller.daysWorked, 14);
-    const base = seller.avgDailyRev;
-    for (let i = 0; i < n; i++) {
-      const trend = seller.trendSlope * (i - n / 2) / 30;
-      const noise = (Math.random() - 0.5) * seller.cv / 100 * base * 0.8;
-      pts.push({ day: `День ${i + 1}`, value: Math.max(0, Math.round(base + trend + noise)) });
-    }
-    return pts;
+    const raw = seller.dailyRevenue || [];
+    if (raw.length === 0) return [];
+    // Take last 30 days, format dates as ДД.ММ
+    const recent = raw.slice(-30);
+    return recent.map(d => {
+      const parts = d.date.split("-");
+      const label = parts.length === 3 ? `${parts[2]}.${parts[1]}` : d.date;
+      return { day: label, value: d.value };
+    });
   }, [seller]);
 
   return (
@@ -281,6 +408,13 @@ function SellerDetail({ seller, onClose }: { seller: SellerMetrics; onClose: () 
                 {seller.efficiencyVsStore > 0 ? `${seller.efficiencyVsStore}%` : "—"}
               </div>
             </div>
+            {seller.rubPerHour != null && (
+              <div className="bg-gray-50 dark:bg-gray-750 rounded-lg p-3">
+                <div className="text-[10px] text-gray-500">₽/час</div>
+                <div className="text-lg font-bold text-gray-800 dark:text-gray-100">{fmtRub(seller.rubPerHour)}</div>
+                <div className="text-[9px] text-gray-400">{seller.avgHours}ч/день</div>
+              </div>
+            )}
           </div>
 
           {/* Trend + CV + MAD */}
@@ -294,24 +428,130 @@ function SellerDetail({ seller, onClose }: { seller: SellerMetrics; onClose: () 
             </span>
           </div>
 
-          {/* Vape + Acc bar */}
-          <div>
-            <div className="text-[10px] text-gray-500 mb-1">Специализация</div>
-            <div className="flex h-3 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700">
-              <div className="bg-purple-500" style={{ width: `${seller.vapeShare}%` }} />
-              <div className="bg-amber-500" style={{ width: `${seller.accShare}%` }} />
-              <div className="bg-gray-300 dark:bg-gray-600" style={{ width: `${100 - seller.vapeShare - seller.accShare}%` }} />
+          {/* Rank delta */}
+          {seller.deltaRank != null && (
+            <div className={`rounded-lg p-3 border text-xs ${
+              seller.deltaRank > 0 ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800" :
+              seller.deltaRank < 0 ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800" :
+              "bg-gray-50 dark:bg-gray-750 border-gray-200 dark:border-gray-700"
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-bold text-gray-800 dark:text-gray-100">#{seller.rank}</span>
+                <span className="text-gray-400">→</span>
+                <span className={`font-semibold ${
+                  seller.deltaRank > 0 ? "text-emerald-600" : seller.deltaRank < 0 ? "text-red-600" : "text-gray-500"
+                }`}>
+                  {seller.deltaRank > 0 ? "↑" : seller.deltaRank < 0 ? "↓" : "="}
+                  {Math.abs(seller.deltaRank)} поз.
+                </span>
+                <span className="text-gray-400 ml-auto">
+                  было #{seller.prevRank} · {seller.prevAvgDailyRev ? `${Math.round(seller.prevAvgDailyRev / 1000)}k ₽/д` : "—"}
+                </span>
+              </div>
             </div>
-            <div className="flex gap-3 mt-1 text-[10px]">
-              <span className="text-purple-600">Vape {seller.vapeShare}%</span>
-              <span className="text-amber-600">Акс. {seller.accShare}%</span>
+          )}
+
+          {/* KPI targets */}
+          <div>
+            <div className="text-[10px] text-gray-500 mb-2">KPI цели</div>
+            {/* Avg Check target */}
+            <div className="mb-2">
+              <div className="flex justify-between text-[10px] mb-0.5">
+                <span className="text-gray-500">Средний чек</span>
+                <span className="font-medium text-gray-700 dark:text-gray-200">{seller.avgCheck} / {seller.targetAvgCheck} ₽</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${seller.avgCheck >= seller.targetAvgCheck ? "bg-emerald-500" : "bg-blue-500"}`}
+                  style={{ width: `${Math.min(seller.avgCheck / seller.targetAvgCheck * 100, 100)}%` }}
+                />
+              </div>
+              <div className="text-[9px] text-right mt-0.5 text-gray-400">
+                {Math.round(seller.avgCheck / seller.targetAvgCheck * 100)}%
+              </div>
+            </div>
+            {/* Vape Share target */}
+            <div>
+              <div className="flex justify-between text-[10px] mb-0.5">
+                <span className="text-gray-500">Vape-доля</span>
+                <span className="font-medium text-gray-700 dark:text-gray-200">{seller.vapeShare} / {seller.targetVapeShare}%</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${seller.vapeShare >= seller.targetVapeShare ? "bg-emerald-500" : "bg-purple-500"}`}
+                  style={{ width: `${Math.min(seller.vapeShare / seller.targetVapeShare * 100, 100)}%` }}
+                />
+              </div>
+              <div className="text-[9px] text-right mt-0.5 text-gray-400">
+                {Math.round(seller.vapeShare / seller.targetVapeShare * 100)}%
+              </div>
             </div>
           </div>
+
+          {/* What-if calculator */}
+          {seller.checksPerDay > 0 && (() => {
+            const deltas = [50, 100, 150, 200];
+            const steps = deltas.map(d => {
+              const newCheck = seller.avgCheck + d;
+              const newDailyRev = Math.round(seller.checksPerDay * newCheck);
+              const gain = newDailyRev - seller.avgDailyRev;
+              // Find new rank by comparing with all sellers
+              return { delta: d, newCheck, newDailyRev, gain };
+            });
+            return (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                <div className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1">
+                  <Target className="w-3 h-3" />Что если чек выше?
+                </div>
+                <div className="space-y-1">
+                  {steps.map(s => (
+                    <div key={s.delta} className="flex items-center justify-between text-[10px]">
+                      <span className="text-gray-500">+{s.delta} ₽ → чек {s.newCheck} ₽</span>
+                      <span className="font-semibold text-emerald-600">
+                        +{fmtRub(s.gain)}/день
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Category breakdown */}
+          {seller.categoryBreakdown && seller.categoryBreakdown.length > 0 && (
+            <div>
+              <div className="text-[10px] text-gray-500 mb-1">Категории</div>
+              <div className="flex h-4 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700">
+                {seller.categoryBreakdown.map((cat, i) => {
+                  const colors = ["#8b5cf6", "#f59e0b", "#3b82f6", "#10b981", "#ef4444", "#ec4899", "#6366f1", "#14b8a6"];
+                  return (
+                    <div
+                      key={i}
+                      className="h-full transition-all"
+                      style={{ width: `${cat.share}%`, backgroundColor: colors[i % colors.length], minWidth: cat.share > 0 ? "2px" : 0 }}
+                      title={`${cat.name}: ${cat.share}%`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px]">
+                {seller.categoryBreakdown.map((cat, i) => {
+                  const colors = ["#8b5cf6", "#f59e0b", "#3b82f6", "#10b981", "#ef4444", "#ec4899", "#6366f1", "#14b8a6"];
+                  return (
+                    <span key={i} className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colors[i % colors.length] }} />
+                      <span className="text-gray-600 dark:text-gray-300">{cat.name} {cat.share}%</span>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Sparkline chart */}
           {sparkData.length > 0 && (
             <div>
-              <div className="text-[10px] text-gray-500 mb-1">Динамика (последние {sparkData.length} смен)</div>
+              <div className="text-[10px] text-gray-500 mb-1">Динамика (последние {sparkData.length} дн.)</div>
               <div className="h-24">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={sparkData}>
@@ -341,12 +581,45 @@ function SellerDetail({ seller, onClose }: { seller: SellerMetrics; onClose: () 
             </div>
           )}
 
+          {/* Histogram of daily revenue */}
+          {sparkData.length >= 5 && (() => {
+            const revs = sparkData.map(d => d.value).filter(v => v > 0);
+            const min = Math.min(...revs);
+            const max = Math.max(...revs);
+            const bucketCount = Math.min(8, Math.max(4, Math.ceil(revs.length / 5)));
+            const bucketWidth = (max - min) / bucketCount || 1000;
+            const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+              label: `${Math.round((min + i * bucketWidth) / 1000)}-${Math.round((min + (i + 1) * bucketWidth) / 1000)}k`,
+              count: revs.filter(v => v >= min + i * bucketWidth && (i === bucketCount - 1 ? v <= max : v < min + (i + 1) * bucketWidth)).length,
+            }));
+            const maxCount = Math.max(...buckets.map(b => b.count), 1);
+            return (
+              <div>
+                <div className="text-[10px] text-gray-500 mb-1">Распределение дневной выручки</div>
+                <div className="flex gap-0.5 h-14 items-end">
+                  {buckets.map((b, i) => (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+                      <span className="text-[8px] text-gray-400">{b.count}</span>
+                      <div className="w-full flex-1 flex flex-col justify-end">
+                        <div
+                          className="w-full rounded-t bg-blue-400/60"
+                          style={{ height: `${Math.max(4, (b.count / maxCount) * 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-[7px] text-gray-400 leading-tight text-center">{b.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Store breakdown */}
           <div>
             <div className="text-[10px] text-gray-500 mb-1 flex items-center gap-1"><Store className="w-3 h-3" />По магазинам</div>
             <div className="space-y-1">
               {seller.stores.map(st => {
-                const sBaseline = STORE_BASELINES.find(b => b.store === st.store);
+                const sBaseline = ([] as any[]).find(b => b.store === st.store);
                 const eff = sBaseline ? Math.round(st.avgDailyRev / sBaseline.avgDailyRev * 100) : null;
                 return (
                   <div key={st.store} className="flex items-center justify-between text-xs py-1 px-2 rounded bg-gray-50 dark:bg-gray-750">
@@ -367,6 +640,33 @@ function SellerDetail({ seller, onClose }: { seller: SellerMetrics; onClose: () 
               })}
             </div>
           </div>
+
+          {/* DOW mini-chart */}
+          {Object.keys(seller.dow).length > 0 && (
+            <div>
+              <div className="text-[10px] text-gray-500 mb-1">Средняя выручка по дням недели</div>
+              <div className="flex gap-0.5 h-16 items-end">
+                {["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"].map((label, i) => {
+                  const val = seller.dow[String(i)] || 0;
+                  const maxVal = Math.max(...Object.values(seller.dow), 1);
+                  const pct = Math.max(2, (val / maxVal) * 100);
+                  const isWeekend = i === 0 || i === 6;
+                  return (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+                      <span className="text-[9px] text-gray-400">{Math.round(val / 1000)}k</span>
+                      <div className="w-full flex-1 flex flex-col justify-end">
+                        <div
+                          className={`w-full rounded-t ${isWeekend ? "bg-amber-400/60" : "bg-blue-500/60"}`}
+                          style={{ height: `${pct}%`, minHeight: 2 }}
+                        />
+                      </div>
+                      <span className={`text-[9px] ${isWeekend ? "text-amber-500" : "text-gray-400"}`}>{label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Risk reasons */}
           {seller.riskReasons.length > 0 && (
@@ -393,7 +693,7 @@ function SellerDetail({ seller, onClose }: { seller: SellerMetrics; onClose: () 
   );
 }
 
-function Charts({ sellers }: { sellers: SellerMetrics[] }) {
+function Charts({ sellers, dowData }: { sellers: SellerMetrics[]; dowData: DowData[] }) {
   // Revenue by seller bar chart
   const barData = sellers.filter(s => s.uuid !== "475039971").map(s => ({
     name: s.name.split(" ")[0],
@@ -402,18 +702,9 @@ function Charts({ sellers }: { sellers: SellerMetrics[] }) {
     fill: s.riskLevel === "critical" ? "#ef4444" : s.riskLevel === "warn" ? "#f59e0b" : "#3b82f6",
   }));
 
-  // DOW heatmap data
+  // DOW labels
   const dowLabels = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
-  const heatData = DOW_DATA.flatMap(d =>
-    [0, 1, 2, 3, 4, 5, 6].map(dow => ({
-      store: d.store,
-      day: dowLabels[dow],
-      value: d[dow as keyof typeof d] as number,
-      isWeekend: dow === 0 || dow === 6,
-    }))
-  );
-
-  const maxDow = Math.max(...heatData.map(d => d.value));
+  const maxDow = Math.max(...dowData.flatMap(d => [0,1,2,3,4,5,6].map(dow => d[dow as keyof typeof d] as number)), 1);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -440,56 +731,59 @@ function Charts({ sellers }: { sellers: SellerMetrics[] }) {
         </div>
       </div>
 
-      {/* DOW heatmap proxy — line chart */}
+      {/* DOW heatmap */}
       <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700">
         <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-1.5">
-          <Calendar className="w-3.5 h-3.5" />Выручка по дням недели
+          <Calendar className="w-3.5 h-3.5" />Выручка по дням недели (heatmap)
         </h4>
-        <div className="h-48">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={DOW_DATA.flatMap(d =>
-              [0, 1, 2, 3, 4, 5, 6].map(dow => ({
-                store: d.store,
-                day: dowLabels[dow],
-                value: d[dow as keyof typeof d] as number,
-              }))
-            ).filter(d => true)}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.15} />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fill: "#9ca3af" }} />
-              <YAxis tick={{ fontSize: 10, fill: "#9ca3af" }} tickFormatter={fmtRub} width={55} />
-              <Tooltip
-                contentStyle={{ background: "rgba(17,24,39,0.9)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 11, color: "#f8fafc" }}
-                formatter={(value: number) => [fmtRub(value), ""]}
-              />
-              {["Победа", "Твардоского", "45"].map((store, i) => {
-                const colors = ["#3b82f6", "#f59e0b", "#10b981"];
-                const storeData = DOW_DATA.find(d => d.store === store)!;
-                const pts = [0, 1, 2, 3, 4, 5, 6].map(dow => ({
-                  day: dowLabels[dow],
-                  value: storeData[dow as keyof typeof storeData] as number,
-                }));
+        <div className="overflow-x-auto">
+          <table className="w-full text-[10px]">
+            <thead>
+              <tr>
+                <th className="text-left p-1 text-gray-400 font-medium w-20"></th>
+                {dowLabels.map(d => (
+                  <th key={d} className={`text-center p-1 font-medium ${d === "Сб" || d === "Вс" ? "text-amber-500" : "text-gray-400"}`}>{d}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dowData.map(d => {
                 return (
-                  <Line
-                    key={store}
-                    data={pts}
-                    type="monotone"
-                    dataKey="value"
-                    name={store}
-                    stroke={colors[i]}
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                    strokeDasharray={i === 2 ? "5 5" : undefined}
-                  />
+                  <tr key={d.store} className="border-t border-gray-100 dark:border-gray-700">
+                    <td className="p-1 font-medium text-gray-700 dark:text-gray-200">{d.store}</td>
+                    {[0,1,2,3,4,5,6].map(dow => {
+                      const val = d[dow as keyof typeof d] as number;
+                      const intensity = val / maxDow;
+                      const isWeekend = dow === 0 || dow === 6;
+                      // Color: blue for weekday, amber for weekend, intensity 0..1
+                      const r = isWeekend ? Math.round(245 + (251-245)*intensity) : Math.round(239 - 180*intensity);
+                      const g = isWeekend ? Math.round(158 - 100*intensity) : Math.round(246 - 170*intensity);
+                      const b = isWeekend ? Math.round(11 + (146-11)*intensity) : Math.round(252 - 160*intensity);
+                      return (
+                        <td
+                          key={dow}
+                          className="p-1 text-center rounded font-medium"
+                          style={{ backgroundColor: `rgb(${r},${g},${b})`, color: intensity > 0.5 ? '#fff' : '#374151' }}
+                        >
+                          {Math.round(val/1000)}k
+                        </td>
+                      );
+                    })}
+                  </tr>
                 );
               })}
-              <Legend
-                verticalAlign="bottom"
-                height={20}
-                iconType="circle"
-                wrapperStyle={{ fontSize: 10, color: "#9ca3af" }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+            </tbody>
+          </table>
+        </div>
+        <div className="flex items-center gap-2 mt-2 text-[9px] text-gray-400">
+          <span>Меньше</span>
+          <div className="flex h-2 rounded-full overflow-hidden">
+            {[0, 0.25, 0.5, 0.75, 1].map(i => {
+              const r2 = Math.round(239 - 180*i), g2 = Math.round(246 - 170*i), b2 = Math.round(252 - 160*i);
+              return <div key={i} className="w-4 h-2" style={{ backgroundColor: `rgb(${r2},${g2},${b2})` }} />;
+            })}
+          </div>
+          <span>Больше</span>
         </div>
       </div>
     </div>
@@ -501,7 +795,7 @@ function Insights({ sellers }: { sellers: SellerMetrics[] }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const detailedAnalysis: Record<string, { diagnosis: string; causes: string[]; actions: string[] }> = {
-    "valya": {
+    "ВАЛЯ Валентина": {
       diagnosis: "Системный спад эффективности. Продавец теряет −93 ₽ выручки каждый день — за 90 дней это −8 370 ₽ недополученной выручки. При сохранении тренда через 2 месяца выйдет на 21 000 ₽/день (−19%).",
       causes: [
         "Самый низкий средний чек (318 ₽) — не работает с дорогими позициями. Разница с лучшим чеком (Сухорукова 393 ₽) = 75 ₽ с каждой покупки.",
@@ -510,13 +804,13 @@ function Insights({ sellers }: { sellers: SellerMetrics[] }) {
         "MAD 0.234 — выше среднего. Нестабильность не от выбросов, а системная.",
       ],
       actions: [
-        "Тренинг по upselling: к каждой одноразке предлагать жидкость (+150–250 ₽ к чеку). Цель: поднять чек до 350 ₽ за 2 недели.",
+        "Тренинг по upselling: к каждой одноразке предлагать вторую со скидкой 10% или премиум-версию (+200–400 ₽ к чеку). Для pod-систем — допродажа жидкости. Цель: поднять чек до 350 ₽ за 2 недели.",
         "Работа с витриной вейпов: выучить топ-10 позиций, их цены и преимущества. Сейчас vape-доля 15.7% при сетевой 20.5%.",
         "Наставничество: 2 смены в паре с Александрой (чек 367 ₽, лидер сети).",
         "KPI на месяц: средний чек ≥ 340 ₽, vape-доля ≥ 18%. При недостижении — повторный цикл.",
       ],
     },
-    "1133134176": {
+    "Федорова Карина": {
       diagnosis: "Хаотичная производительность — самая высокая волатильность в сети (CV 36.3%). В «хорошие» дни делает 30 000+ ₽, в «плохие» — 12 000 ₽. Разница в 2.5× между днями означает, что проблема не в продавце как таковом, а во внешних факторах: день недели, магазин, часы смены.",
       causes: [
         "CV 36.3% + MAD 0.281 — оба показателя худшие. Это системная нестабильность, а не единичные выбросы.",
@@ -541,7 +835,7 @@ function Insights({ sellers }: { sellers: SellerMetrics[] }) {
 
       {atRisk.map(s => {
         const isExpanded = expanded === s.uuid;
-        const detail = detailedAnalysis[s.uuid];
+        const detail = detailedAnalysis[s.name];
 
         return (
         <motion.div
@@ -676,7 +970,7 @@ function HelpModal({ onClose }: { onClose: () => void }) {
     {
       title: "Чек — Средний чек",
       content: "Общая выручка / количество чеков. Показывает качество продаж: насколько дорогие покупки совершает покупатель у этого продавца.",
-      action: "Чек < 340 ₽ — тренинг по upselling (допродажа жидкости к одноразке). Чек > 380 ₽ — эталон (Сухорукова 393 ₽).",
+      action: "Чек < 340 ₽ — тренинг по upselling (допродажа второй одноразки/премиум-версии; жидкость — только к pod-системам). Чек > 380 ₽ — эталон (Сухорукова 393 ₽).",
     },
     {
       title: "Тренд (slope) — наклон линейной регрессии",
@@ -777,8 +1071,43 @@ export default function SellerPerformancePage() {
   const [showCharts, setShowCharts] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
-  const activeSellers = SELLERS.filter(s => {
-    if (s.uuid === "475039971") return false;
+  const handleExportCSV = () => {
+    const headers = ["Продавец", "Магазины", "Смен", "₽/день", "Чек", "CV%", "Vape%", "Эфф%", "Тренд", "Δ", "Риск"];
+    const rows = activeSellers.map(s => [
+      s.name,
+      s.storeLabels.join(" "),
+      String(s.daysWorked),
+      String(s.avgDailyRev),
+      String(s.avgCheck),
+      String(s.cv),
+      String(s.vapeShare),
+      s.efficiencyVsStore > 0 ? String(s.efficiencyVsStore) : "—",
+      `${s.trendSlope > 0 ? "+" : ""}${s.trendSlope}`,
+      s.deltaRank != null ? (s.deltaRank > 0 ? `+${s.deltaRank}` : String(s.deltaRank)) : "—",
+      s.riskLevel === "critical" ? "КРИТ" : s.riskLevel === "warn" ? "ВНИМ" : "OK",
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(",")).join("\n");
+    const BOM = "\uFEFF";
+    const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `seller-performance-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const { data, isLoading: _isLoading } = useSellerEffectiveness({ period, store: storeFilter });
+
+  const sellers = data?.sellers ?? [];
+  const baselines = data?.baselines ?? [];
+  const snapshot = data?.snapshot ?? { totalRevenue: 0, avgDailyRev: 0, avgCheck: 0, totalShifts: 0, activeToday: 0 };
+  const prevSnapshot = data?.prevSnapshot ?? null;
+  const dowData = data?.dowData ?? [];
+  const hypotheses = data?.hypotheses ?? [];
+
+  const activeSellers = sellers.filter(s => {
+    if (s.daysWorked < 10) return false;
     if (storeFilter === "all") return true;
     if (storeFilter === "Победа") return s.storeLabels.includes("П");
     if (storeFilter === "Твардоского") return s.storeLabels.includes("Т");
@@ -786,7 +1115,7 @@ export default function SellerPerformancePage() {
     return true;
   });
 
-  const selected = SELLERS.find(s => s.uuid === selectedSeller) || null;
+  const selected = sellers.find(s => s.uuid === selectedSeller) || null;
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -799,7 +1128,7 @@ export default function SellerPerformancePage() {
             </button>
             <div className="shrink-0 min-w-0">
               <h1 className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">Эффективность</h1>
-              <div className="text-[10px] text-gray-400">v2.1 · 04.03–03.06.2026</div>
+              <div className="text-[10px] text-gray-400">v3 · {period}д</div>
             </div>
 
             <div className="ml-auto flex gap-1 flex-wrap justify-end">
@@ -808,6 +1137,12 @@ export default function SellerPerformancePage() {
                 className="px-2.5 py-1 text-[11px] rounded-md font-medium bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors flex items-center gap-1"
               >
                 <HelpCircle className="w-3.5 h-3.5" />Справка
+              </button>
+              <button
+                onClick={handleExportCSV}
+                className="px-2.5 py-1 text-[11px] rounded-md font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors flex items-center gap-1"
+              >
+                <Download className="w-3.5 h-3.5" />CSV
               </button>
               {[30, 60, 90].map(d => (
                 <button
@@ -859,15 +1194,18 @@ export default function SellerPerformancePage() {
 
       {/* Content */}
       <div className="flex-1 p-3 sm:p-4 space-y-3 sm:space-y-4 max-w-5xl mx-auto w-full pb-24">
+        {/* Critical Alerts */}
+        <CriticalAlerts sellers={sellers} />
+
         {/* KPI Cards */}
-        <KpiCards snapshot={KPI_SNAPSHOT} />
+        <KpiCards snapshot={snapshot} prevSnapshot={prevSnapshot} />
 
         {/* Store Comparison */}
         <div>
           <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
             <Store className="w-3.5 h-3.5" />Сравнение магазинов
           </h3>
-          <StoreComparison stores={STORE_BASELINES} onSelect={setStoreFilter} />
+          <StoreComparison stores={baselines} onSelect={setStoreFilter} selected={storeFilter} />
         </div>
 
         {/* Charts toggle */}
@@ -879,7 +1217,7 @@ export default function SellerPerformancePage() {
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <Charts sellers={activeSellers} />
+              <Charts sellers={activeSellers} dowData={dowData} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -912,7 +1250,7 @@ export default function SellerPerformancePage() {
             <Target className="w-3.5 h-3.5" />Гипотезы исследования
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {HYPOTHESES.map(h => (
+            {hypotheses.map(h => (
               <div
                 key={h.id}
                 className={`rounded-lg p-2.5 border text-[11px] ${

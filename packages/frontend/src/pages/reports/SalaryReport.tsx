@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
@@ -143,7 +143,7 @@ export default function SalaryReport() {
         json: { employee, startDate, endDate },
       });
       if (response.ok) {
-        const result: ResponseData = await response.json();
+        const result = (await response.json()) as ResponseData;
         setResponseData(result);
       } else {
         const err = (await response.json().catch(() => null)) as Record<string, unknown> | null;

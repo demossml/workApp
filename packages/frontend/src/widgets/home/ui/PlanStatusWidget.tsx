@@ -29,9 +29,21 @@ import {
   type PosSession,
 } from "@features/opening/api";
 
+// Статический маппинг Tailwind-классов (JIT не видит динамические)
+const statusStyles: Record<string, { bg: string; text: string; darkBg: string; darkText: string }> = {
+  green:  { bg: "bg-green-100",  text: "text-green-600",  darkBg: "dark:bg-green-900/20",  darkText: "dark:text-green-400" },
+  yellow: { bg: "bg-yellow-100", text: "text-yellow-600", darkBg: "dark:bg-yellow-900/20", darkText: "dark:text-yellow-400" },
+  red:    { bg: "bg-red-100",    text: "text-red-600",    darkBg: "dark:bg-red-900/20",    darkText: "dark:text-red-400" },
+  gray:   { bg: "bg-gray-100",   text: "text-gray-600",   darkBg: "dark:bg-gray-900/20",   darkText: "dark:text-gray-400" },
+};
+
+function statusClass(color: string) {
+  return statusStyles[color] || statusStyles.gray;
+}
+
 export function PlanStatusWidget() {
   const { data: shopNames = [], isLoading: shopsLoading } = useGetShopNames();
-  const { data, isLoading: loading } = useGetReportAndPlan(true);
+  const { data, isLoading: loading, isError, error, refetch } = useGetReportAndPlan(true);
   const { data: workingByShopsData } = useWorkingByShops();
 
   const [expandedShop, setExpandedShop] = useState<string | null>(null);
@@ -119,6 +131,26 @@ export function PlanStatusWidget() {
 
   const cards = useMemo(() => buildPlanCards(renderShopNames, planData), [renderShopNames, planData]);
 
+  // ── Sales pace summary ── (moved to DashboardSummary RevenueTempoCard)
+  const _pace = useMemo(() => {
+    let totalPlan = 0, totalFact = 0;
+    for (const v of Object.values(planData)) {
+      totalPlan += v.datePlan || 0;
+      totalFact += v.dataSales || 0;
+    }
+    const now = new Date();
+    const open = new Date(now); open.setHours(7, 50, 0, 0);
+    const close = new Date(now); close.setHours(22, 0, 0, 0);
+    const elapsed = Math.max(0, (now.getTime() - open.getTime()) / 3600000);
+    const remain = Math.max(0, (close.getTime() - now.getTime()) / 3600000);
+    const pct = totalPlan > 0 ? (totalFact / totalPlan) * 100 : 0;
+    const rate = elapsed > 0 ? totalFact / elapsed : 0;
+    const projected = elapsed > 0 ? (totalFact / elapsed) * (elapsed + remain) : 0;
+    const needPct = 22 - 7.833 > 0 ? (elapsed / (22 - 7.833)) * 100 : 50;
+    const status = pct >= needPct + 5 ? "ahead" : pct >= needPct - 5 ? "on-track" : totalPlan > 0 ? "behind" : "no-data";
+    return { totalPlan, totalFact, pct, rate, projected, remain, status };
+  }, [planData]);
+
   if (shopsLoading && renderShopNames.length === 0) {
     return (
       <div className="w-full mb-8 animate-pulse">
@@ -138,16 +170,76 @@ export function PlanStatusWidget() {
     return null;
   }
 
+  // Error state
+  if (isError) {
+    return (
+      <div className="w-full mb-8">
+        <div className="bg-red-50 dark:bg-red-950/20 rounded-xl border border-red-200 dark:border-red-800 p-6 text-center">
+          <p className="text-sm text-red-700 dark:text-red-300 mb-3">
+            Не удалось загрузить данные плана
+          </p>
+          <p className="text-[10px] text-red-500 dark:text-red-400 mb-3">
+            {error?.message || "Проверьте подключение"}
+          </p>
+          <button
+            onClick={() => refetch()}
+            className="px-4 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition"
+          >
+            Повторить
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Loading skeleton grid
+  if (loading) {
+    return (
+      <div className="w-full mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {renderShopNames.map((shop) => (
+            <div
+              key={shop}
+              className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-100 dark:border-gray-700 overflow-hidden animate-pulse"
+            >
+              <div className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-700">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-7 h-7 rounded-md bg-gray-200 dark:bg-gray-700" />
+                    <div className="space-y-1">
+                      <div className="h-3 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
+                      <div className="h-2 w-12 bg-gray-100 dark:bg-gray-600 rounded" />
+                    </div>
+                  </div>
+                  <div className="h-4 w-10 bg-gray-200 dark:bg-gray-700 rounded" />
+                </div>
+              </div>
+              <div className="px-3 py-4 space-y-2">
+                <div className="flex justify-between">
+                  <div className="space-y-1">
+                    <div className="h-2 w-8 bg-gray-100 dark:bg-gray-600 rounded" />
+                    <div className="h-5 w-14 bg-gray-200 dark:bg-gray-700 rounded" />
+                  </div>
+                  <div className="space-y-1 text-right">
+                    <div className="h-2 w-8 bg-gray-100 dark:bg-gray-600 rounded ml-auto" />
+                    <div className="h-5 w-14 bg-gray-200 dark:bg-gray-700 rounded" />
+                  </div>
+                </div>
+                <div className="h-6 w-full bg-gray-100 dark:bg-gray-600 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full mb-8">
-      <div className="mb-2 inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
-        SWITCHER_V2
-      </div>
       {/* Сетка карточек по магазинам */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {cards.map((card, index) => {
           const isExpanded = expandedShop === card.shopName;
-          const isCardLoading = loading && !planData[card.shopName];
           const sellerName = sellerByShop[card.shopName];
 
           return (
@@ -166,10 +258,10 @@ export function PlanStatusWidget() {
                 <div className="flex justify-between items-center mb-0.5">
                   <div className="flex items-center gap-1.5">
                     <div
-                      className={`p-1 rounded-md bg-${card.statusColor}-100 dark:bg-${card.statusColor}-900/20`}
+                      className={`p-1 rounded-md ${statusClass(card.statusColor).bg} ${statusClass(card.statusColor).darkBg}`}
                     >
                       <Store
-                        className={`w-3.5 h-3.5 text-${card.statusColor}-600 dark:text-${card.statusColor}-400`}
+                        className={`w-3.5 h-3.5 ${statusClass(card.statusColor).text} ${statusClass(card.statusColor).darkText}`}
                       />
                     </div>
                     <div>
@@ -209,19 +301,15 @@ export function PlanStatusWidget() {
                         );
                       })()}
                       <p
-                        className={`text-[9px] font-medium text-${card.statusColor}-600 dark:text-${card.statusColor}-400 leading-tight mt-0.5`}
+                        className={`text-[9px] font-medium ${statusClass(card.statusColor).text} ${statusClass(card.statusColor).darkText} leading-tight mt-0.5`}
                       >
-                        {isCardLoading
-                          ? "Загрузка..."
-                          : sellerName
+                        {sellerName
                             ? `${card.statusText} — ${sellerName}`
                             : card.statusText}
                       </p>
                     </div>
                   </div>
-                  {isCardLoading ? (
-                    <div className="h-4 w-10 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                  ) : card.plan > 0 ? (
+                  {card.plan > 0 ? (
                     <div className="text-right">
                       <span
                         className={`text-[13px] font-bold ${card.isPlanMet ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
@@ -233,9 +321,7 @@ export function PlanStatusWidget() {
                 </div>
 
                 {/* Прогресс бар */}
-                {isCardLoading ? (
-                  <div className="w-full h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mt-0.5 animate-pulse" />
-                ) : card.plan > 0 ? (
+                {card.plan > 0 ? (
                   <div className="w-full h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mt-0.5">
                     <motion.div
                       initial={{ width: 0 }}
@@ -254,27 +340,19 @@ export function PlanStatusWidget() {
                     <p className="text-[9px] text-gray-500 dark:text-gray-400 leading-none mb-0.5">
                       План
                     </p>
-                    {isCardLoading ? (
-                      <div className="h-4 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    ) : (
                       <p className="font-bold text-xs text-gray-900 dark:text-white leading-none">
                         {formatPlanAmount(card.plan)} ₽
                       </p>
-                    )}
                   </div>
                   <div className="text-right">
                     <p className="text-[9px] text-gray-500 dark:text-gray-400 leading-none mb-0.5">
                       Факт
                     </p>
-                    {isCardLoading ? (
-                      <div className="h-4 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse ml-auto" />
-                    ) : (
                       <p
                         className={`font-bold text-xs leading-none ${card.isPlanMet ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}
                       >
                         {formatPlanAmount(card.sales)} ₽
                       </p>
-                    )}
                   </div>
                 </div>
 
@@ -282,9 +360,6 @@ export function PlanStatusWidget() {
                   <span className="text-[9px] text-gray-500 dark:text-gray-400">
                     Откл. ₽
                   </span>
-                  {isCardLoading ? (
-                    <div className="h-4 w-14 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                  ) : (
                     <span
                       className={`text-[10px] font-bold flex items-center gap-1 ${card.difference >= 0 ? "text-green-600" : "text-red-500"}`}
                     >
@@ -296,7 +371,6 @@ export function PlanStatusWidget() {
                         <TrendingDown className="w-3 h-3" />
                       )}
                     </span>
-                  )}
                 </div>
               </div>
 

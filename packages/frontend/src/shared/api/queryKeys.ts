@@ -46,6 +46,10 @@ export const queryKeys = {
   alerts: {
     todayFinancial: () => ["alerts", "today-financial"] as const,
   },
+  stock: {
+    health: (days: number) => ["stock", "health", days] as const,
+    transfer: (days: number) => ["stock", "transfer", days] as const,
+  },
   admin: {
     dataMode: () => ["admin", "data-mode"] as const,
   },

@@ -16,6 +16,7 @@ import {
 type RevenueTempoCardProps = {
   salesDeltaPct: number;
   onClick: () => void;
+  pace?: { fact: number; plan: number; rate: number; projected: number; remain: number; status: string };
 };
 
 type RevenueTempoDetailsProps = {
@@ -69,7 +70,8 @@ const calcShopMetrics = (data: SalesData, shopName: string): ShopTempoMetrics =>
   };
 };
 
-export function RevenueTempoCard({ salesDeltaPct, onClick }: RevenueTempoCardProps) {
+export function RevenueTempoCard({ salesDeltaPct, onClick, pace }: RevenueTempoCardProps) {
+  const fmt = (n: number) => n >= 1000 ? `${Math.round(n / 1000)}k` : String(Math.round(n));
   return (
     <div
       onClick={onClick}
@@ -79,14 +81,34 @@ export function RevenueTempoCard({ salesDeltaPct, onClick }: RevenueTempoCardPro
         <span className="text-xs font-medium opacity-90">Темп продаж</span>
         <Clock3 className="w-5 h-5 opacity-80" />
       </div>
-      <div className="text-2xl font-bold">
-        {salesDeltaPct >= 0 ? "+" : ""}
-        {salesDeltaPct.toFixed(1)}%
-      </div>
-      <div className="text-xs opacity-75 mt-1 flex items-center gap-1">
-        <TrendingUp className="w-3 h-3" />
-        <span>к прошлому периоду</span>
-      </div>
+      {pace ? (
+        <>
+          <div className="text-2xl font-bold">{fmt(pace.fact)} ₽</div>
+          <div className="h-1.5 bg-white/20 rounded-full mt-1.5 mb-2 overflow-hidden">
+            <div className={`h-full rounded-full transition-all ${
+              pace.status === "ahead" ? "bg-emerald-400" :
+              pace.status === "behind" ? "bg-red-400" : "bg-amber-400"
+            }`} style={{ width: `${Math.min(pace.plan > 0 ? (pace.fact / pace.plan) * 100 : 0, 100)}%` }} />
+          </div>
+          <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px] opacity-80">
+            <span>План: {fmt(pace.plan)} ₽</span>
+            <span>Прогноз: {fmt(pace.projected)} ₽</span>
+            <span>Темп: {fmt(pace.rate)} ₽/ч</span>
+            <span>Ост: {Math.floor(pace.remain)}ч{Math.round((pace.remain%1)*60)}м</span>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="text-2xl font-bold">
+            {salesDeltaPct >= 0 ? "+" : ""}
+            {salesDeltaPct.toFixed(1)}%
+          </div>
+          <div className="text-xs opacity-75 mt-1 flex items-center gap-1">
+            <TrendingUp className="w-3 h-3" />
+            <span>к прошлому периоду</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

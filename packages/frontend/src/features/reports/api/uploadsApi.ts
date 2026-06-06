@@ -1,7 +1,7 @@
 import { client } from "@shared/api";
 
 export async function uploadReportImage(file: File) {
-  const response = await client.api.uploads.upload.$post({
+  const response = await (client.api.uploads as any).upload.$post({
     form: {
       photos: file,
     },

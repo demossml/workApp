@@ -6,6 +6,7 @@ import {
 	GetFileSchema,
 	IsOpenStoreSchema,
 	OpeningPhotosSchema,
+	DeleteOpeningPhotoSchema,
 	OpeningsReportSchema,
 	OpenStoreSchema,
 	ShopsOpeningStatusSchema,
@@ -318,11 +319,8 @@ export const storesRoutes = new Hono<IEnv>()
 			const data = await c.req.json();
 			const { userId, date, shopUuid } = validate(IsOpenStoreSchema, data);
 
-			const db = c.env.DB;
-
 			const details = await getOpenStoreDetails(
-				db,
-				c.env.R2,
+				c.get("settingsDb")!,
 				userId,
 				shopUuid,
 				date,
@@ -443,25 +441,15 @@ export const storesRoutes = new Hono<IEnv>()
 			}
 
 			const requiredPhotoCount = 7;
-			const countByCategory = async (prefix: string) => {
-				let cursor: string | undefined;
-				const bucketKeys = new Set<string>();
-				do {
-					const listed = await c.env.R2.list({ prefix, cursor });
-					for (const obj of listed.objects) {
-						bucketKeys.add(obj.key);
-					}
-					cursor = listed.truncated ? listed.cursor : undefined;
-				} while (cursor);
-				let area = 0;
-				let stock = 0;
-				let cash = 0;
-				let mrc = 0;
-				for (const key of bucketKeys) {
-					if (key.includes("/area/")) area += 1;
-					if (key.includes("/stock/")) stock += 1;
-					if (key.includes("/cash/")) cash += 1;
-					if (key.includes("/mrc/")) mrc += 1;
+			const countPhotosFromDB = async (shopUuid: string, userId: string, dayKey: string) => {
+				const { getOpeningPhotos } = await import("../db/repositories/openingPhotos");
+				const rows = await getOpeningPhotos(c.get("settingsDb")!, shopUuid, userId, dayKey);
+				let area = 0, stock = 0, cash = 0, mrc = 0;
+				for (const r of rows) {
+					if (r.category === "area") area++;
+					else if (r.category === "stock") stock++;
+					else if (r.category === "cash") cash++;
+					else if (r.category === "mrc") mrc++;
 				}
 				return { area, stock, cash, mrc };
 			};
@@ -477,14 +465,7 @@ export const storesRoutes = new Hono<IEnv>()
 				const shopUuid = String(row.shopUuid || "");
 				const employeeId = String(row.userId || "");
 
-				let counts = await countByCategory(
-					`evotor/opening/${dayKey}/${shopUuid}/${employeeId}/`,
-				);
-				if (counts.area + counts.stock + counts.cash + counts.mrc === 0) {
-					counts = await countByCategory(
-						`opening/${dayKey}/${shopUuid}/${employeeId}/`,
-					);
-				}
+				const counts = await countPhotosFromDB(shopUuid, employeeId, dayKey);
 				const photoCount =
 					Math.min(counts.area, 2) +
 					Math.min(counts.stock, 3) +
@@ -568,9 +549,6 @@ export const storesRoutes = new Hono<IEnv>()
 	.post("/opening-photos", async (c) => {
 		try {
 			const userId = c.var.userId || "";
-			const initData = c.req.header("initData") || c.req.query("initData") || "";
-			const telegramId =
-				c.req.header("telegram-id") || c.req.query("telegram-id") || "";
 			const roleFromEvotor = userId
 				? await c.var.evotor.getEmployeeRole(userId)
 				: null;
@@ -588,55 +566,74 @@ export const storesRoutes = new Hono<IEnv>()
 				return c.json({ error: "Некорректный openedAt" }, 400);
 			}
 			const dayKey = formatDate(openedDate);
-			const prefixes = [
-				`evotor/opening/${dayKey}/${body.shopUuid}/${body.userId}/`,
-				`opening/${dayKey}/${body.shopUuid}/${body.userId}/`,
-			];
-			const listPhotosByPrefix = async (prefix: string) => {
-				let cursor: string | undefined;
-				const photos: Array<{ key: string; url: string; category: string }> = [];
 
-				do {
-					const listed = await c.env.R2.list({ prefix, cursor });
-					for (const obj of listed.objects) {
-						const rel = obj.key.slice(prefix.length);
-						if (!rel) continue;
-						const category = rel.split("/")[0] || "other";
-						photos.push({
-							key: obj.key,
-							url: `/api/stores/opening-photo-file?key=${encodeURIComponent(obj.key)}&initData=${encodeURIComponent(initData)}&telegram-id=${encodeURIComponent(telegramId)}`,
-							category,
-						});
-					}
-					cursor = listed.truncated ? listed.cursor : undefined;
-				} while (cursor);
+			// Query DB for photos (Telegram file_id tokens)
+			const { getOpeningPhotos } = await import("../db/repositories/openingPhotos");
+			const records = await getOpeningPhotos(c.get("settingsDb")!, body.shopUuid, body.userId, dayKey);
 
-				return photos;
-			};
+			const photos = records.map((rec) => ({
+				id: rec.id,
+				key: rec.file_id,
+				url: rec.file_id ? `/api/stores/opening-photo-file?file_id=${encodeURIComponent(rec.file_id)}` : null,
+				category: rec.category,
+				fileKey: rec.file_key,
+				status: rec.status || "pending",
+			}));
 
-			const allPhotos = (
-				await Promise.all(prefixes.map((prefix) => listPhotosByPrefix(prefix)))
-			).flat();
-			const dedup = new Map<string, { key: string; url: string; category: string }>();
-			for (const photo of allPhotos) {
-				if (!dedup.has(photo.key)) {
-					dedup.set(photo.key, photo);
-				}
-			}
-
-			return c.json({
-				photos: Array.from(dedup.values()).sort((a, b) =>
-					a.key.localeCompare(b.key),
-				),
-			});
+			return c.json({ photos });
 		} catch (error) {
 			logger.error("Ошибка в /api/stores/opening-photos:", error);
 			return c.json(
-				{
-					error:
-						error instanceof Error ? error.message : "Invalid request data",
-				},
-				400,
+				{ error: error instanceof Error ? error.message : "Invalid request data" },
+				400
+			);
+		}
+	})
+
+	// Delete photo by id — removes DB record + pending file if exists
+	.delete("/opening-photos", async (c) => {
+		try {
+			const userId = c.var.userId || "";
+			const roleFromEvotor = userId
+				? await c.var.evotor.getEmployeeRole(userId)
+				: null;
+			const employeeRole =
+				userId === "5700958253" || userId === "475039971"
+					? "SUPERADMIN"
+					: roleFromEvotor;
+			if (employeeRole !== "SUPERADMIN") {
+				return c.json({ error: "Доступ только для SUPERADMIN" }, 403);
+			}
+
+			const body = validate(DeleteOpeningPhotoSchema, await c.req.json());
+			const { deleteOpeningPhoto } = await import("../db/repositories/openingPhotos");
+			const result = await deleteOpeningPhoto(c.get("settingsDb")!, body.id);
+
+			// Clean up pending file if exists
+			if (result.deleted) {
+				const { existsSync, unlinkSync } = await import("fs");
+				const { join } = await import("path");
+				const pendingDir = "/tmp/tg_uploads/pending";
+				// Also try glob-like match via checking dir
+				if (existsSync(pendingDir)) {
+					const { readdirSync } = await import("fs");
+					try {
+						for (const f of readdirSync(pendingDir)) {
+							if (f.startsWith(`${body.id}_`)) {
+								try { unlinkSync(join(pendingDir, f)); } catch {}
+							}
+						}
+					} catch {}
+				}
+			}
+
+			logger.info("Photo deleted", { id: body.id, fileKey: body.fileKey, userId });
+			return c.json({ success: true });
+		} catch (error) {
+			logger.error("Ошибка в DELETE /api/stores/opening-photos:", error);
+			return c.json(
+				{ error: error instanceof Error ? error.message : "Invalid request data" },
+				400
 			);
 		}
 	})
@@ -655,37 +652,26 @@ export const storesRoutes = new Hono<IEnv>()
 				return c.json({ error: "Доступ только для SUPERADMIN" }, 403);
 			}
 
-			const key = c.req.query("key");
-			if (!key) {
-				return c.json({ error: "Missing key" }, 400);
-			}
-			// Ограничиваем выдачу только файлами открытия
-			if (!key.startsWith("evotor/opening/") && !key.startsWith("opening/")) {
-				return c.json({ error: "Invalid key prefix" }, 400);
+			const fileId = c.req.query("file_id");
+			if (!fileId) {
+				return c.json({ error: "Missing file_id" }, 400);
 			}
 
-			const object = await c.env.R2.get(key);
-			if (!object) {
-				return c.json({ error: "File not found" }, 404);
+			const botToken = c.env.BOT_TOKEN;
+			if (!botToken) {
+				return c.json({ error: "BOT_TOKEN not configured" }, 500);
 			}
 
-			const headers = new Headers();
-			if (object.httpMetadata?.contentType) {
-				headers.set("content-type", object.httpMetadata.contentType);
-			}
-			headers.set("etag", object.httpEtag);
-			headers.set("cache-control", "private, max-age=60");
+			const { getPhotoUrl } = await import("../services/telegramStorage");
+			const photoUrl = await getPhotoUrl(fileId, botToken);
 
-			const body = await object.arrayBuffer();
-			return new Response(body, { status: 200, headers });
+			// Redirect to Telegram's file URL
+			return c.redirect(photoUrl);
 		} catch (error) {
 			logger.error("Ошибка в /api/stores/opening-photo-file:", error);
 			return c.json(
-				{
-					error:
-						error instanceof Error ? error.message : "Failed to load file",
-				},
-				400,
+				{ error: error instanceof Error ? error.message : "Failed to load file" },
+				400
 			);
 		}
 	})

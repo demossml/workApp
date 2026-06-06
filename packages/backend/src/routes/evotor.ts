@@ -43,6 +43,7 @@ import {
 	saveSalaryAndBonus,
 } from "../db/repositories/salaryBonus";
 import { getSalaryData } from "../db/repositories/salaryData";
+import { getSalaryConfig } from "../services/salary";
 import {
 	getProfitReportSnapshotById,
 	listProfitReportSnapshots,
@@ -1122,7 +1123,8 @@ export const evotorRoutes = new Hono<IEnv>()
 				until = formatDateWithTime(today, true);
 			}
 
-			const groupIdsAks = await getAllUuid(db);
+			const settingsDbForAks = c.get("settingsDb");
+			const groupIdsAks = await getAllUuid(settingsDbForAks);
 
 			type AccessoriesSalesItem = {
 				name: string;
@@ -1138,31 +1140,53 @@ export const evotorRoutes = new Hono<IEnv>()
 					shopId: string,
 					accessoryProductUuids: string[],
 				): Promise<Record<string, { quantity: number; sum: number }>> => {
-					const docs = useDirectEvotor
-						? await evo.getDocumentsBySellPayback(shopId, since, until)
-						: await getDocumentsFromIndexFirst(
-								db,
-								evo,
-								shopId,
-								since,
-								until,
-								{ types: ["SELL", "PAYBACK"] },
-							);
-					const accessorySet = new Set(accessoryProductUuids);
-					const result: Record<string, { quantity: number; sum: number }> = {};
-					for (const doc of docs) {
-						if (!["SELL", "PAYBACK"].includes(doc.type)) continue;
-						const sign = doc.type === "PAYBACK" ? -1 : 1;
-						for (const tx of doc.transactions || []) {
-							if (tx.type !== "REGISTER_POSITION") continue;
-							if (accessorySet.has(tx.commodityUuid)) continue;
-							const name = tx.commodityName || "Неизвестный товар";
-							const qty = Number(tx.quantity || 0) * sign;
-							const sum = Math.abs(Number(tx.sum || 0)) * sign;
-							if (!result[name]) result[name] = { quantity: 0, sum: 0 };
-							result[name].quantity += qty;
-							result[name].sum += sum;
+					if (useDirectEvotor) {
+						const docs = await evo.getDocumentsBySellPayback(shopId, since, until);
+						const accessorySet = new Set(accessoryProductUuids);
+						const result: Record<string, { quantity: number; sum: number }> = {};
+						for (const doc of docs) {
+							if (!["SELL", "PAYBACK"].includes(doc.type)) continue;
+							const sign = doc.type === "PAYBACK" ? -1 : 1;
+							for (const tx of doc.transactions || []) {
+								if (tx.type !== "REGISTER_POSITION") continue;
+								if (accessorySet.has(tx.commodityUuid)) continue;
+								const name = tx.commodityName || "Неизвестный товар";
+								const qty = Number(tx.quantity || 0) * sign;
+								const sum = Math.abs(Number(tx.sum || 0)) * sign;
+								if (!result[name]) result[name] = { quantity: 0, sum: 0 };
+								result[name].quantity += qty;
+								result[name].sum += sum;
+							}
 						}
+						return result;
+					}
+					// DuckDB mode: direct query instead of empty index_documents
+					if (!accessoryProductUuids.length) {
+						// No accessories configured — all products are non-accessories
+						const ph = accessoryProductUuids.length ? accessoryProductUuids.map(() => "?").join(",") : "";
+						const r = await db.prepare(
+							`SELECT p.product_name, CAST(SUM(p.quantity) AS INTEGER) as qty, SUM(p.sum) as total
+							 FROM positions p JOIN sells s ON p.doc_id = s.doc_id
+							 WHERE s.store_uuid = ? AND s.close_date >= ? AND s.close_date < ?
+							 GROUP BY p.product_name`
+						).bind(shopId, since, until).all<{ product_name: string; qty: number; total: number }>();
+						const result: Record<string, { quantity: number; sum: number }> = {};
+						for (const row of r.results) {
+							result[row.product_name] = { quantity: row.qty, sum: row.total };
+						}
+						return result;
+					}
+					const ph = accessoryProductUuids.map(() => "?").join(",");
+					const r = await db.prepare(
+						`SELECT p.product_name, CAST(SUM(p.quantity) AS INTEGER) as qty, SUM(p.sum) as total
+						 FROM positions p JOIN sells s ON p.doc_id = s.doc_id
+						 WHERE s.store_uuid = ? AND s.close_date >= ? AND s.close_date < ?
+						   AND p.commodity_uuid NOT IN (${ph})
+						 GROUP BY p.product_name`
+					).bind(shopId, since, until, ...accessoryProductUuids).all<{ product_name: string; qty: number; total: number }>();
+					const result: Record<string, { quantity: number; sum: number }> = {};
+					for (const row of r.results) {
+						result[row.product_name] = { quantity: row.qty, sum: row.total };
 					}
 					return result;
 				};
@@ -1554,10 +1578,32 @@ export const evotorRoutes = new Hono<IEnv>()
 				salesData = {};
 				for (const shopUuid of shopUuids) {
 					const shopName = shopNamesMap[shopUuid] || shopUuid.slice(0, 8);
+
+					// Get product-level vape sales for this shop
+					const pqRows = await db
+						.prepare(
+							`SELECT p.product_name, SUM(p.quantity) as qty
+							FROM positions p
+							JOIN sells s ON p.doc_id = s.doc_id
+							JOIN product_groups pg ON pg.product_name = p.product_name AND pg.store_uuid = s.store_uuid
+							JOIN vape_groups vg ON pg.parent_uuid = vg.group_uuid
+							WHERE s.store_uuid = ? AND s.close_date >= ? AND s.close_date <= ?
+							GROUP BY p.product_name`,
+						)
+						.bind(shopUuid, since, until)
+						.all<{ product_name: string; qty: number }>();
+
+					const dataQuantity: Record<string, number> = {};
+					for (const row of pqRows.results || []) {
+						if (row.product_name && row.qty > 0) {
+							dataQuantity[row.product_name] = row.qty;
+						}
+					}
+
 					salesData[shopName] = {
 						datePlan: Number(datPlan[shopUuid] || 0),
 						dataSales: Number(salesByShopUuid[shopUuid] || 0),
-						dataQuantity: {},
+						dataQuantity: Object.keys(dataQuantity).length > 0 ? dataQuantity : {},
 					};
 				}
 
@@ -1714,25 +1760,19 @@ export const evotorRoutes = new Hono<IEnv>()
 			const data = await c.req.json();
 			const { employee, startDate, endDate } = validate(SalarySchema, data);
 			const db = c.get("db");
+			const settingsDb = c.get("settingsDb");
+			const cfg = await getSalaryConfig(settingsDb);
 
 			const sincetDate = formatDateWithTime(new Date(startDate), false);
 			const untilDate = formatDateWithTime(new Date(endDate), true);
 			const dates = getIntervals(sincetDate, untilDate, "days", 1);
 
-			const groupIdsAks = await getAllUuid(db);
+			const groupIdsAks = await getAllUuid(settingsDb);
 			const employeeName = await c.var.evotor.getEmployeeByUuid(employee);
 
-			const groupIdsVape = [
-				"78ddfd78-dc52-11e8-b970-ccb0da458b5a",
-				"bc9e7e4c-fdac-11ea-aaf2-2cf05d04be1d",
-				"0627db0b-4e39-11ec-ab27-2cf05d04be1d",
-				"2b8eb6b4-92ea-11ee-ab93-2cf05d04be1d",
-				"8a8fcb5f-9582-11ee-ab93-2cf05d04be1d",
-				"97d6fa81-84b1-11ea-b9bb-70c94e4ebe6a",
-				"ad8afa41-737d-11ea-b9b9-70c94e4ebe6a",
-				"568905bd-9460-11ee-9ef4-be8fe126e7b9",
-				"568905be-9460-11ee-9ef4-be8fe126e7b9",
-			];
+			// Get vape group UUIDs from DB (not hardcoded)
+			const vapeRows = await db.prepare("SELECT group_uuid FROM vape_groups").all<{ group_uuid: string }>();
+			const groupIdsVape = vapeRows.results?.map(r => r.group_uuid) || [];
 			const totalReport = {
 				employeeName,
 				startDate: formatDate(new Date(startDate)),
@@ -1740,6 +1780,8 @@ export const evotorRoutes = new Hono<IEnv>()
 				totalBonusAccessories: 0,
 				totalBonusPlan: 0,
 				totalBonus: 0,
+				totalOklad: 0,
+				workingDays: 0,
 			};
 
 			const result = [];
@@ -1750,11 +1792,14 @@ export const evotorRoutes = new Hono<IEnv>()
 				const until = formatDateWithTime(date, true);
 				return c.var.evotor.getFirstOpenSession(since, until, employee);
 			});
-			const openShopUuids = await Promise.all(sessionPromises);
+			const sessionRows = await Promise.all(sessionPromises);
 
-			const uniqueShopUuids = [
-				...new Set(openShopUuids.filter(Boolean) as string[]),
-			];
+			// Keep parallel array aligned with dates (nulls stay in place)
+			const openShopUuids: (string | null)[] = sessionRows.map((row: any) => {
+				const uuid = row?.store_uuid;
+				return (typeof uuid === "string" && uuid.length > 0) ? uuid : null;
+			});
+			const uniqueShopUuids = [...new Set(openShopUuids.filter(Boolean) as string[])];
 
 			const shopNamesMap =
 				uniqueShopUuids.length > 0
@@ -1767,6 +1812,7 @@ export const evotorRoutes = new Hono<IEnv>()
 				const since = formatDateWithTime(date, false);
 				const until = formatDateWithTime(date, true);
 				const datePlan = formatDate(date);
+				const dateIso = date.toISOString().slice(0, 10); // YYYY-MM-DD for DB queries
 
 				const openShopUuid = openShopUuids[i];
 				if (!openShopUuid) continue;
@@ -1779,22 +1825,25 @@ export const evotorRoutes = new Hono<IEnv>()
 					salesDataVape: 0,
 					bonusPlan: 0,
 					totalBonus: 0,
+					okladDaily: 0,
 				};
 
-				const salaryData = await getSalaryData(employee, datePlan, until, db);
+				const salaryData = await getSalaryData(employee, dateIso, until, db);
 
 				if (salaryData) {
-					const { date, bonusAccessories, dataPlan, salesDataVape } =
+					const { date: _isoDate, bonusAccessories, dataPlan, salesDataVape, okladDaily } =
 						salaryData;
-					const bonusPlan = salesDataVape >= dataPlan ? 450 : 0;
+					const bonusPlan = salesDataVape >= dataPlan ? cfg.bonus_plan_daily : 0;
+					const displayDate = `${_isoDate.slice(8,10)}-${_isoDate.slice(5,7)}-${_isoDate.slice(0,4)}`;
 
 					Object.assign(dataReport, {
-						date,
+						date: displayDate,
 						bonusAccessories,
 						dataPlan,
 						salesDataVape,
 						bonusPlan,
 						totalBonus: bonusPlan + bonusAccessories,
+						okladDaily: okladDaily || 0,
 					});
 				} else {
 					let plan = await getPlan(datePlan, db);
@@ -1826,7 +1875,7 @@ export const evotorRoutes = new Hono<IEnv>()
 						productsAks,
 						db,
 					);
-					const bonusAccessories = Math.floor(salesDataAks * 0.05);
+					const bonusAccessories = Math.floor(salesDataAks * cfg.bonus_accessories_pct / 100);
 
 					const productsVape = await getProductsByGroup(
 						db,
@@ -1841,7 +1890,7 @@ export const evotorRoutes = new Hono<IEnv>()
 						db,
 					);
 
-					const bonusPlan = salesDataVape >= currentPlan ? 450 : 0;
+					const bonusPlan = salesDataVape >= currentPlan ? cfg.bonus_plan_daily : 0;
 
 					Object.assign(dataReport, {
 						bonusAccessories,
@@ -1849,6 +1898,7 @@ export const evotorRoutes = new Hono<IEnv>()
 						salesDataVape,
 						bonusPlan,
 						totalBonus: bonusAccessories + bonusPlan,
+						okladDaily: Math.round(cfg.oklad_monthly / new Date(Number(dateIso.slice(0,4)), Number(dateIso.slice(5,7)), 0).getDate()),
 					});
 				}
 
@@ -1857,9 +1907,17 @@ export const evotorRoutes = new Hono<IEnv>()
 				totalReport.totalBonusAccessories += dataReport.bonusAccessories;
 				totalReport.totalBonusPlan += dataReport.bonusPlan;
 				totalReport.totalBonus += dataReport.totalBonus;
+				totalReport.totalOklad += dataReport.okladDaily;
+				totalReport.workingDays = (totalReport.workingDays || 0) + 1;
 			}
 
-			return c.json({ result, totalReport });
+			return c.json({ 
+				result, 
+				totalReport: {
+					...totalReport,
+					totalPayout: (totalReport.totalOklad || 0) + (totalReport.totalBonus || 0),
+				}
+			});
 		} catch (error) {
 			logger.error("Ошибка при разборе JSON:", error);
 			const { status, body } = toApiErrorPayload(error, {

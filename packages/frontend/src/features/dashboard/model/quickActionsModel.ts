@@ -12,6 +12,8 @@ export type QuickActionModel = {
   path: string;
   color: string;
   roles: string[];
+  /** Ключ для получения бейджа. undefined = нет бейджа */
+  badgeKey?: "deadStock" | "openings" | "lowStock";
 };
 
 export const QUICK_ACTIONS: QuickActionModel[] = [
@@ -30,6 +32,7 @@ export const QUICK_ACTIONS: QuickActionModel[] = [
     path: "/evotor/dead-stock",
     color: "from-purple-500 to-purple-600",
     roles: ["ADMIN", "SUPERADMIN"],
+    badgeKey: "deadStock",
   },
   {
     title: "Отчет по продажам",

@@ -12,6 +12,7 @@ export interface PhotoUploadProps {
   files: File[];
   uploadStatuses?: UploadStatus[];
   onChange: (files: File[]) => void;
+  onRemove?: (file: File, index: number) => void;
 }
 
 export default function PhotoUpload({
@@ -20,6 +21,7 @@ export default function PhotoUpload({
   files,
   uploadStatuses = [],
   onChange,
+  onRemove,
 }: PhotoUploadProps) {
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -47,8 +49,10 @@ export default function PhotoUpload({
   };
 
   const removePhoto = (index: number) => {
+    const file = files[index];
     const updated = files.filter((_, i) => i !== index);
     onChange(updated);
+    if (onRemove && file) onRemove(file, index);
   };
 
   const getStatus = (i: number) =>
@@ -177,14 +181,14 @@ export default function PhotoUpload({
                 {/* Кнопка удаления */}
                 <button
                   onClick={() => removePhoto(i)}
-                  disabled={isCompressing || isUploading}
+                  disabled={isCompressing}
                   className={`
                     absolute top-2 right-2 w-8 h-8 rounded-full
                     flex items-center justify-center
                     text-white transition-all
                     shadow-md
                     ${
-                      isCompressing || isUploading
+                      isCompressing
                         ? "bg-gray-400 dark:bg-gray-500 cursor-not-allowed"
                         : "bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700"
                     }

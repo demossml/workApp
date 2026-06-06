@@ -4,10 +4,12 @@ import { join } from "path";
 
 const DB_SOURCE = process.env.DUCKDB_PATH || "/home/admingimolost/.hermes/data/evotor.duckdb";
 const SETTINGS_DB_PATH = process.env.DUCKDB_SETTINGS_PATH || "/home/admingimolost/.hermes/data/evotor-settings.duckdb";
+const DB_COPY_TTL_MS = 5 * 60 * 1000; // refresh copy every 5 minutes
 const TEMP_DIR = "/tmp/evo-duckdb";
 
 let _db: Database | null = null;
 let _settingsDb: Database | null = null;
+let _dbCopyTime = 0;
 
 function getTempPath(): string {
   if (!existsSync(TEMP_DIR)) mkdirSync(TEMP_DIR, { recursive: true });
@@ -15,7 +17,15 @@ function getTempPath(): string {
 }
 
 export function getDuckDB(): Database {
-  if (_db) return _db;
+  const now = Date.now();
+  if (_db && (now - _dbCopyTime) < DB_COPY_TTL_MS) return _db;
+
+  // Close old connection before refreshing copy
+  if (_db) {
+    try { _db.close(); } catch {}
+    _db = null;
+  }
+
   const tempPath = getTempPath();
   if (existsSync(DB_SOURCE)) {
     try { unlinkSync(tempPath); } catch {}
@@ -23,6 +33,7 @@ export function getDuckDB(): Database {
     copyFileSync(DB_SOURCE, tempPath);
   }
   _db = new Database(tempPath);
+  _dbCopyTime = now;
   return _db;
 }
 
@@ -201,7 +212,7 @@ export async function ensureSchema(): Promise<void> {
     `CREATE TABLE IF NOT EXISTS onec_prices (store TEXT NOT NULL, sku TEXT NOT NULL, price_type TEXT NOT NULL DEFAULT 'retail', price DOUBLE NOT NULL, currency TEXT DEFAULT 'RUB', updated_at BIGINT NOT NULL, source TEXT DEFAULT 'onec')`,
     `CREATE TABLE IF NOT EXISTS sales_hourly (id INTEGER PRIMARY KEY, shop_uuid TEXT NOT NULL, hour_ts BIGINT NOT NULL, revenue DOUBLE DEFAULT 0, checks INTEGER DEFAULT 0, avg_check DOUBLE DEFAULT 0)`,
     `CREATE TABLE IF NOT EXISTS normalized_sales (id INTEGER PRIMARY KEY, shop_uuid TEXT NOT NULL, date TEXT NOT NULL, barcode TEXT, commodity_name TEXT, quantity DOUBLE DEFAULT 0, revenue DOUBLE DEFAULT 0, checks INTEGER DEFAULT 0)`,
-    `CREATE TABLE IF NOT EXISTS employees_details (id INTEGER PRIMARY KEY, employee_uuid TEXT NOT NULL UNIQUE, first_name TEXT DEFAULT '', last_name TEXT DEFAULT '', role TEXT, stores_json TEXT, is_active INTEGER DEFAULT 1)`,
+    `CREATE TABLE IF NOT EXISTS employees_details (uuid TEXT PRIMARY KEY, id TEXT, name TEXT, last_name TEXT, patronymic_name TEXT, phone TEXT, role TEXT, role_id TEXT, user_id TEXT, stores TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS products_catalog (id INTEGER PRIMARY KEY, uuid TEXT, parent_uuid TEXT, store TEXT, name TEXT, article TEXT, barcode TEXT, price DOUBLE, updated_at BIGINT)`,
     `CREATE TABLE IF NOT EXISTS index_documents (id INTEGER PRIMARY KEY, document_uuid TEXT NOT NULL UNIQUE, store_uuid TEXT NOT NULL, open_date BIGINT NOT NULL, close_date BIGINT NOT NULL, session_number INTEGER, document_number INTEGER, transactions_json TEXT, total DOUBLE, cash DOUBLE, card DOUBLE, created_at BIGINT)`,
     `CREATE TABLE IF NOT EXISTS open_stores (id INTEGER PRIMARY KEY, shop_uuid TEXT NOT NULL UNIQUE, is_open INTEGER DEFAULT 0, open_date TEXT, close_date TEXT, updated_at BIGINT)`,

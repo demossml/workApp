@@ -589,7 +589,7 @@ export async function saveOrUpdateUUIDs(
 export async function getAllUuid(db: AppDB): Promise<string[]> {
 	try {
 		const selectQuery = `
-            SELECT uuid
+            SELECT group_uuid as uuid
             FROM accessories;
         `;
 
@@ -1069,38 +1069,50 @@ export async function getData(
 	}
 }
 
-interface TelegramFileResponse {
-	ok: boolean;
-	result: {
-		file_id: string;
-		file_unique_id: string;
-		file_size: number;
-		file_path: string;
-	};
-	description?: string;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { spawn: _spawn } = require("child_process");
+
+function _spawnAsync(
+	cmd: string,
+	args: string[],
+	timeoutMs: number,
+): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const child = _spawn(cmd, args, {
+			timeout: timeoutMs,
+		});
+		let stdout = "";
+		let stderr = "";
+		child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
+		child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
+		child.on("close", (code: number) => {
+			if (code === 0) resolve(stdout);
+			else reject(new Error(stderr || `exit ${code}`));
+		});
+		child.on("error", reject);
+	});
 }
 
 export async function getTelegramFile(
 	fileId: string,
 	TELEGRAM_BOT_TOKEN: string,
-) {
+): Promise<string> {
 	try {
-		const response = await fetch(
-			`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`,
-		);
+		const result = await _spawnAsync("/usr/bin/python3", [
+			"-c",
+			`import json,urllib.request,sys
+r=urllib.request.urlopen("https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id="+sys.argv[1],timeout=10)
+d=json.loads(r.read())
+if not d.get("ok"): raise Exception(d.get("description","getFile failed"))
+print(d["result"]["file_path"])
+`,
+			fileId,
+		], 10000);
 
-		const data = (await response.json()) as TelegramFileResponse;
+		const filePath = result.trim();
+		if (!filePath) throw new Error("getFile returned no file_path");
 
-		if (!data.ok) {
-			throw new Error(
-				data.description || "Не удалось получить информацию о файле.",
-			);
-		}
-
-		const filePath = data.result.file_path;
-		const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`;
-
-		return fileUrl;
+		return `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`;
 	} catch (err) {
 		console.error("Ошибка при запросе к Telegram API:", err);
 		throw err;
@@ -1110,25 +1122,8 @@ export async function getTelegramFile(
 export async function getTelegramFileUpl(
 	fileId: string,
 	TELEGRAM_BOT_TOKEN: string,
-) {
-	try {
-		const response = await fetch(
-			`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`,
-		);
-
-		const data = (await response.json()) as TelegramFileResponse;
-
-		if (!data.ok || !data.result) {
-			throw new Error(
-				data.description || "Не удалось получить информацию о файле.",
-			);
-		}
-
-		return `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${data.result.file_path}`;
-	} catch (err) {
-		console.error("Ошибка при запросе к Telegram API:", err);
-		throw err;
-	}
+): Promise<string> {
+	return getTelegramFile(fileId, TELEGRAM_BOT_TOKEN);
 }
 
 // import FormData from "form-data";

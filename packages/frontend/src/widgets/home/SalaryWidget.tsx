@@ -1,7 +1,7 @@
 // Salary widget for Home dashboard — shows month bonus + today's plan status
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { HandCoins, TrendingUp, TrendingDown } from "lucide-react";
+import { HandCoins, TrendingUp, TrendingDown, Info } from "lucide-react";
 import { client } from "../../helpers/api";
 
 interface ShopPlan {
@@ -18,20 +18,56 @@ interface DashboardSalary {
   todayPlans: ShopPlan[];
 }
 
+// Карина Боброва UUID для теста SUPERADMIN
+const TEST_EMPLOYEE_UUID = "20260103-4CEE-4059-806C-F1B34712692E";
+
+function getMonthRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 2).toISOString().slice(0, 10);
+  const end = now.toISOString().slice(0, 10);
+  return { start, end };
+}
+
 export function SalaryWidget() {
   const [data, setData] = useState<DashboardSalary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetch = async () => {
       try {
-        const response = await client.api.evotor.dashboards.salary.$get();
+        setLoading(true);
+        setError(null);
+        const { start, end } = getMonthRange();
+        const response = await client.api.evotor.salary.$post({
+          json: {
+            employee: TEST_EMPLOYEE_UUID,
+            startDate: start,
+            endDate: end,
+          },
+        });
         if (response.ok) {
-          const json = await response.json() as DashboardSalary;
-          setData(json);
+          const json = await response.json() as any;
+          // Adapt the response to DashboardSalary format
+          const today = new Date();
+          const todayStr = `${String(today.getDate()).padStart(2,'0')}-${String(today.getMonth()+1).padStart(2,'0')}-${today.getFullYear()}`;
+          setData({
+            monthBonus: json.totalReport?.totalBonus || 0,
+            monthOklad: 30000,
+            todayPlans: (json.result || []).filter((r: any) => r.date === todayStr).map((r: any) => ({
+              shop: r.shopName || "—",
+              vape: r.salesDataVape || 0,
+              plan: r.dataPlan || 0,
+              met: (r.salesDataVape || 0) >= (r.dataPlan || 1),
+              bonus: r.bonusPlan || 0,
+            })),
+          });
+        } else {
+          setError("Ошибка загрузки");
         }
       } catch (err) {
         console.error("SalaryWidget error:", err);
+        setError("Сервис недоступен");
       } finally {
         setLoading(false);
       }
@@ -39,8 +75,38 @@ export function SalaryWidget() {
     fetch();
   }, []);
 
-  if (loading) return null;
-  if (!data) return null;
+  if (loading) {
+    return (
+      <div className="w-full mt-3 mb-3 animate-pulse">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-sm p-4">
+          <div className="h-5 w-24 bg-slate-200 dark:bg-slate-800 rounded mb-3" />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3 space-y-2">
+              <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded" />
+              <div className="h-6 w-24 bg-slate-200 dark:bg-slate-700 rounded" />
+            </div>
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3 space-y-2">
+              <div className="h-3 w-12 bg-slate-200 dark:bg-slate-700 rounded" />
+              <div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="w-full mt-3 mb-3">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-sm p-4">
+          <div className="text-center text-slate-400 dark:text-slate-500 py-2">
+            <Info className="w-5 h-5 mx-auto mb-1 opacity-50" />
+            <div className="text-[11px]">{error || "Нет данных о зарплате"}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const totalPlans = data.todayPlans.length;
   const metPlans = data.todayPlans.filter(p => p.met).length;
@@ -54,7 +120,7 @@ export function SalaryWidget() {
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-sm p-4">
         <div className="flex items-center gap-2 mb-3">
           <HandCoins className="w-5 h-5 text-amber-500" />
-          <h3 className="font-semibold text-slate-800 dark:text-slate-200">Зарплата</h3>
+          <h3 className="font-semibold text-slate-800 dark:text-slate-200">Зарплата · Карина Боброва</h3>
         </div>
 
         {/* Month total */}

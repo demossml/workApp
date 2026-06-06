@@ -33,7 +33,6 @@ const mobilePriorityColumns = [
   "sum",
 ] as const;
 
-const hiddenOnMobileDetails = new Set(["productName", "shopName", "reasonCodes"]);
 const INITIAL_VISIBLE_ROWS = 120;
 const LOAD_MORE_STEP = 120;
 

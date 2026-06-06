@@ -45,7 +45,7 @@ export default function PeriodComparisonPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["period-comparison", since, today],
     queryFn: async () => {
-      const res = await client.api["period-comparison"].$post({ json: { since, until: today } });
+      const res = await (client.api as any)["period-comparison"].$post({ json: { since, until: today } });
       if (!res.ok) throw new Error("Ошибка");
       return res.json() as Promise<any>;
     },

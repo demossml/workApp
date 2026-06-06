@@ -7,7 +7,7 @@ export async function ensureEmployeesDetailsTable(
 ): Promise<void> {
 	await db
 		.prepare(
-			"CREATE TABLE IF NOT EXISTS employees_details (uuid TEXT PRIMARY KEY, id TEXT, name TEXT, last_name TEXT, patronymic_name TEXT, phone TEXT, role TEXT, role_id TEXT, user_id TEXT, stores TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')))",
+			"CREATE TABLE IF NOT EXISTS employees_details (uuid TEXT PRIMARY KEY, id TEXT, name TEXT, last_name TEXT, patronymic_name TEXT, phone TEXT, role TEXT, role_id TEXT, user_id TEXT, stores TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
 		)
 		.run();
 	await db
@@ -25,7 +25,7 @@ export async function upsertEmployeesDetails(
 	await ensureEmployeesDetailsTable(db);
 
 	const stmt = db.prepare(
-		"INSERT INTO employees_details (uuid, id, name, last_name, patronymic_name, phone, role, role_id, user_id, stores, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(uuid) DO UPDATE SET id = excluded.id, name = excluded.name, last_name = excluded.last_name, patronymic_name = excluded.patronymic_name, phone = excluded.phone, role = excluded.role, role_id = excluded.role_id, user_id = excluded.user_id, stores = excluded.stores, updated_at = datetime('now')",
+		"INSERT INTO employees_details (uuid, id, name, last_name, patronymic_name, phone, role, role_id, user_id, stores, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(uuid) DO UPDATE SET id = excluded.id, name = excluded.name, last_name = excluded.last_name, patronymic_name = excluded.patronymic_name, phone = excluded.phone, role = excluded.role, role_id = excluded.role_id, user_id = excluded.user_id, stores = excluded.stores, updated_at = CURRENT_TIMESTAMP",
 	);
 
 	const statements: DuckPreparedStatement[] = employees

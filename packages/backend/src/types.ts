@@ -1,5 +1,4 @@
 import type { Context } from "hono";
-import type { Evotor } from "./evotor";
 import type { D1Adapter } from "./db-duckdb";
 import type { KVStore } from "./kv-store";
 

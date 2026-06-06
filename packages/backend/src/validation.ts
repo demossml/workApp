@@ -529,6 +529,11 @@ export const OpeningPhotosSchema = z.object({
 	openedAt: z.string().min(1, "openedAt обязателен"),
 });
 
+export const DeleteOpeningPhotoSchema = z.object({
+	id: z.number().int().positive("id должен быть положительным числом"),
+	fileKey: z.string().optional(),
+});
+
 /**
  * POST /api/save-dead-stocks
  */

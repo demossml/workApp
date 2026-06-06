@@ -135,9 +135,9 @@ export async function getProductsByGroup(
 		}
 
 		const query = `
-			SELECT uuid 
-			FROM shopProduct 
-			WHERE shopId = ?1 AND parentUuid IN (${groupIds.map(() => "?").join(", ")});
+			SELECT product_uuid AS uuid 
+			FROM product_groups 
+			WHERE store_uuid = ?1 AND parent_uuid IN (${groupIds.map(() => "?").join(", ")});
 		`;
 
 		const result = await db

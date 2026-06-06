@@ -587,7 +587,7 @@ export default function DashboardSummary2({
 
   const isSuperAdmin = roleData?.employeeRole === "SUPERADMIN";
   const isAdmin = roleData?.employeeRole === "ADMIN";
-  const canViewTempoCard = isSuperAdmin || isAdmin;
+  const canViewTempoCard = true; // always visible — pace data from PlanStatusWidget moved here
   const filteredData = useFilteredSalesData(
     data,
     isSuperAdmin,
@@ -652,7 +652,7 @@ export default function DashboardSummary2({
     React.useState<DirectorRecommendationsResponse | null>(null);
   const [directorReport, setDirectorReport] =
     React.useState<DirectorReportResponse | null>(null);
-  const [stockHealth, setStockHealth] =
+  const [_stockHealth, setStockHealth] =
     React.useState<{
       deadStockCount: number;
       lowStockCount: number;
@@ -796,6 +796,26 @@ export default function DashboardSummary2({
     if (!filteredAccessoriesData) return 0;
     return filteredAccessoriesData.total.reduce((sum, item) => sum + item.sum, 0);
   }, [filteredAccessoriesData]);
+
+  // ── Sales pace (moved from PlanStatusWidget) ──
+  const pace = React.useMemo(() => {
+    if (!filteredData) return null;
+    const now = new Date();
+    const open = new Date(now); open.setHours(7, 50, 0, 0);
+    const close = new Date(now); close.setHours(22, 0, 0, 0);
+    const elapsed = Math.max(0, (now.getTime() - open.getTime()) / 3600000);
+    const remain = Math.max(0, (close.getTime() - now.getTime()) / 3600000);
+    const fact = filteredData.netRevenue || 0;
+    // Plan from config: use hardcoded daily target per store (~5200 * 3 stores ≈ 15600)
+    // Or estimate from today's revenue pace
+    const plan = 5200 * 3; // rough daily plan — can be replaced with actual plan data
+    const rate = elapsed > 0 ? fact / elapsed : 0;
+    const projected = elapsed > 0 ? (fact / elapsed) * (elapsed + remain) : 0;
+    const needPct = (22 - 7.833) > 0 ? (elapsed / (22 - 7.833)) * 100 : 50;
+    const pct = plan > 0 ? (fact / plan) * 100 : 0;
+    const status = pct >= needPct + 5 ? "ahead" : pct >= needPct - 5 ? "on-track" : plan > 0 ? "behind" : "no-data";
+    return { fact, plan, rate, projected, remain, status: status as string };
+  }, [filteredData]);
 
   const insightsState = useDashboardHomeInsights({
     since: safeSince,
@@ -1042,6 +1062,7 @@ export default function DashboardSummary2({
                 <RevenueTempoCard
                   salesDeltaPct={aiInsights.drop.salesDeltaPct}
                   onClick={() => toggleCard("tempo")}
+                  pace={pace}
                 />
               )}
             </div>

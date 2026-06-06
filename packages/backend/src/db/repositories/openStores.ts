@@ -1,4 +1,3 @@
-import type { R2Bucket } from "@cloudflare/workers-types";
 import type { AppDB } from "../../db-duckdb.js";
 
 let schemaEnsured = false;
@@ -216,8 +215,7 @@ export async function getLatestUserOpeningForDate(
 
 export async function getOpenStoreDetails(
 	db: AppDB,
-	r2: R2Bucket,
-	userId: string,
+	_userId: string,
 	shopUuid: string,
 	dateDDMMYYYY: string,
 ): Promise<{
@@ -242,7 +240,7 @@ export async function getOpenStoreDetails(
 				 ORDER BY date DESC
 				 LIMIT 1`,
 			)
-			.bind(userId, shopUuid, startDate, endDate)
+			.bind(_userId, shopUuid, startDate, endDate)
 			.first<{
 				date: string;
 				cash?: number;
@@ -254,49 +252,22 @@ export async function getOpenStoreDetails(
 			return { exists: false };
 		}
 
-		const countByCategory = async (prefix: string) => {
-			let cursor: string | undefined;
-			const set = new Set<string>();
-			do {
-				const listed = await r2.list({ prefix, cursor });
-				for (const obj of listed.objects) {
-					const key = obj.key;
-					const rel = key.slice(prefix.length);
-					if (!rel) continue;
-					const category = rel.split("/")[0];
-					if (["area", "stock", "cash", "mrc"].includes(category)) {
-						set.add(key);
-					}
-				}
-				cursor = listed.truncated ? listed.cursor : undefined;
-			} while (cursor);
-
-			let area = 0;
-			let stock = 0;
-			let cash = 0;
-			let mrc = 0;
-			for (const key of set) {
-				if (key.includes("/area/")) area += 1;
-				if (key.includes("/stock/")) stock += 1;
-				if (key.includes("/cash/")) cash += 1;
-				if (key.includes("/mrc/")) mrc += 1;
-			}
-			return { area, stock, cash, mrc };
-		};
-
-		let counts = { area: 0, stock: 0, cash: 0, mrc: 0 };
-		const newPrefix = `evotor/opening/${dateDDMMYYYY}/${shopUuid}/${userId}/`;
-		counts = await countByCategory(newPrefix);
-		if (counts.area + counts.stock + counts.cash + counts.mrc === 0) {
-			const legacyPrefix = `opening/${dateDDMMYYYY}/${shopUuid}/${userId}/`;
-			counts = await countByCategory(legacyPrefix);
+		// Count photos from DB (not R2)
+		const { getOpeningPhotos } = await import("./openingPhotos");
+		const photos = await getOpeningPhotos(db, shopUuid, _userId, dateDDMMYYYY);
+		let area = 0, stock = 0, cash = 0, mrc = 0;
+		for (const p of photos) {
+			if (p.category === "area") area++;
+			else if (p.category === "stock") stock++;
+			else if (p.category === "cash") cash++;
+			else if (p.category === "mrc") mrc++;
 		}
 
 		const photoCount =
-			Math.min(counts.area, 2) +
-			Math.min(counts.stock, 3) +
-			Math.min(counts.cash, 1) +
-			Math.min(counts.mrc, 1);
+			Math.min(area, 2) +
+			Math.min(stock, 3) +
+			Math.min(cash, 1) +
+			Math.min(mrc, 1);
 
 		const hasCashCheck =
 			record.cash != null || record.sign != null || record.ok != null;
