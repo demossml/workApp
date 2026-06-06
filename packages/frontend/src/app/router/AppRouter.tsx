@@ -19,13 +19,10 @@ const SchedulesReport = lazy(() => import("@/pages/reports/SchedulesReport"));
 const StoreOpeningPage = lazy(() => import("@/pages/opening/StoreOpeningPage"));
 const DeadStocks = lazy(() => import("@/pages/deadstock/DeadStock"));
 const StoreOpeningsAdminReport = lazy(() => import("@/pages/reports/StoreOpeningsAdminReport"));
-const AiDirectorPage = lazy(() => import("@/pages/ai/AiDirector"));
 const PeriodComparison = lazy(() => import("@/pages/reports/PeriodComparison"));
 const SellerPerformancePage = lazy(() => import("@/pages/SellerPerformance"));
 
 export function AppRouter() {
-  const aiAvailable = useDataSourceStore((state) => state.aiAvailable);
-
   return (
     <Suspense
       fallback={
@@ -52,10 +49,6 @@ export function AppRouter() {
         <Route path="/evotor/schedules" element={<SchedulesReport />} />
         <Route path="/evotor/open-store" element={<StoreOpeningPage />} />
         <Route path="evotor/dead-stock" element={<DeadStocks />} />
-        <Route
-          path="/ai/director"
-          element={aiAvailable ? <AiDirectorPage /> : <Navigate to="/" replace />}
-        />
         <Route path="/evotor/period-comparison" element={<PeriodComparison />} />
         <Route path="/evotor/seller-performance" element={<SellerPerformancePage />} />
       </Routes>

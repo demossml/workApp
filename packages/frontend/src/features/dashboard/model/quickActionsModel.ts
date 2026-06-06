@@ -66,14 +66,6 @@ export const QUICK_ACTIONS: QuickActionModel[] = [
     color: "from-emerald-500 to-teal-600",
     roles: ["ADMIN", "SUPERADMIN"],
   },
-  {
-    title: "AI Директор",
-    description: "Сводка и рекомендации",
-    iconKey: "sparkles",
-    path: "/ai/director",
-    color: "from-slate-700 to-slate-900",
-    roles: ["ADMIN", "SUPERADMIN"],
-  },
 ];
 
 export function getAvailableQuickActions(employeeRole: string) {

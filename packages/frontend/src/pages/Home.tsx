@@ -12,10 +12,8 @@ import { DashboardSummaryWidget } from "@widgets/dashboard";
 import { buildHomeAccessModel } from "@features/dashboard/model/homePageModel";
 import { useDataSourceStore } from "@shared/model/dataSourceStore";
 import { SellerPerformanceWidget } from "@widgets/home/SellerPerformanceWidget";
-import { MyPerformanceWidget } from "@widgets/home/MyPerformanceWidget";
 // import { SalaryWidget } from "@widgets/home/SalaryWidget";
 import { DailyBriefing } from "@widgets/home/DailyBriefing";
-import { HealthScore } from "@widgets/home/HealthScore";
 import { isTelegramMiniApp } from "../helpers/telegram";
 import { useState, useEffect } from "react";
 
@@ -63,12 +61,6 @@ export default function Home() {
 
         {/* Daily Briefing — персональная сводка */}
         <DailyBriefing />
-
-        {/* Health Score — индикатор здоровья сети */}
-        <HealthScore />
-
-        {/* Мои показатели — для всех продавцов */}
-        <MyPerformanceWidget />
 
         {/* Эффективность продавцов (топ-3 за сегодня, тап → полный дашборд) */}
         {isSuperAdmin && <SellerPerformanceWidget />}

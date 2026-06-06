@@ -12,7 +12,6 @@ import {
   getAvailableQuickActions,
   type QuickActionModel,
 } from "@features/dashboard/model/quickActionsModel";
-import { useDataSourceStore } from "@shared/model/dataSourceStore";
 import { useStockHealth } from "@/hooks/dashboard/useStockHealth";
 import { isTelegramMiniApp, telegram } from "@/helpers/telegram";
 
@@ -22,7 +21,6 @@ interface QuickActionsWidgetProps {
 
 export function QuickActionsWidget({ employeeRole }: QuickActionsWidgetProps) {
   const navigate = useNavigate();
-  const aiAvailable = useDataSourceStore((state) => state.aiAvailable);
   const isMiniApp = isTelegramMiniApp();
 
   const availableActions = getAvailableQuickActions(employeeRole);
@@ -71,15 +69,12 @@ export function QuickActionsWidget({ employeeRole }: QuickActionsWidgetProps) {
       </h2>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {availableActions.map((action) => {
-          const isAiDirectorAction = action.path === "/ai/director";
-          const isDisabled = isAiDirectorAction && !aiAvailable;
           const badge = getBadgeValue(action);
 
           return (
             <button
               key={action.path}
               onClick={() => {
-                if (isDisabled) return;
                 if (isMiniApp) {
                   telegram.WebApp.HapticFeedback.impactOccurred("light");
                 }
