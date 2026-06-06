@@ -851,6 +851,9 @@ async function loadFinancialDataByMode(input: {
 
 export const evotorRoutes = new Hono<IEnv>()
 
+// ═══════════════════════════════════════════════
+// 📊 ПРОДАЖИ И МАГАЗИНЫ
+// ═══════════════════════════════════════════════
 	.get("/sales-today", async (c) => {
 		const mode = await getDataModeOrDefault(c.env);
 		const salesData = await c.var.evotor.getSalesToday(c.get("db"));
@@ -1100,6 +1103,10 @@ export const evotorRoutes = new Hono<IEnv>()
 			meta: buildDataModeMeta(mode),
 		});
 	})
+
+// ═══════════════════════════════════════════════
+// 🔌 АКСЕССУАРЫ
+// ═══════════════════════════════════════════════
 	.post("/accessoriesSales/:role/:userId", async (c) => {
 		try {
 			const db = c.get("db");
@@ -1373,6 +1380,10 @@ export const evotorRoutes = new Hono<IEnv>()
 			});
 		}
 	})
+
+// ═══════════════════════════════════════════════
+// 📄 PDF ГЕНЕРАЦИЯ
+// ═══════════════════════════════════════════════
 	.post("/generate-pdf", async (c) => {
 		try {
 			const chatId = c.var.userId || c.req.header("telegram-id") || "";
@@ -1509,6 +1520,10 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json(body, status as 200);
 		}
 	})
+
+// ═══════════════════════════════════════════════
+// 📈 ПЛАН ПРОДАЖ
+// ═══════════════════════════════════════════════
 	.get("/plan-for-today", async (c) => {
 		try {
 			interface SalesData {
@@ -1717,6 +1732,10 @@ export const evotorRoutes = new Hono<IEnv>()
 			);
 		}
 	})
+
+// ═══════════════════════════════════════════════
+// 🏷️ ГРУППЫ ТОВАРОВ
+// ═══════════════════════════════════════════════
 	.get("/groups", async (c) => {
 		const shopIds: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
 
@@ -1755,6 +1774,10 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json(body, status as 200);
 		}
 	})
+
+// ═══════════════════════════════════════════════
+// 💰 ЗАРПЛАТА
+// ═══════════════════════════════════════════════
 	.post("/salary", async (c) => {
 		try {
 			const data = await c.req.json();
@@ -1927,6 +1950,10 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json(body, status as 200);
 		}
 	})
+
+// ═══════════════════════════════════════════════
+// ⚙️ НАСТРОЙКИ
+// ═══════════════════════════════════════════════
 	.post("/submitGroups", async (c) => {
 		try {
 			const data = await c.req.json();
@@ -2045,6 +2072,10 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ message: "Не удалось сохранить оклад и премию" }, 400);
 		}
 	})
+
+// ═══════════════════════════════════════════════
+// 🏪 ИНФОРМАЦИЯ О МАГАЗИНАХ
+// ═══════════════════════════════════════════════
 	.post("/shops", async (c) => {
 		const shopOptions: Record<string, string> = {};
 
@@ -2088,6 +2119,10 @@ export const evotorRoutes = new Hono<IEnv>()
 		return c.json({ shopOptions, groups });
 	})
 
+
+// ═══════════════════════════════════════════════
+// 🏠 ДАШБОРД
+// ═══════════════════════════════════════════════
 	.post("/dashboard-home-insights", async (c) => {
 		try {
 			const mode = await getDataModeOrDefault(c.env);
@@ -2716,6 +2751,10 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 
+
+// ═══════════════════════════════════════════════
+// 💵 ФИНАНСЫ
+// ═══════════════════════════════════════════════
 	.get("/financial", async (c) => {
 		try {
 			const startDate = c.req.query("since");
@@ -2892,6 +2931,10 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
 	})
+
+// ═══════════════════════════════════════════════
+// 🔄 ИНДЕКСАЦИЯ
+// ═══════════════════════════════════════════════
 	.post("/index/warm", async (c) => {
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
@@ -2969,6 +3012,10 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ error: "INDEX_PULL_TODAY_FAILED" }, 500);
 		}
 	})
+
+// ═══════════════════════════════════════════════
+// 🧾 ЧЕКИ (РЕБИЛД)
+// ═══════════════════════════════════════════════
 	.post("/receipts/rebuild-day", async (c) => {
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
@@ -3042,6 +3089,10 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ error: "REBUILD_RECEIPTS_FAILED" }, 500);
 		}
 	})
+
+// ═══════════════════════════════════════════════
+// 👤 KPI СОТРУДНИКОВ
+// ═══════════════════════════════════════════════
 	.post("/employee-kpi/backfill-index-range", async (c) => {
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
@@ -3139,6 +3190,10 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ error: "EMPLOYEE_KPI_BACKFILL_FROM_INDEX_FAILED" }, 500);
 		}
 	})
+
+// ═══════════════════════════════════════════════
+// 📦 ЗАКАЗЫ
+// ═══════════════════════════════════════════════
 	.post("/order", async (c) => {
 		try {
 			// Получаем данные из запроса
@@ -3217,6 +3272,10 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 
+
+// ═══════════════════════════════════════════════
+// 📊 ОТЧЁТ О ПРИБЫЛИ
+// ═══════════════════════════════════════════════
 	.post("/profit-report", async (c) => {
 		try {
 			// Получаем данные из запроса
@@ -3344,6 +3403,10 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 
+
+// ═══════════════════════════════════════════════
+// 📋 СКЛАДСКОЙ ОТЧЁТ
+// ═══════════════════════════════════════════════
 	.post("/stock-report", async (c) => {
 		try {
 			const data = await c.req.json();
@@ -3407,6 +3470,10 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 
+
+// ═══════════════════════════════════════════════
+// 📈 ОТЧЁТЫ ПО ПРОДАЖАМ
+// ═══════════════════════════════════════════════
 	.post("/salesResult", async (c) => {
 		try {
     const data = await c.req.json();
