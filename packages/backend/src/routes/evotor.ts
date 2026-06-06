@@ -2901,6 +2901,91 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ message: "Ошибка обработки данных" }, 400);
 		}
 	})
+	// ── TodayPulse: топ аксессуаров + остаток кассы ──
+	.get("/today-pulse", async (c) => {
+		try {
+			const db = c.get("db");
+			const tzOffsetMinutes = Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180);
+			const todayKey = getLocalDateKey(new Date(), tzOffsetMinutes);
+			const { since, until } = buildUtcRangeForLocalDates(
+				todayKey, todayKey, tzOffsetMinutes,
+			);
+
+			// 1. Топ аксессуаров сегодня
+			const accRows = await db
+				.prepare(
+					`SELECT s.store_name, p.product_name,
+						CAST(SUM(p.quantity) AS INTEGER) as qty,
+						CAST(SUM(p.sum) AS DOUBLE) as revenue
+					FROM positions p
+					JOIN sells s ON p.doc_id = s.doc_id
+					JOIN product_groups pg ON pg.product_name = p.product_name AND pg.store_uuid = s.store_uuid
+					JOIN accessories a ON pg.parent_uuid = a.group_uuid
+					WHERE s.close_date >= ? AND s.close_date <= ?
+					GROUP BY s.store_name, p.product_name
+					ORDER BY revenue DESC
+					LIMIT 15`,
+				)
+				.bind(since, until)
+				.all<{ store_name: string; product_name: string; qty: number; revenue: number }>();
+
+			const accessories = (accRows.results || []).map((r) => ({
+				storeName: r.store_name,
+				productName: r.product_name,
+				quantity: Number(r.qty),
+				revenue: Number(r.revenue),
+			}));
+
+			// 2. Остаток кассы: Z-отчёт + сегодняшние наличные − изъятия
+			const cashRows = await db
+				.prepare(
+					`WITH lz AS (
+						SELECT store_uuid, store_name, cash,
+							ROW_NUMBER() OVER (PARTITION BY store_uuid ORDER BY close_date DESC) as rn
+						FROM fprints
+					),
+					ci AS (
+						SELECT s.store_uuid,
+							CAST(COALESCE(SUM(p.sum), 0) AS DOUBLE) as v
+						FROM payments p
+						JOIN sells s ON p.doc_id = s.doc_id
+						WHERE p.payment_type = 'CASH'
+							AND s.close_date >= ? AND s.close_date <= ?
+						GROUP BY s.store_uuid
+					),
+					co AS (
+						SELECT store_uuid,
+							CAST(COALESCE(SUM(sum), 0) AS DOUBLE) as v
+						FROM cash_outcomes
+						WHERE close_date >= ? AND close_date <= ?
+						GROUP BY store_uuid
+					)
+					SELECT
+						COALESCE(lz.store_name, ci.store_uuid, co.store_uuid) as shop,
+						CAST(COALESCE(lz.cash, 0) + COALESCE(ci.v, 0) - COALESCE(co.v, 0) AS DOUBLE) as balance
+					FROM lz
+					LEFT JOIN ci ON lz.store_uuid = ci.store_uuid
+					LEFT JOIN co ON lz.store_uuid = co.store_uuid
+					WHERE lz.rn = 1
+					ORDER BY balance DESC`,
+				)
+				.bind(since, until, since, until)
+				.all<{ shop: string; balance: number }>();
+
+			const cashByShop: Record<string, number> = {};
+			let totalCash = 0;
+			for (const r of cashRows.results || []) {
+				const bal = Number(r.balance);
+				cashByShop[r.shop] = bal;
+				totalCash += bal;
+			}
+
+			return c.json({ accessories, cashByShop, totalCash });
+		} catch (err) {
+			logger.error("today-pulse error", { error: String(err) });
+			return c.json({ error: "Ошибка загрузки данных" }, 500);
+		}
+	})
 	.post("/financial/today/direct", async (c) => {
 		try {
 			const employeeRole = await resolveEmployeeRole(c);

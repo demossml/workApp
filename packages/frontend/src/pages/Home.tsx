@@ -14,6 +14,7 @@ import { DailyBriefing } from "@widgets/home/DailyBriefing";
 import { MyShiftCard } from "@widgets/home/MyShiftCard";
 import { WeekSalary } from "@widgets/home/WeekSalary";
 import { NetworkPulse } from "@widgets/home/NetworkPulse";
+import { TodayPulse } from "@widgets/home/TodayPulse";
 import { isTelegramMiniApp } from "../helpers/telegram";
 import { useState, useEffect } from "react";
 
@@ -67,6 +68,7 @@ export default function Home() {
         {/* === АДМИН / СУПЕРАДМИН === */}
         {(isAdmin || isSuperAdmin) && (
           <>
+            <TodayPulse />
             <NetworkPulse />
             <PlanStatusWidget />
             {isSuperAdmin && <TodayAlertsWidget />}
