@@ -1,3 +1,8 @@
+/**
+ * @deprecated Используйте features/plan/planService.ts и usePlanData().
+ * Этот файл сохранён для обратной совместимости с DailyBriefing и Topbar.
+ * Вся новая бизнес-логика — в planService.ts.
+ */
 export interface PlanInfo {
   datePlan: number;
   dataSales: number;

@@ -1,4 +1,5 @@
-import { ErrorState, LoadingState } from "@shared/ui/states";
+import { ErrorState } from "@shared/ui/states";
+import { ErrorBoundary } from "@shared/ui/states/ErrorBoundary";
 import { RegisterUserCard } from "@features/employees";
 import { useEmployeeRole } from "../hooks/useApi";
 import { useIsFetching } from "@tanstack/react-query";
@@ -20,6 +21,8 @@ import { TopProductWidget } from "@widgets/home/TopProductWidget";
 import { AccessoriesWidget } from "@widgets/home/AccessoriesWidget";
 import { isTelegramMiniApp } from "../helpers/telegram";
 import { useState, useEffect, useCallback } from "react";
+import { Wifi, WifiOff, RefreshCw } from "lucide-react";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 type WidgetKey = "revenue" | "tempo" | "finance" | "best" | "products" | "accessories";
 
@@ -39,8 +42,17 @@ export default function Home() {
     setExpanded((prev) => (prev === key ? null : key));
   }, []);
 
-  if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState error={error.message} />;
+  if (isLoading || error) {
+    // Show skeleton tiles while role loads or on error with retry
+    if (error) return <ErrorState error={error.message} />;
+    return (
+      <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-20 sm:pt-24 px-4 sm:px-6 pb-24">
+        <div className="w-full max-w-7xl space-y-4">
+          <SkeletonHome />
+        </div>
+      </div>
+    );
+  }
 
   if (!data?.employeeRole || data.employeeRole === "null") {
     const shouldShowManualIdInput = !miniApp || data?.employeeRole === "null";
@@ -58,51 +70,83 @@ export default function Home() {
   const { since, until, dateMode } = dateFilter;
 
   const isExpanded = (key: WidgetKey) => expanded === key;
+  const queryClient = useQueryClient();
 
   return (
     <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-20 sm:pt-24 px-4 sm:px-6 pb-24">
+      <HomeTopBar queryClient={queryClient} />
       <div className="w-full max-w-7xl space-y-4">
 
-        <DailyBriefing />
-        {isSuperAdmin && <SellerPerformanceWidget />}
+        <ErrorBoundary variant="widget" name="Ежедневный брифинг">
+          <DailyBriefing />
+        </ErrorBoundary>
+        {isSuperAdmin && (
+          <ErrorBoundary variant="widget" name="Продавцы дня">
+            <SellerPerformanceWidget />
+          </ErrorBoundary>
+        )}
         <DateFilter value={dateFilter} onChange={setDateFilter} />
-        <PlanStatusWidget />
+        <ErrorBoundary variant="widget" name="План по магазинам">
+          <PlanStatusWidget date={since} />
+        </ErrorBoundary>
 
         <div className="grid grid-cols-2 gap-4">
           <div className={isExpanded("revenue") ? "col-span-2" : ""}>
-            <RevenueWidget since={since} until={until} expanded={isExpanded("revenue")} onToggle={() => toggle("revenue")} />
+            <ErrorBoundary variant="widget" name="Выручка">
+              <RevenueWidget since={since} until={until} expanded={isExpanded("revenue")} onToggle={() => toggle("revenue")} />
+            </ErrorBoundary>
           </div>
 
           {(isSuperAdmin || isAdmin) && (
             <div className={isExpanded("tempo") ? "col-span-2" : ""}>
-              <SalesTempoWidget since={since} until={until} expanded={isExpanded("tempo")} onToggle={() => toggle("tempo")} />
+              <ErrorBoundary variant="widget" name="Темп продаж">
+                <SalesTempoWidget since={since} until={until} expanded={isExpanded("tempo")} onToggle={() => toggle("tempo")} />
+              </ErrorBoundary>
             </div>
           )}
 
           {(isSuperAdmin || isAdmin) && (
             <div className={isExpanded("finance") ? "col-span-2" : ""}>
-              <FinanceWidget since={since} until={until} expanded={isExpanded("finance")} onToggle={() => toggle("finance")} />
+              <ErrorBoundary variant="widget" name="Финансы">
+                <FinanceWidget since={since} until={until} expanded={isExpanded("finance")} onToggle={() => toggle("finance")} />
+              </ErrorBoundary>
             </div>
           )}
 
           {(isSuperAdmin || isAdmin) && (
             <div className={isExpanded("best") ? "col-span-2" : ""}>
-              <BestShopWidget since={since} until={until} dateMode={dateMode} expanded={isExpanded("best")} onToggle={() => toggle("best")} />
+              <ErrorBoundary variant="widget" name="Лучший магазин">
+                <BestShopWidget since={since} until={until} dateMode={dateMode} expanded={isExpanded("best")} onToggle={() => toggle("best")} />
+              </ErrorBoundary>
             </div>
           )}
 
           <div className={isExpanded("products") ? "col-span-2" : ""}>
-            <TopProductWidget since={since} until={until} expanded={isExpanded("products")} onToggle={() => toggle("products")} />
+            <ErrorBoundary variant="widget" name="Топ продуктов">
+              <TopProductWidget since={since} until={until} expanded={isExpanded("products")} onToggle={() => toggle("products")} />
+            </ErrorBoundary>
           </div>
 
           <div className={isExpanded("accessories") ? "col-span-2" : ""}>
-            <AccessoriesWidget since={since} until={until} expanded={isExpanded("accessories")} onToggle={() => toggle("accessories")} />
+            <ErrorBoundary variant="widget" name="Аксессуары">
+              <AccessoriesWidget since={since} until={until} expanded={isExpanded("accessories")} onToggle={() => toggle("accessories")} />
+            </ErrorBoundary>
           </div>
         </div>
 
-        {isSuperAdmin && <TodayAlertsWidget />}
-        {(isSuperAdmin || isAdmin) && <StockHealthWidget />}
-        <QuickActionsWidget employeeRole={data.employeeRole} />
+        {isSuperAdmin && (
+          <ErrorBoundary variant="widget" name="Алерты">
+            <TodayAlertsWidget />
+          </ErrorBoundary>
+        )}
+        {(isSuperAdmin || isAdmin) && (
+          <ErrorBoundary variant="widget" name="Состояние склада">
+            <StockHealthWidget />
+          </ErrorBoundary>
+        )}
+        <ErrorBoundary variant="widget" name="Быстрые действия">
+          <QuickActionsWidget employeeRole={data.employeeRole} />
+        </ErrorBoundary>
         <LastUpdated />
       </div>
     </div>
@@ -122,5 +166,76 @@ function LastUpdated() {
         ) : `Данные от ${timeStr}`}
       </span>
     </div>
+  );
+}
+
+function HomeTopBar({ queryClient }: { queryClient: QueryClient }) {
+  const [online, setOnline] = useState(navigator.onLine);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await queryClient.invalidateQueries();
+    // Small delay so user sees the spinner
+    setTimeout(() => setRefreshing(false), 600);
+  }, [queryClient]);
+
+  return (
+    <div className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">🏠 Evo App</span>
+          {online ? (
+            <Wifi className="w-3.5 h-3.5 text-green-500" />
+          ) : (
+            <WifiOff className="w-3.5 h-3.5 text-red-400" />
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {!online && (
+            <span className="text-[10px] text-red-500 dark:text-red-400 font-medium">⚡ Офлайн</span>
+          )}
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 active:scale-95 transition-all disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin" : ""}`} />
+            Обновить
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkeletonHome() {
+  return (
+    <>
+      {/* DailyBriefing skeleton */}
+      <div className="animate-pulse bg-gradient-to-br from-blue-500/20 to-indigo-600/20 rounded-xl p-4 h-24" />
+      {/* Spacer */}
+      <div className="animate-pulse rounded-xl bg-white dark:bg-gray-800 p-4 shadow h-10" />
+      {/* Grid of skeleton tiles */}
+      <div className="grid grid-cols-2 gap-4">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="animate-pulse rounded-xl bg-white dark:bg-gray-800 p-4 shadow min-h-[120px]" />
+        ))}
+      </div>
+      {/* Bottom widgets */}
+      <div className="animate-pulse rounded-xl bg-white dark:bg-gray-800 p-4 shadow h-16" />
+      <div className="animate-pulse rounded-xl bg-white dark:bg-gray-800 p-4 shadow h-24" />
+    </>
   );
 }

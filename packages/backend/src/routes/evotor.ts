@@ -1,6 +1,9 @@
 import { Hono } from "hono";
 import type { IEnv } from "../types";
 import { logger } from "../logger";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { join } from "path";
+import { randomUUID } from "crypto";
 import {
 	AccessoryGroupsSaveSchema,
 	DashboardHomeInsightsRequestSchema,
@@ -1521,7 +1524,8 @@ export const evotorRoutes = new Hono<IEnv>()
 
 			const mode = await getDataModeOrDefault(c.env);
 			const db = c.get("db");
-			const newDate: Date = new Date();
+			const dateParam = c.req.query("date");
+			const newDate: Date = dateParam ? new Date(dateParam + "T12:00:00+03:00") : new Date();
 			const datePlan: string = formatDate(newDate);
 			let salesData: SalesData = {};
 
@@ -1540,7 +1544,7 @@ export const evotorRoutes = new Hono<IEnv>()
 				}
 
 				const tzOffsetMinutes = Number(c.env.ALERT_TZ_OFFSET_MINUTES ?? 180);
-				const localTodayKey = getLocalDateKey(new Date(), tzOffsetMinutes);
+				const localTodayKey = getLocalDateKey(newDate, tzOffsetMinutes);
 				const { since, until } = buildUtcRangeForLocalDates(
 					localTodayKey,
 					localTodayKey,
@@ -1716,6 +1720,44 @@ export const evotorRoutes = new Hono<IEnv>()
 				500,
 			);
 		}
+	})
+	// ── Share report image ──
+	.post("/share-report", async (c) => {
+		try {
+			const formData = await c.req.formData();
+			const file = formData.get("file") as File | null;
+			if (!file) return c.json({ error: "Missing file" }, 400);
+
+			const SHARE_DIR = "/tmp/evo-share";
+			if (!existsSync(SHARE_DIR)) mkdirSync(SHARE_DIR, { recursive: true });
+
+			const id = randomUUID();
+			const filePath = join(SHARE_DIR, `${id}.jpg`);
+			const buffer = Buffer.from(await file.arrayBuffer());
+			writeFileSync(filePath, buffer);
+
+			const url = `/api/evotor/share/${id}`;
+			logger.info("Share report saved", { id, path: filePath });
+			return c.json({ url, id });
+		} catch (err) {
+			logger.error("share-report error", err);
+			return c.json({ error: "Ошибка сохранения" }, 500);
+		}
+	})
+	.get("/share/:id", async (c) => {
+		const id = c.req.param("id");
+		if (!id || !/^[a-f0-9-]{36}$/.test(id)) {
+			return c.json({ error: "Invalid id" }, 400);
+		}
+		const filePath = join("/tmp/evo-share", `${id}.jpg`);
+		if (!existsSync(filePath)) {
+			return c.json({ error: "Not found" }, 404);
+		}
+		const { readFileSync } = await import("fs");
+		const buffer = readFileSync(filePath);
+		return new Response(buffer, {
+			headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" },
+		});
 	})
 	.get("/groups", async (c) => {
 		const shopIds: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
