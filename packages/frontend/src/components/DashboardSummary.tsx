@@ -1492,7 +1492,7 @@ export default function DashboardSummary() {
                       <div className="text-lg font-bold text-gray-900 dark:text-white">
                         {Object.keys(filteredData.salesDataByShopName).length}
                       </div>
-                      <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+                      <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
                         Магазинов
                       </div>
                     </div>
@@ -1510,7 +1510,7 @@ export default function DashboardSummary() {
                         ).toFixed(0)}
                         %
                       </div>
-                      <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+                      <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
                         Топ-5 от сети
                       </div>
                     </div>
@@ -1524,7 +1524,7 @@ export default function DashboardSummary() {
                             : 0
                         )}
                       </div>
-                      <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+                      <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
                         Разрыв 1-2
                       </div>
                     </div>
@@ -1543,7 +1543,7 @@ export default function DashboardSummary() {
                             )
                         )}
                       </div>
-                      <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+                      <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
                         Ср. чек топ-5
                       </div>
                     </div>
@@ -1677,7 +1677,7 @@ export default function DashboardSummary() {
                                     {product.refundRate > 5 && (
                                       <div className="flex items-center gap-1 mt-0.5">
                                         <AlertTriangle className="w-3 h-3 text-red-500" />
-                                        <span className="text-[10px] text-red-500 font-medium">
+                                        <span className="text-xs text-red-500 font-medium">
                                           Высокие возвраты:{" "}
                                           {product.refundRate.toFixed(1)}%
                                         </span>
@@ -1729,7 +1729,7 @@ export default function DashboardSummary() {
                         <div className="text-lg font-bold text-gray-900 dark:text-white">
                           {filteredData.topProducts.length}
                         </div>
-                        <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+                        <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
                           Всего товаров
                         </div>
                       </div>
@@ -1739,7 +1739,7 @@ export default function DashboardSummary() {
                         <div className="text-lg font-bold text-gray-900 dark:text-white">
                           {((totalRevenue / netSales) * 100).toFixed(0)}%
                         </div>
-                        <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+                        <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
                           Доля топ-10
                         </div>
                       </div>
@@ -1752,7 +1752,7 @@ export default function DashboardSummary() {
                               topProducts.reduce((s, p) => s + p.netQuantity, 0)
                           )}
                         </div>
-                        <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+                        <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
                           Ср. цена
                         </div>
                       </div>
@@ -1762,7 +1762,7 @@ export default function DashboardSummary() {
                         <div className="text-lg font-bold text-gray-900 dark:text-white">
                           {topProducts.reduce((s, p) => s + p.netQuantity, 0)}
                         </div>
-                        <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+                        <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
                           Продано шт
                         </div>
                       </div>

@@ -155,7 +155,7 @@ function AITileCard({
       onClick={onClick}
     >
       {showNonAiBadge ? (
-        <span className="absolute right-2 top-2 rounded-full bg-white/25 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/95 backdrop-blur">
+        <span className="absolute right-2 top-2 rounded-full bg-white/25 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-white/95 backdrop-blur">
           не AI
         </span>
       ) : null}
@@ -613,7 +613,7 @@ export function DashboardSummaryAiSection({
         <div className="text-xs text-gray-500 dark:text-gray-400">
           Риски, действия, прогноз и инциденты по сети и магазинам.
         </div>
-        <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {cloudflareAiStatus}
         </div>
       </div>

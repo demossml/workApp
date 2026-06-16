@@ -84,14 +84,14 @@ export const FinancialReportDetails: React.FC<FinancialReportDetailsProps> = ({
               </div>
               {expenseCategories.length > 0 && (
                 <div className="mt-2 rounded-md bg-white/60 dark:bg-gray-800/60 p-2">
-                  <div className="text-[11px] font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                     Детализация расходов
                   </div>
                   <div className="space-y-1">
                     {expenseCategories.map(([category, amount]) => (
                       <div
                         key={`${shopName}-${category}`}
-                        className="flex justify-between text-[11px] text-gray-700 dark:text-gray-300"
+                        className="flex justify-between text-xs text-gray-700 dark:text-gray-300"
                       >
                         <span>{category}</span>
                         <span className="font-medium">{fmt(amount)} ₽</span>

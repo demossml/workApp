@@ -28,7 +28,7 @@ export function StatCard({
 }: StatCardProps) {
   return (
     <Card className={cn("p-3", toneClass[tone], className)} {...props}>
-      <div className="text-[10px] sm:text-xs text-[var(--ui-color-muted)]">{label}</div>
+      <div className="text-xs sm:text-xs text-[var(--ui-color-muted)]">{label}</div>
       <div className="mt-1 text-sm sm:text-base font-semibold text-[var(--ui-color-text)]">
         {value}
       </div>

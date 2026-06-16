@@ -90,7 +90,7 @@ export function RevenueTempoCard({ salesDeltaPct, onClick, pace }: RevenueTempoC
               pace.status === "behind" ? "bg-red-400" : "bg-amber-400"
             }`} style={{ width: `${Math.min(pace.plan > 0 ? (pace.fact / pace.plan) * 100 : 0, 100)}%` }} />
           </div>
-          <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px] opacity-80">
+          <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-xs opacity-80">
             <span>План: {fmt(pace.plan)} ₽</span>
             <span>Прогноз: {fmt(pace.projected)} ₽</span>
             <span>Темп: {fmt(pace.rate)} ₽/ч</span>
@@ -446,7 +446,7 @@ export function RevenueTempoDetails({
           <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
             План-факт по часам
           </div>
-          <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 text-[11px] dark:border-gray-600 dark:bg-gray-700">
+          <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 text-xs dark:border-gray-600 dark:bg-gray-700">
             <button
               type="button"
               className={`rounded px-2 py-1 ${
@@ -483,7 +483,7 @@ export function RevenueTempoDetails({
           </div>
         </div>
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 text-[11px] dark:border-gray-600 dark:bg-gray-700">
+          <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 text-xs dark:border-gray-600 dark:bg-gray-700">
             <button
               type="button"
               className={`rounded px-2 py-1 ${
@@ -509,7 +509,7 @@ export function RevenueTempoDetails({
           </div>
           <button
             type="button"
-            className={`rounded border px-2 py-1 text-[11px] ${
+            className={`rounded border px-2 py-1 text-xs ${
               showGapSeries
                 ? "border-red-400 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/30 dark:text-red-200"
                 : "border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300"
@@ -520,7 +520,7 @@ export function RevenueTempoDetails({
           </button>
           <button
             type="button"
-            className={`rounded border px-2 py-1 text-[11px] ${
+            className={`rounded border px-2 py-1 text-xs ${
               showAccessoriesSeries
                 ? "border-fuchsia-400 bg-fuchsia-50 text-fuchsia-700 dark:border-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-200"
                 : "border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300"
@@ -572,7 +572,7 @@ export function RevenueTempoDetails({
           (tempoViewMode === "hours" || tempoViewMode === "detail") && (
           <div className="space-y-3">
             <div className="rounded bg-gray-50 p-2 dark:bg-gray-700">
-              <div className="mb-2 flex items-center gap-4 text-[11px] text-gray-500">
+              <div className="mb-2 flex items-center gap-4 text-xs text-gray-500">
                 <span className="inline-flex items-center gap-1">
                   <span className="h-2 w-2 rounded-full bg-blue-500" />
                   Факт {hourlyViewMode === "cumulative" ? "(кумулятивно)" : "(по часу)"}
@@ -643,7 +643,7 @@ export function RevenueTempoDetails({
                           />
                         )}
                       </div>
-                      <div className="text-[10px] text-gray-500">
+                      <div className="text-xs text-gray-500">
                         {criticalMinGapRow?.hour === row.hour || criticalMaxGapRow?.hour === row.hour
                           ? row.hour
                           : ""}
@@ -654,7 +654,7 @@ export function RevenueTempoDetails({
               </div>
             </div>
             <div className="space-y-1">
-              <div className="grid grid-cols-6 gap-2 border-b border-gray-200 pb-1 text-[11px] font-semibold text-gray-500 dark:border-gray-700 dark:text-gray-400">
+              <div className="grid grid-cols-6 gap-2 border-b border-gray-200 pb-1 text-xs font-semibold text-gray-500 dark:border-gray-700 dark:text-gray-400">
                 <div>Час</div>
                 <div className="text-blue-600 dark:text-blue-300">Факт</div>
                 <div className="text-slate-600 dark:text-slate-300">План общий</div>

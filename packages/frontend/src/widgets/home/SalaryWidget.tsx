@@ -101,7 +101,7 @@ export function SalaryWidget() {
         <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-sm p-4">
           <div className="text-center text-slate-400 dark:text-slate-500 py-2">
             <Info className="w-5 h-5 mx-auto mb-1 opacity-50" />
-            <div className="text-[11px]">{error || "Нет данных о зарплате"}</div>
+            <div className="text-xs">{error || "Нет данных о зарплате"}</div>
           </div>
         </div>
       </div>

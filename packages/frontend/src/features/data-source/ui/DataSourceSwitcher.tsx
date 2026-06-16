@@ -53,7 +53,7 @@ export function DataSourceSwitcher() {
         </button>
       </div>
       {updateModeMutation.error && (
-        <div className="mt-2 text-[11px] text-red-300">
+        <div className="mt-2 text-xs text-red-300">
           {updateModeMutation.error.message}
         </div>
       )}

@@ -112,7 +112,7 @@ export function StoreOpeningStatusWidget() {
               </div>
 
               {/* Status text */}
-              <div className="text-[10px] font-medium">
+              <div className="text-xs font-medium">
                 {shop.isOpenedToday ? (
                   <>
                     <span

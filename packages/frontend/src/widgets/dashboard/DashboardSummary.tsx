@@ -282,7 +282,7 @@ function OpeningPhotoDigestCard({
       <div className="text-xs leading-4 overflow-hidden">
         {error ? <span className="text-red-200">{error}</span> : subtitle}
       </div>
-      <div className="text-[11px] opacity-80">{title}</div>
+      <div className="text-xs opacity-80">{title}</div>
     </motion.div>
   );
 }
@@ -370,7 +370,7 @@ function AccessoriesDetails({
           {"Продажи"}
         </h2>
         <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 text-[11px] dark:border-gray-600 dark:bg-gray-700">
+          <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 text-xs dark:border-gray-600 dark:bg-gray-700">
             <button
               type="button"
               className={`rounded px-2 py-1 ${

@@ -43,7 +43,7 @@ export function ExpensesCard({
         </span>
         <ShoppingCart className="w-5 h-5 opacity-80" />
       </div>
-      <div className="mt-1 space-y-0.5 text-[11px] opacity-95">
+      <div className="mt-1 space-y-0.5 text-xs opacity-95">
         {previewShops.map(([shopName, amount]) => (
           <div key={shopName} className="flex justify-between">
             <span className="truncate pr-2">{shopName}</span>
@@ -51,10 +51,10 @@ export function ExpensesCard({
           </div>
         ))}
         {hiddenCount > 0 && (
-          <div className="text-[10px] opacity-80">+ ещё {hiddenCount}</div>
+          <div className="text-xs opacity-80">+ ещё {hiddenCount}</div>
         )}
         {previewShops.length === 0 && (
-          <div className="text-[10px] opacity-80">Нет данных</div>
+          <div className="text-xs opacity-80">Нет данных</div>
         )}
       </div>
     </motion.div>

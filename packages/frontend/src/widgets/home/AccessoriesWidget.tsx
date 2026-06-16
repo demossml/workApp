@@ -87,7 +87,7 @@ function AccDetails({ data, fullData, shopFilter, onShopFilterChange, shopOption
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-gray-900 dark:text-white">Продажи</h2>
         <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 text-[11px] dark:border-gray-600 dark:bg-gray-700">
+          <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 text-xs dark:border-gray-600 dark:bg-gray-700">
             <button className={`rounded px-2 py-1 ${productScope === "accessories" ? "bg-slate-700 text-white" : "text-gray-600 dark:text-gray-300"}`} onClick={() => onProductScopeChange("accessories")}>Акс.</button>
             <button className={`rounded px-2 py-1 ${productScope === "nonAccessories" ? "bg-slate-700 text-white" : "text-gray-600 dark:text-gray-300"}`} onClick={() => onProductScopeChange("nonAccessories")}>Не акс.</button>
           </div>

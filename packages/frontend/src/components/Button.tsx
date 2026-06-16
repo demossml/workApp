@@ -21,8 +21,8 @@ export const CashierButtons = () => (
       whileTap={{ scale: 0.98 }}
       transition={{ type: "spring", stiffness: 300 }}
     >
-      <Link to="/evotor/plan-for-today" className={buttonClass}>
-        План/продажи
+      <Link to="/" className={buttonClass}>
+        План продаж
       </Link>
     </motion.div>
     <motion.div

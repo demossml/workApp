@@ -199,8 +199,8 @@ export default function PhotoUpload({
 
                 {/* Футер */}
                 <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-2 text-white">
-                  <div className="text-[10px] truncate">{file.name}</div>
-                  <div className="text-[10px] opacity-80">
+                  <div className="text-xs truncate">{file.name}</div>
+                  <div className="text-xs opacity-80">
                     {(file.size / 1024 / 1024).toFixed(1)} MB
                   </div>
                 </div>

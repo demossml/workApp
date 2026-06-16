@@ -7,8 +7,8 @@ const ensureSchema = async (db: AppDB) => {
 
 	await db
 		.prepare(
-			"CREATE TABLE IF NOT EXISTS openingsReportCache (" +
-				"id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+						"CREATE TABLE IF NOT EXISTS openingsReportCache (" +
+							"id INTEGER PRIMARY KEY, " +
 				"startDate TEXT NOT NULL, " +
 				"endDate TEXT NOT NULL, " +
 				"payloadJson TEXT NOT NULL, " +

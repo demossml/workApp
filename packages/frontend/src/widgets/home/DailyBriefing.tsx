@@ -129,7 +129,7 @@ export function DailyBriefing() {
       }}
     >
       <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl p-4 shadow-lg text-white">
-        <div className="text-white/70 text-[11px] font-medium mb-0.5">
+        <div className="text-white/70 text-xs font-medium mb-0.5">
           {greeting}
         </div>
         <h2 className="text-lg font-bold mb-3 leading-tight">
@@ -146,7 +146,7 @@ export function DailyBriefing() {
             {chips.map((chip, i) => (
               <div
                 key={i}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium ${chip.color}`}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${chip.color}`}
               >
                 {chip.icon}
                 <span className="text-white/60">{chip.label}</span>
@@ -157,7 +157,7 @@ export function DailyBriefing() {
         )}
 
         {!todayShop && (
-          <div className="mt-2 text-white/50 text-[10px]">
+          <div className="mt-2 text-white/50 text-xs">
             Нет данных о сегодняшней смене
           </div>
         )}

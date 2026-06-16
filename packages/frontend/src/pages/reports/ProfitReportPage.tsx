@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { useGetShops } from "../../hooks/useApi";
 import { DynamicTableProfit } from "@widgets/reports";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { ReportHeader, ReportShareButton } from "@shared/ui";
 import { client } from "../../helpers/api";
 
 interface ReportData {
@@ -41,6 +42,8 @@ export default function ProfitReportPage() {
   const [loadingSnapshots, setLoadingSnapshots] = useState(false);
 
   useTelegramBackButton();
+
+  const reportRef = useRef<HTMLDivElement>(null);
 
   const formatMonthFromIso = (isoDate: string) => {
     const m = isoDate.match(/^(\d{4})-(\d{2})-/);
@@ -230,7 +233,7 @@ export default function ProfitReportPage() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
     >
-      <h1 className="text-2xl font-bold text-center mb-4">Отчет по прибыли</h1>
+      <ReportHeader title="Отчет по прибыли" />
 
       <div className="w-full mb-6 bg-white dark:bg-gray-800 rounded-md shadow-sm p-4">
         <div className="flex items-center justify-between mb-3">
@@ -358,7 +361,7 @@ export default function ProfitReportPage() {
 
       {/* Если отчет сформирован — показываем только его */}
       {report && (
-        <>
+        <div ref={reportRef}>
           <div className="flex gap-2 mb-3">
             <button
               type="button"
@@ -381,7 +384,8 @@ export default function ProfitReportPage() {
             </button>
           </div>
           <DynamicTableProfit report={report} shops={data?.shopsNameAndUuid} />
-        </>
+          <ReportShareButton targetRef={reportRef} filename={`profit-report-${selectedMonth}`} />
+        </div>
       )}
 
       {/* Добавь CSS для скрытия спиннеров */}

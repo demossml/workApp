@@ -1,26 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { DateRange } from "react-day-picker";
 import { motion } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
 import { client } from "../../helpers/api";
 import { Calendar, Popover, PopoverContent, PopoverTrigger } from "../../components/ui";
-
-type PaymentData = {
-  sell: Record<string, number>;
-  refund: Record<string, number>;
-  totalSell: number;
-};
-
-type ReportData = {
-  salesDataByShopName: Record<string, PaymentData>;
-  grandTotalSell: number;
-  grandTotaRefund: number;
-  grandTotaCashOutcome: number;
-  startDate: string;
-  endDate: string;
-  cashOutcomeData: Record<string, Record<string, number>>;
-  cash: Record<string, number>;
-};
+import { useSalesSummaryReport, type ReportData } from "../../hooks/useSalesSummaryReport";
+import { ReportHeader, ReportKPIBar, ReportShareButton } from "@shared/ui";
 
 const formatMoney = (value: number) =>
   `${value.toLocaleString("ru-RU", {
@@ -57,6 +42,8 @@ export default function SalesSummaryReport() {
   const [loading, setLoading] = useState(false);
 
   useTelegramBackButton();
+
+  const reportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const now = new Date();
@@ -115,76 +102,8 @@ export default function SalesSummaryReport() {
     }
   };
 
-  const analytics = useMemo(() => {
-    if (!reportData) return null;
+  const analytics = useSalesSummaryReport(reportData);
 
-    const allShopNames = Array.from(
-      new Set([
-        ...Object.keys(reportData.salesDataByShopName || {}),
-        ...Object.keys(reportData.cash || {}),
-        ...Object.keys(reportData.cashOutcomeData || {}),
-      ])
-    );
-
-    const shops = allShopNames.map((shopName) => {
-        const data = reportData.salesDataByShopName[shopName] || {
-          sell: {},
-          refund: {},
-          totalSell: 0,
-        };
-        const refunds = Object.values(data.refund).reduce((sum, v) => sum + v, 0);
-        const payouts = Object.values(reportData.cashOutcomeData[shopName] || {}).reduce(
-          (sum, v) => sum + v,
-          0
-        );
-        const cashBalance = reportData.cash[shopName] || 0;
-        return {
-          shopName,
-          totalSell: data.totalSell || 0,
-          refunds,
-          payouts,
-          netRevenue: (data.totalSell || 0) - refunds - payouts,
-          cashBalance,
-          sell: data.sell,
-          refund: data.refund,
-          cashOutcome: reportData.cashOutcomeData[shopName] || {},
-        };
-      });
-
-    shops.sort((a, b) => b.totalSell - a.totalSell);
-
-    const sumSellFromRows = shops.reduce((sum, row) => sum + row.totalSell, 0);
-    const sumRefundFromRows = shops.reduce((sum, row) => sum + row.refunds, 0);
-    const sumPayoutsFromRows = shops.reduce((sum, row) => sum + row.payouts, 0);
-    const cashTotal = Object.values(reportData.cash || {}).reduce(
-      (sum, value) => sum + Number(value || 0),
-      0
-    );
-    const netTotal = shops.reduce((sum, row) => sum + row.netRevenue, 0);
-
-    const diffSell = Math.abs(sumSellFromRows - (reportData.grandTotalSell || 0));
-    const diffRefund = Math.abs(
-      sumRefundFromRows - (reportData.grandTotaRefund || 0)
-    );
-    const diffPayouts = Math.abs(
-      sumPayoutsFromRows - (reportData.grandTotaCashOutcome || 0)
-    );
-
-    const hasConsistencyIssue = diffSell > 1 || diffRefund > 1 || diffPayouts > 1;
-
-    return {
-      shops,
-      sumSellFromRows,
-      sumRefundFromRows,
-      sumPayoutsFromRows,
-      cashTotal,
-      netTotal,
-      hasConsistencyIssue,
-      diffSell,
-      diffRefund,
-      diffPayouts,
-    };
-  }, [reportData]);
 
   if (loading) {
     return (
@@ -205,14 +124,10 @@ export default function SalesSummaryReport() {
         paddingBottom: "calc(var(--app-bottom-clearance) + 0.75rem)",
       }}
     >
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-slate-100">
-          Сводный финансовый отчёт
-        </h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-          Продажи, возвраты, выплаты и остаток наличных по магазинам
-        </p>
-      </div>
+      <ReportHeader
+        title="Сводный финансовый отчёт"
+        subtitle="Продажи, возвраты, выплаты и остаток наличных по магазинам"
+      />
 
       {!reportData && (
         <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-900/45 backdrop-blur-xl p-4 flex flex-col gap-4">
@@ -320,37 +235,17 @@ export default function SalesSummaryReport() {
       )}
 
       {reportData && analytics && (
-        <>
+        <div ref={reportRef}>
           <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-900/45 backdrop-blur-xl p-4 space-y-2">
             <p className="text-sm text-gray-600 dark:text-slate-300">
               Период: {reportData.startDate} - {reportData.endDate}
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div className="rounded-xl bg-gray-100 dark:bg-slate-800/80 p-3">
-                <div className="text-xs text-gray-500 dark:text-slate-400">Продажи</div>
-                <div className="text-base font-semibold text-gray-900 dark:text-white">
-                  {formatMoney(reportData.grandTotalSell || 0)}
-                </div>
-              </div>
-              <div className="rounded-xl bg-gray-100 dark:bg-slate-800/80 p-3">
-                <div className="text-xs text-gray-500 dark:text-slate-400">Возвраты</div>
-                <div className="text-base font-semibold text-gray-900 dark:text-white">
-                  {formatMoney(reportData.grandTotaRefund || 0)}
-                </div>
-              </div>
-              <div className="rounded-xl bg-gray-100 dark:bg-slate-800/80 p-3">
-                <div className="text-xs text-gray-500 dark:text-slate-400">Выплаты</div>
-                <div className="text-base font-semibold text-gray-900 dark:text-white">
-                  {formatMoney(reportData.grandTotaCashOutcome || 0)}
-                </div>
-              </div>
-              <div className="rounded-xl bg-gray-100 dark:bg-slate-800/80 p-3">
-                <div className="text-xs text-gray-500 dark:text-slate-400">Нетто (прод-возвр-выпл)</div>
-                <div className="text-base font-semibold text-gray-900 dark:text-white">
-                  {formatMoney(analytics.netTotal)}
-                </div>
-              </div>
-            </div>
+            <ReportKPIBar items={[
+              { label: "Продажи", value: formatMoney(reportData.grandTotalSell || 0), variant: "gray" },
+              { label: "Возвраты", value: formatMoney(reportData.grandTotaRefund || 0), variant: "gray" },
+              { label: "Выплаты", value: formatMoney(reportData.grandTotaCashOutcome || 0), variant: "gray" },
+              { label: "Нетто", value: formatMoney(analytics.netTotal), variant: "gray" },
+            ]} />
 
             {analytics.hasConsistencyIssue ? (
               <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
@@ -410,7 +305,8 @@ export default function SalesSummaryReport() {
             Наличные по всем магазинам:{" "}
             <span className="font-semibold text-gray-900 dark:text-white">{formatMoney(analytics.cashTotal)}</span>
           </div>
-        </>
+          <ReportShareButton targetRef={reportRef} filename={`sales-summary-${reportData?.startDate || "report"}`} />
+        </div>
       )}
     </motion.div>
   );

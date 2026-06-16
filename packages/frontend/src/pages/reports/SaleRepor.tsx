@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMe } from "../../hooks/useApi";
 import { motion } from "framer-motion";
@@ -16,6 +16,7 @@ import {
   GroupSelector,
   ShopSelector,
 } from "@widgets/reports";
+import { ReportHeader, ReportKPIBar, ReportShareButton } from "@shared/ui";
 
 interface GroupOption {
   name: string;
@@ -65,6 +66,8 @@ export default function SalesReport() {
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
 
   const isMiniApp = isTelegramMiniApp();
+
+  const reportRef = useRef<HTMLDivElement>(null);
 
   useTelegramBackButton();
 
@@ -423,24 +426,23 @@ export default function SalesReport() {
         transition={{ duration: 0.4, ease: "easeOut" }}
         className="app-page w-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col items-center"
         style={{
-          paddingTop: "calc(var(--app-top-clearance) + 0.5rem)",
+          paddingTop: "var(--app-top-clearance)",
           paddingBottom: "calc(var(--app-bottom-clearance) + 0.5rem)",
         }}
       >
         <motion.div
-          className="w-full max-w-6xl p-4 sm:p-6 space-y-4"
+          className="w-full max-w-6xl px-4 sm:px-6 pt-1 pb-4 space-y-3"
+          ref={reportRef}
           initial={{ opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3 }}
         >
-          <div className="rounded-2xl bg-white dark:bg-slate-900 p-4 sm:p-6 shadow-sm border border-slate-200/70 dark:border-slate-800">
+          <div className="rounded-2xl bg-white dark:bg-slate-900 p-3 sm:p-4 shadow-sm border border-slate-200/70 dark:border-slate-800 space-y-3">
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <h1 className="text-xl sm:text-2xl font-semibold">Отчёт по продажам</h1>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  {formatPeriod(shopName, startDate, endDate)}
-                </p>
-              </div>
+              <ReportHeader
+                title="Отчёт по продажам"
+                subtitle={formatPeriod(shopName, startDate, endDate)}
+              />
               <button
                 type="button"
                 onClick={() => {
@@ -453,24 +455,12 @@ export default function SalesReport() {
               </button>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="rounded-xl p-4 bg-gradient-to-br from-blue-600 to-blue-700 text-white">
-                <div className="text-xs opacity-85 mb-1">Выручка</div>
-                <div className="text-xl font-bold">{formatMoney(totalRevenue)} ₽</div>
-              </div>
-              <div className="rounded-xl p-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
-                <div className="text-xs opacity-85 mb-1">Продано, шт</div>
-                <div className="text-xl font-bold">{formatMoney(totalQuantity)}</div>
-              </div>
-              <div className="rounded-xl p-4 bg-gradient-to-br from-violet-500 to-indigo-600 text-white">
-                <div className="text-xs opacity-85 mb-1">SKU в отчете</div>
-                <div className="text-xl font-bold">{formatMoney(skuCount)}</div>
-              </div>
-              <div className="rounded-xl p-4 bg-gradient-to-br from-amber-500 to-orange-600 text-white">
-                <div className="text-xs opacity-85 mb-1">Среднее на SKU</div>
-                <div className="text-xl font-bold">{formatMoney(avgPerSku)} ₽</div>
-              </div>
-            </div>
+            <ReportKPIBar items={[
+              { label: "Выручка", value: `${formatMoney(totalRevenue)} ₽`, variant: "blue" },
+              { label: "Продано, шт", value: formatMoney(totalQuantity), variant: "green" },
+              { label: "SKU в отчете", value: formatMoney(skuCount), variant: "purple" },
+              { label: "Среднее на SKU", value: `${formatMoney(avgPerSku)} ₽`, variant: "amber" },
+            ]} />
           </div>
 
           <div className="flex-1 min-h-0 w-full">
@@ -492,16 +482,19 @@ export default function SalesReport() {
             </motion.div>
           )}
 
-          {/* AI Button */}
+          {/* Share + AI Buttons */}
           {!showAiInsights && (
-            <motion.button
-              onClick={runAiAnalysis}
-              className="mt-4 w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-xl font-medium hover:shadow-lg transition-all"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              Запустить AI-анализ
-            </motion.button>
+            <div className="space-y-2 mt-4">
+              <ReportShareButton targetRef={reportRef} filename={`sales-report-${startDate}`} />
+              <motion.button
+                onClick={runAiAnalysis}
+                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-xl font-medium hover:shadow-lg transition-all"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                Запустить AI-анализ
+              </motion.button>
+            </div>
           )}
         </motion.div>
       </motion.div>

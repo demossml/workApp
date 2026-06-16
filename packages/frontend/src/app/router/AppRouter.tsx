@@ -4,7 +4,7 @@ import { useDataSourceStore } from "@shared/model/dataSourceStore";
 
 const Settings = lazy(() => import("@/pages/reports/Settings"));
 const Home = lazy(() => import("@/pages/Home"));
-const PlanSalesReport = lazy(() => import("@/pages/reports/PlanSalesReport"));
+
 const SalesReport = lazy(() => import("@/pages/reports/SaleRepor"));
 const SalaryReports = lazy(() => import("@/pages/reports/SalaryReport"));
 const SalestReportForThePeriod = lazy(() => import("@/pages/reports/SalestReportForThePeriod"));
@@ -33,7 +33,7 @@ export function AppRouter() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/evotor/settings" element={<Settings />} />
-        <Route path="/evotor/plan-for-today" element={<PlanSalesReport />} />
+        <Route path="/evotor/plan-for-today" element={<Navigate to="/" replace />} />
         <Route path="/evotor/sales-report" element={<SalesReport />} />
         <Route path="/evotor/salary-report" element={<SalaryReports />} />
         <Route path="/evotor/sales-for-the-period" element={<SalestReportForThePeriod />} />

@@ -162,7 +162,7 @@ function LastUpdated() {
   const timeStr = lastOk ? lastOk.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--:--:--";
   return (
     <div className="text-center mt-6 mb-2">
-      <span className="text-[10px] text-gray-400 dark:text-gray-500">
+      <span className="text-xs text-gray-400 dark:text-gray-500">
         {fetching > 0 ? (
           <span className="inline-flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse" />Обновление...</span>
         ) : `Данные от ${timeStr}`}
@@ -206,7 +206,7 @@ function HomeTopBar({ queryClient }: { queryClient: QueryClient }) {
         </div>
         <div className="flex items-center gap-3">
           {!online && (
-            <span className="text-[10px] text-red-500 dark:text-red-400 font-medium">⚡ Офлайн</span>
+            <span className="text-xs text-red-500 dark:text-red-400 font-medium">⚡ Офлайн</span>
           )}
           <button
             onClick={handleRefresh}

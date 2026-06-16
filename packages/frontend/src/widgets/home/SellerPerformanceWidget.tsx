@@ -61,7 +61,7 @@ export function SellerPerformanceWidget() {
         >
           <div className="text-center text-gray-400 dark:text-gray-500">
             <Trophy className="w-4 h-4 mx-auto mb-0.5 opacity-30" />
-            <div className="text-[11px]">Нет данных за сегодня</div>
+            <div className="text-xs">Нет данных за сегодня</div>
           </div>
         </div>
       </div>
@@ -108,7 +108,7 @@ export function SellerPerformanceWidget() {
                 {/* Name · highlight */}
                 <span className="text-[13px] font-medium text-gray-800 dark:text-gray-200 truncate flex-1 leading-none">
                   {s.name.split(" ")[0]}
-                  <span className="text-[11px] font-normal text-gray-400 dark:text-gray-500 ml-1.5">
+                  <span className="text-xs font-normal text-gray-400 dark:text-gray-500 ml-1.5">
                     ·{" "}
                     {s.avgCheck >= s.targetAvgCheck
                       ? `чек ${s.avgCheck}₽`
@@ -126,7 +126,7 @@ export function SellerPerformanceWidget() {
                 {/* Rank delta */}
                 {s.deltaRank != null && s.deltaRank !== 0 && (
                   <span
-                    className={`text-[10px] font-semibold shrink-0 ${
+                    className={`text-xs font-semibold shrink-0 ${
                       s.deltaRank > 0
                         ? "text-emerald-500"
                         : "text-red-500"

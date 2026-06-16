@@ -93,7 +93,7 @@ export function QuickActionsWidget({ employeeRole }: QuickActionsWidgetProps) {
             >
               {/* Badge */}
               {badge && (
-                <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold shadow-md ring-2 ring-white dark:ring-gray-800">
+                <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold shadow-md ring-2 ring-white dark:ring-gray-800">
                   {badge}
                 </span>
               )}
@@ -106,7 +106,7 @@ export function QuickActionsWidget({ employeeRole }: QuickActionsWidgetProps) {
                     {action.description}
                   </div>
                   {isDisabled && (
-                    <div className="text-[11px] mt-1 opacity-90">
+                    <div className="text-xs mt-1 opacity-90">
                       Недоступно при работе через Elvator
                     </div>
                   )}

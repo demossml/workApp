@@ -54,7 +54,7 @@ export function AlertCard({
   return (
     <Card className={cn("p-3", style.card, className)} {...props}>
       <div className="flex items-center justify-between gap-2">
-        <div className={cn("text-[10px] sm:text-xs font-semibold uppercase tracking-wide", style.title)}>
+        <div className={cn("text-xs sm:text-xs font-semibold uppercase tracking-wide", style.title)}>
           {title}
         </div>
         <Badge tone={style.badgeTone}>{severity}</Badge>

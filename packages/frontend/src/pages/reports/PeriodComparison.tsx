@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTelegramBackButton } from "../../hooks/useSimpleTelegramBackButton";
+import { ReportHeader } from "@shared/ui";
 import { client } from "../../helpers/api";
 import { LoadingState } from "@shared/ui/states/LoadingState";
 import { ChevronDown } from "lucide-react";
@@ -66,8 +67,8 @@ export default function PeriodComparisonPage() {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pb-24">
       {/* Header */}
       <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 py-4">
-        <h1 className="text-lg font-bold mb-3">Сравнение периодов</h1>
-        <div className="flex gap-2">
+        <ReportHeader title="Сравнение периодов" />
+        <div className="flex gap-2 mt-3">
           {[
             { d: 1, label: "День" },
             { d: 7, label: "Неделя" },
@@ -98,19 +99,19 @@ export default function PeriodComparisonPage() {
           <div className="text-xs text-gray-500 mb-1">Выручка</div>
           <div className="text-lg font-bold">{formatRub(t.revenue.current)}</div>
           <Delta value={t.revenue.change} />
-          <div className="text-[10px] text-gray-400 mt-1">{formatRub(t.revenue.previous)} пред.</div>
+          <div className="text-xs text-gray-400 mt-1">{formatRub(t.revenue.previous)} пред.</div>
         </div>
         <div className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 text-center">
           <div className="text-xs text-gray-500 mb-1">Чеки</div>
           <div className="text-lg font-bold">{t.checks.current} шт</div>
           <Delta value={t.checks.change} />
-          <div className="text-[10px] text-gray-400 mt-1">{t.checks.previous} шт пред.</div>
+          <div className="text-xs text-gray-400 mt-1">{t.checks.previous} шт пред.</div>
         </div>
         <div className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 text-center">
           <div className="text-xs text-gray-500 mb-1">Средний чек</div>
           <div className="text-lg font-bold">{formatRub(avgCheck)}</div>
           <Delta value={avgCheckChange} />
-          <div className="text-[10px] text-gray-400 mt-1">{formatRub(prevAvgCheck)} пред.</div>
+          <div className="text-xs text-gray-400 mt-1">{formatRub(prevAvgCheck)} пред.</div>
         </div>
       </div>
 

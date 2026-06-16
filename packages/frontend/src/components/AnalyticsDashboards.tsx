@@ -97,7 +97,7 @@ export default function AnalyticsDashboards({
 					</select>
 				</div>
 			</div>
-			<div className="text-[11px] text-gray-500 dark:text-gray-400">
+			<div className="text-xs text-gray-500 dark:text-gray-400">
 				Фильтр магазина применяется к разделу Business.
 			</div>
 			{readOnly && (

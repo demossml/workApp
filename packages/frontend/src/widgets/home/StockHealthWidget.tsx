@@ -34,7 +34,7 @@ function ErrorTile({ message, onRetry }: { message: string; onRetry: () => void 
     <div className="mb-4 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 p-4">
       <div className="text-center">
         <p className="text-sm text-red-700 dark:text-red-300 mb-1">Ошибка загрузки</p>
-        <p className="text-[10px] text-red-500 dark:text-red-400 mb-3">{message}</p>
+        <p className="text-xs text-red-500 dark:text-red-400 mb-3">{message}</p>
         <button
           onClick={onRetry}
           className="px-4 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition"
@@ -54,7 +54,7 @@ function EmptyState() {
       <div className="text-center py-4">
         <div className="text-2xl mb-1">✅</div>
         <p className="text-sm text-gray-500 dark:text-gray-400">Мёртвого стока нет</p>
-        <p className="text-[10px] text-gray-400 dark:text-gray-500">Все товары продаются</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">Все товары продаются</p>
       </div>
     </div>
   );
@@ -238,7 +238,7 @@ export function StockHealthWidget() {
           <div className="text-xs text-gray-500 dark:text-gray-400">
             Мёртвый сток
             {selectedShop !== "all" && deadCount !== totalDead && (
-              <span className="text-[10px] ml-0.5">({deadCount})</span>
+              <span className="text-xs ml-0.5">({deadCount})</span>
             )}
           </div>
         </button>
@@ -262,7 +262,7 @@ export function StockHealthWidget() {
           <div className="text-xs text-gray-500 dark:text-gray-400">
             Заканчиваются
             {selectedShop !== "all" && lowCount !== totalLow && (
-              <span className="text-[10px] ml-0.5">({lowCount})</span>
+              <span className="text-xs ml-0.5">({lowCount})</span>
             )}
           </div>
         </button>
@@ -286,7 +286,7 @@ export function StockHealthWidget() {
           <div className="text-xs text-gray-500 dark:text-gray-400">
             Нет в наличии
             {selectedShop !== "all" && oosCount !== totalOOS && (
-              <span className="text-[10px] ml-0.5">({oosCount})</span>
+              <span className="text-xs ml-0.5">({oosCount})</span>
             )}
           </div>
         </button>
@@ -319,7 +319,7 @@ export function StockHealthWidget() {
             </div>
             <div className="flex items-center gap-2">
               <select
-                className="rounded-md border border-gray-300 bg-white px-1 py-0.5 text-[10px] text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                className="rounded-md border border-gray-300 bg-white px-1 py-0.5 text-xs text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
                 value={deadDays}
                 onChange={(e) => setDeadDays(Number(e.target.value))}
               >
@@ -328,7 +328,7 @@ export function StockHealthWidget() {
                 <option value={60}>60 дн</option>
               </select>
               {transferCount > 0 && (
-                <label className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+                <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={onlyTransfers}
@@ -362,7 +362,7 @@ export function StockHealthWidget() {
                       </span>
                     </div>
                     {transfer && (
-                      <div className="text-[10px] text-purple-600 dark:text-purple-400 mt-0.5 pl-1">
+                      <div className="text-xs text-purple-600 dark:text-purple-400 mt-0.5 pl-1">
                         ← Из <strong>{item.shopName}</strong> → в <strong>{transfer.toShopName}</strong>
                         {" — "}
                         продано {transfer.soldQty14d} шт за {deadDays} дн, осталось{" "}
@@ -378,7 +378,7 @@ export function StockHealthWidget() {
           {displayDead.length > 0 && (
             <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
               {exportUrl ? (
-                <div className="text-[10px] text-green-600 dark:text-green-400 break-all">
+                <div className="text-xs text-green-600 dark:text-green-400 break-all">
                   <a href={exportUrl} target="_blank" rel="noopener" className="underline">
                     Открыть отчёт
                   </a>

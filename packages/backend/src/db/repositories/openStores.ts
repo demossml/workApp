@@ -7,8 +7,8 @@ async function ensureOpenStorsSchema(db: AppDB): Promise<void> {
 
 	await db
 		.prepare(
-			"CREATE TABLE IF NOT EXISTS openStors (" +
-				"id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+						"CREATE TABLE IF NOT EXISTS openStors (" +
+							"id INTEGER PRIMARY KEY, " +
 				"date TEXT NOT NULL, " +
 				"userId TEXT NOT NULL, " +
 				"shopUuid TEXT, " +

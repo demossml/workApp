@@ -77,7 +77,7 @@ export function TopProductCard({
       <div className="text-xl font-bold mt-1 flex items-center gap-2">
         <span>{metricFormatted(product, metricMode)}</span>
         <span
-          className={`inline-flex items-center gap-0.5 text-[11px] ${
+          className={`inline-flex items-center gap-0.5 text-xs ${
             trendUp ? "text-emerald-100" : "text-rose-100"
           }`}
         >

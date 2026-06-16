@@ -156,13 +156,13 @@ export const TopProductsDetails: React.FC<TopProductsDetailsProps> = ({
                   </div>
                 </div>
               </div>
-              <div className="mb-1 text-[11px] text-gray-500 dark:text-gray-400 flex flex-wrap gap-2">
+              <div className="mb-1 text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-2">
                 <span>маржа: {product.marginPct.toFixed(1)}%</span>
                 <span>шт: {Math.round(product.netQuantity)}</span>
                 <span>доля: {totalRevenue > 0 ? ((product.netRevenue / totalRevenue) * 100).toFixed(1) : "0.0"}%</span>
                 <span>возвраты: {product.refundRate.toFixed(1)}%</span>
               </div>
-              <div className="mb-2 flex items-center justify-between text-[11px]">
+              <div className="mb-2 flex items-center justify-between text-xs">
                 <span className="text-gray-500 dark:text-gray-400">
                   Доля в топ-10:{" "}
                   <span className="font-medium text-gray-700 dark:text-gray-300">
@@ -206,7 +206,7 @@ export const TopProductsDetails: React.FC<TopProductsDetailsProps> = ({
           <div className="text-lg font-bold text-gray-900 dark:text-white">
             {topProducts.length}
           </div>
-          <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+          <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
             Всего товаров
           </div>
         </div>
@@ -220,7 +220,7 @@ export const TopProductsDetails: React.FC<TopProductsDetailsProps> = ({
             ).toFixed(0)}
             %
           </div>
-          <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+          <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
             Доля топ-10
           </div>
         </div>
@@ -229,7 +229,7 @@ export const TopProductsDetails: React.FC<TopProductsDetailsProps> = ({
           <div className="text-lg font-bold text-gray-900 dark:text-white">
             {formatCurrency(avgPrice)}
           </div>
-          <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+          <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
             Ср. цена
           </div>
         </div>
@@ -238,7 +238,7 @@ export const TopProductsDetails: React.FC<TopProductsDetailsProps> = ({
           <div className="text-lg font-bold text-gray-900 dark:text-white">
             {totalQuantity}
           </div>
-          <div className="text-[10px] uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
+          <div className="text-xs uppercase tracking-wider font-medium text-gray-500 dark:text-gray-400">
             Продано шт
           </div>
         </div>
