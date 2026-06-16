@@ -1,4 +1,3 @@
-export * from "./ai-director";
 export * from "./dashboard";
 export * from "./deadstock";
 export * from "./home";
