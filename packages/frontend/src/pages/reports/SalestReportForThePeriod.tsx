@@ -206,16 +206,16 @@ export default function SalesSummaryReport() {
       }}
     >
       <div className="text-center">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-100">
+        <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-slate-100">
           Сводный финансовый отчёт
         </h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
           Продажи, возвраты, выплаты и остаток наличных по магазинам
         </p>
       </div>
 
       {!reportData && (
-        <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4 flex flex-col gap-4">
+        <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-900/45 backdrop-blur-xl p-4 flex flex-col gap-4">
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => setDateMode("today")}
@@ -312,7 +312,7 @@ export default function SalesSummaryReport() {
             Сгенерировать отчёт
           </button>
           {error && (
-            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-300">
               {error}
             </div>
           )}
@@ -321,46 +321,46 @@ export default function SalesSummaryReport() {
 
       {reportData && analytics && (
         <>
-          <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4 space-y-2">
-            <p className="text-sm text-slate-300">
+          <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-900/45 backdrop-blur-xl p-4 space-y-2">
+            <p className="text-sm text-gray-600 dark:text-slate-300">
               Период: {reportData.startDate} - {reportData.endDate}
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div className="rounded-xl bg-slate-800/80 p-3">
-                <div className="text-xs text-slate-400">Продажи</div>
-                <div className="text-base font-semibold text-white">
+              <div className="rounded-xl bg-gray-100 dark:bg-slate-800/80 p-3">
+                <div className="text-xs text-gray-500 dark:text-slate-400">Продажи</div>
+                <div className="text-base font-semibold text-gray-900 dark:text-white">
                   {formatMoney(reportData.grandTotalSell || 0)}
                 </div>
               </div>
-              <div className="rounded-xl bg-slate-800/80 p-3">
-                <div className="text-xs text-slate-400">Возвраты</div>
-                <div className="text-base font-semibold text-white">
+              <div className="rounded-xl bg-gray-100 dark:bg-slate-800/80 p-3">
+                <div className="text-xs text-gray-500 dark:text-slate-400">Возвраты</div>
+                <div className="text-base font-semibold text-gray-900 dark:text-white">
                   {formatMoney(reportData.grandTotaRefund || 0)}
                 </div>
               </div>
-              <div className="rounded-xl bg-slate-800/80 p-3">
-                <div className="text-xs text-slate-400">Выплаты</div>
-                <div className="text-base font-semibold text-white">
+              <div className="rounded-xl bg-gray-100 dark:bg-slate-800/80 p-3">
+                <div className="text-xs text-gray-500 dark:text-slate-400">Выплаты</div>
+                <div className="text-base font-semibold text-gray-900 dark:text-white">
                   {formatMoney(reportData.grandTotaCashOutcome || 0)}
                 </div>
               </div>
-              <div className="rounded-xl bg-slate-800/80 p-3">
-                <div className="text-xs text-slate-400">Нетто (прод-возвр-выпл)</div>
-                <div className="text-base font-semibold text-white">
+              <div className="rounded-xl bg-gray-100 dark:bg-slate-800/80 p-3">
+                <div className="text-xs text-gray-500 dark:text-slate-400">Нетто (прод-возвр-выпл)</div>
+                <div className="text-base font-semibold text-gray-900 dark:text-white">
                   {formatMoney(analytics.netTotal)}
                 </div>
               </div>
             </div>
 
             {analytics.hasConsistencyIssue ? (
-              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
                 Проверка данных: есть расхождения между итогами и детализацией.
                 Продажи Δ {analytics.diffSell.toFixed(2)}, возвраты Δ{" "}
                 {analytics.diffRefund.toFixed(2)}, выплаты Δ{" "}
                 {analytics.diffPayouts.toFixed(2)}.
               </div>
             ) : (
-              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-200">
                 Проверка данных: итоги совпадают с детализацией по магазинам.
               </div>
             )}
@@ -370,7 +370,7 @@ export default function SalesSummaryReport() {
                 setReportData(null);
                 setError(null);
               }}
-              className="text-sm text-blue-400 hover:text-blue-300"
+              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
             >
               Сформировать новый отчёт
             </button>
@@ -380,35 +380,35 @@ export default function SalesSummaryReport() {
             {analytics.shops.map((shop) => (
               <div
                 key={shop.shopName}
-                className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4"
+                className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-900/45 backdrop-blur-xl p-4"
               >
                 <div className="flex items-center justify-between">
-                  <h3 className="text-base font-semibold text-white">{shop.shopName}</h3>
-                  <span className="text-sm text-slate-300">
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">{shop.shopName}</h3>
+                  <span className="text-sm text-gray-600 dark:text-slate-300">
                     Нетто: {formatMoney(shop.netRevenue)}
                   </span>
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                  <div className="rounded-lg bg-slate-800/70 p-2 text-slate-300">
-                    Продажи: <span className="text-white">{formatMoney(shop.totalSell)}</span>
+                  <div className="rounded-lg bg-gray-50 dark:bg-slate-800/70 p-2 text-gray-600 dark:text-slate-300">
+                    Продажи: <span className="text-gray-900 dark:text-white">{formatMoney(shop.totalSell)}</span>
                   </div>
-                  <div className="rounded-lg bg-slate-800/70 p-2 text-slate-300">
-                    Возвраты: <span className="text-white">{formatMoney(shop.refunds)}</span>
+                  <div className="rounded-lg bg-gray-50 dark:bg-slate-800/70 p-2 text-gray-600 dark:text-slate-300">
+                    Возвраты: <span className="text-gray-900 dark:text-white">{formatMoney(shop.refunds)}</span>
                   </div>
-                  <div className="rounded-lg bg-slate-800/70 p-2 text-slate-300">
-                    Выплаты: <span className="text-white">{formatMoney(shop.payouts)}</span>
+                  <div className="rounded-lg bg-gray-50 dark:bg-slate-800/70 p-2 text-gray-600 dark:text-slate-300">
+                    Выплаты: <span className="text-gray-900 dark:text-white">{formatMoney(shop.payouts)}</span>
                   </div>
-                  <div className="rounded-lg bg-slate-800/70 p-2 text-slate-300">
-                    Нал. в кассе (текущий остаток): <span className="text-white">{formatMoney(shop.cashBalance)}</span>
+                  <div className="rounded-lg bg-gray-50 dark:bg-slate-800/70 p-2 text-gray-600 dark:text-slate-300">
+                    Нал. в кассе (текущий остаток): <span className="text-gray-900 dark:text-white">{formatMoney(shop.cashBalance)}</span>
                   </div>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-slate-900/45 backdrop-blur-xl p-4 text-sm text-slate-300">
+          <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-900/45 backdrop-blur-xl p-4 text-sm text-gray-600 dark:text-slate-300">
             Наличные по всем магазинам:{" "}
-            <span className="font-semibold text-white">{formatMoney(analytics.cashTotal)}</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{formatMoney(analytics.cashTotal)}</span>
           </div>
         </>
       )}
