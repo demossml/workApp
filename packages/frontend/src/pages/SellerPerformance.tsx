@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronDown, ChevronUp, ArrowLeft, TrendingUp, TrendingDown,
@@ -17,6 +17,7 @@ import {
   type DowData,
 } from "@/hooks/dashboard/useSellerEffectiveness";
 import { useSellerEffectiveness } from "@/hooks/dashboard/useSellerEffectiveness";
+import { ReportKPIBar, ReportShareButton } from "@shared/ui";
 
 // ====== Helpers ======
 
@@ -1106,6 +1107,8 @@ export default function SellerPerformancePage() {
   const dowData = data?.dowData ?? [];
   const hypotheses = data?.hypotheses ?? [];
 
+  const pageRef = useRef<HTMLDivElement>(null);
+
   const activeSellers = sellers.filter(s => {
     if (s.daysWorked < 10) return false;
     if (storeFilter === "all") return true;
@@ -1116,6 +1119,14 @@ export default function SellerPerformancePage() {
   });
 
   const selected = sellers.find(s => s.uuid === selectedSeller) || null;
+
+  const kpiItems = [
+    { label: "Общая выручка", value: fmtRub(snapshot.totalRevenue), variant: "green" as const },
+    { label: "Ср. выручка/день", value: fmtRub(snapshot.avgDailyRev), variant: "blue" as const },
+    { label: "Средний чек", value: `${snapshot.avgCheck} ₽`, variant: "purple" as const },
+    { label: "Всего смен", value: String(snapshot.totalShifts), variant: "amber" as const },
+    { label: "Активны сегодня", value: String(snapshot.activeToday), variant: "gray" as const },
+  ];
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -1193,12 +1204,12 @@ export default function SellerPerformancePage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 p-3 sm:p-4 space-y-3 sm:space-y-4 max-w-5xl mx-auto w-full pb-24">
+      <div ref={pageRef} className="flex-1 p-3 sm:p-4 space-y-3 sm:space-y-4 max-w-5xl mx-auto w-full pb-24">
         {/* Critical Alerts */}
         <CriticalAlerts sellers={sellers} />
 
         {/* KPI Cards */}
-        <KpiCards snapshot={snapshot} prevSnapshot={prevSnapshot} />
+        <ReportKPIBar items={kpiItems} />
 
         {/* Store Comparison */}
         <div>
@@ -1276,6 +1287,8 @@ export default function SellerPerformancePage() {
 
         {/* Insights & Alerts */}
         <Insights sellers={activeSellers} />
+
+        <ReportShareButton targetRef={pageRef} filename="seller-performance" />
       </div>
 
       {/* Seller Detail Modal */}
