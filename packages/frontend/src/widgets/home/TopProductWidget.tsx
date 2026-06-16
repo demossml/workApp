@@ -4,8 +4,7 @@ import { useEmployeeRole } from "@/hooks/useApi";
 import { useCurrentWorkShop } from "@/hooks/useCurrentWorkShop";
 import { TopProductCard, type TopProductMetricMode, type TopProductRefundFilter } from "@/widgets/dashboard/cards/TopProductCard";
 import { TopProductsDetails } from "@/widgets/dashboard/cards/TopProductsDetails";
-import { LoadingTile, EmptyTile } from "./widgetUtils";
-import { Package } from "lucide-react";
+import { SkeletonCard, EmptyTile } from "./widgetUtils";
 
 interface Props { since: string; until: string; expanded: boolean; onToggle: () => void }
 
@@ -20,7 +19,7 @@ export function TopProductWidget({ since, until, expanded, onToggle }: Props) {
   const metricMode: TopProductMetricMode = "revenue";
   const refundFilter: TopProductRefundFilter = "all";
 
-  if (loading || !filtered) return <LoadingTile title="Топ продукт" Icon={Package} tone="pink" />;
+  if (loading || !filtered) return <SkeletonCard tone="pink" />;
   if (!filtered.topProducts?.length) return <EmptyTile title="Топ продукт" Icon={Package} />;
 
   return (

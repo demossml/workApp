@@ -42,9 +42,7 @@ export default function Home() {
     setExpanded((prev) => (prev === key ? null : key));
   }, []);
 
-  if (isLoading || error) {
-    // Show skeleton tiles while role loads or on error with retry
-    if (error) return <ErrorState error={error.message} />;
+  if (isLoading) {
     return (
       <div className="flex flex-col items-center w-full min-h-screen bg-gray-100 dark:bg-gray-900 pt-20 sm:pt-24 px-4 sm:px-6 pb-24">
         <div className="w-full max-w-7xl space-y-4">
@@ -54,8 +52,12 @@ export default function Home() {
     );
   }
 
-  if (!data?.employeeRole || data.employeeRole === "null") {
-    const shouldShowManualIdInput = !miniApp || data?.employeeRole === "null";
+  // Auth error (401) or no role → show login form
+  if (error || !data?.employeeRole || data.employeeRole === "null") {
+    // Always show manual login when unauthenticated — even in Telegram
+    // context, because initData may be from a different bot than the one
+    // configured for backend validation.
+    const shouldShowManualIdInput = true;
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 p-4 sm:p-6">
         <h1 className="mb-4 text-lg sm:text-xl md:text-2xl text-gray-800 dark:text-gray-100 font-bold">

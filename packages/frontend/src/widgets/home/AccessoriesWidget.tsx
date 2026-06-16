@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Cherry } from "lucide-react";
 import { useAccessoriesSales, type AccessoriesSalesData } from "@/hooks/dashboard/useAccessoriesSales";
 import { useEmployeeRole, useMe } from "@/hooks/useApi";
-import { LoadingTile } from "./widgetUtils";
+import { SkeletonCard } from "./widgetUtils";
 import { buildAccessoriesSummaryStats } from "@features/dashboard/model/dashboardSummaryModel";
 
 interface Props { since: string; until: string; expanded: boolean; onToggle: () => void }
@@ -147,7 +147,7 @@ export function AccessoriesWidget({ since, until, expanded, onToggle }: Props) {
     return list.reduce((s: number, i: any) => s + i.sum, 0);
   }, [filtered, scope]);
 
-  if (loading) return <LoadingTile title="Аксессуары" Icon={Cherry} tone="cyan" />;
+  if (loading) return <SkeletonCard tone="cyan" />;
   if (error) return <div className="text-red-500 text-sm p-2">Ошибка: {error}</div>;
   if (!data?.total?.length) return null;
 

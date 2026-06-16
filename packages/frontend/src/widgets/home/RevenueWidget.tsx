@@ -6,8 +6,7 @@ import { useCurrentWorkShop } from "@/hooks/useCurrentWorkShop";
 import { RevenueCard } from "@/widgets/dashboard/cards/RevenueCard";
 import { RevenueDetailsAdmin } from "@/widgets/dashboard/cards/RevenueDetailsAdmin";
 import { RevenueDetailsUser } from "@/widgets/dashboard/cards/RevenueDetailsUser";
-import { LoadingTile } from "./widgetUtils";
-import { DollarSign } from "lucide-react";
+import { SkeletonCard } from "./widgetUtils";
 
 interface Props { since: string; until: string; expanded: boolean; onToggle: () => void }
 
@@ -21,7 +20,7 @@ export function RevenueWidget({ since, until, expanded, onToggle }: Props) {
   const filtered = useFilteredSalesData(data, isSuperAdmin, ws ?? null);
   const { netSales } = useSalesCalculations(filtered);
 
-  if (loading || !filtered) return <LoadingTile title="Выручка" Icon={DollarSign} tone="blue" />;
+  if (loading || !filtered) return <SkeletonCard tone="blue" />;
   if (error) return <div className="text-red-500 text-sm p-2">Ошибка: {error}</div>;
 
   return (

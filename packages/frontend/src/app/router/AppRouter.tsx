@@ -13,7 +13,6 @@ const QuantityTableProps = lazy(() => import("@/pages/reports/QuantityTable"));
 const StoreOpeningReport = lazy(() => import("@/pages/reports/StoreOpeningReport"));
 const ProfitReportPage = lazy(() => import("@/pages/reports/ProfitReportPage"));
 const StaffRatingsReport = lazy(() => import("@/pages/reports/StaffRatingsReport"));
-const SalaryReport = lazy(() => import("@/pages/reports/SalaryReport"));
 const SalesTodayReport = lazy(() => import("@/pages/reports/SalesTodayReport"));
 const SchedulesReport = lazy(() => import("@/pages/reports/SchedulesReport"));
 const StoreOpeningPage = lazy(() => import("@/pages/opening/StoreOpeningPage"));
@@ -44,7 +43,7 @@ export function AppRouter() {
         <Route path="/evotor/store-openings-admin" element={<StoreOpeningsAdminReport />} />
         <Route path="/evotor/profit" element={<ProfitReportPage />} />
         <Route path="/evotor/staff-analysis" element={<StaffRatingsReport />} />
-        <Route path="/evotor/salary-user-report" element={<SalaryReport />} />
+        <Route path="/evotor/salary-user-report" element={<Navigate to="/evotor/salary-report" replace />} />
         <Route path="/evotor/sales-today" element={<SalesTodayReport />} />
         <Route path="/evotor/schedules" element={<SchedulesReport />} />
         <Route path="/evotor/open-store" element={<StoreOpeningPage />} />

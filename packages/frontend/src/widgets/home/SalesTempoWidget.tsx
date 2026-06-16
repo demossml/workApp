@@ -6,8 +6,7 @@ import { RevenueTempoCard } from "@/widgets/dashboard/cards/RevenueTempoCard";
 import { RevenueTempoDetails } from "@/widgets/dashboard/cards/RevenueTempoCard";
 import { useAccessoriesSales } from "@/hooks/dashboard/useAccessoriesSales";
 import { useMe } from "@/hooks/useApi";
-import { LoadingTile } from "./widgetUtils";
-import { DollarSign } from "lucide-react";
+import { SkeletonCard } from "./widgetUtils";
 
 interface Props { since: string; until: string; expanded: boolean; onToggle: () => void }
 
@@ -32,7 +31,7 @@ export function SalesTempoWidget({ since, until, expanded, onToggle }: Props) {
 
   const accessories = useAccessoriesSales({ role: role?.employeeRole || "CASHIER", userId: me.data?.id ?? "", since, until, enabled: expanded });
 
-  if (loading || !filtered) return <LoadingTile title="Темп продаж" Icon={DollarSign} tone="indigo" />;
+  if (loading || !filtered) return <SkeletonCard tone="indigo" />;
 
   const salesDeltaPct = prevFiltered?.netRevenue
     ? Math.round(((filtered.netRevenue - prevFiltered.netRevenue) / prevFiltered.netRevenue) * 100) : 0;

@@ -4,8 +4,7 @@ import { useEmployeeRole } from "@/hooks/useApi";
 import { useCurrentWorkShop } from "@/hooks/useCurrentWorkShop";
 import { ExpensesCard } from "@/widgets/dashboard/cards/ExpensesCard";
 import { FinancialReportDetails } from "@/widgets/dashboard/cards/FinancialReportDetails";
-import { LoadingTile } from "./widgetUtils";
-import { ShoppingCart } from "lucide-react";
+import { SkeletonCard } from "./widgetUtils";
 
 interface Props { since: string; until: string; expanded: boolean; onToggle: () => void }
 
@@ -18,7 +17,7 @@ export function FinanceWidget({ since, until, expanded, onToggle }: Props) {
   const { data, loading, error } = useSalesData({ since, until, shopUuid, enabled: true });
   const filtered = useFilteredSalesData(data, isSuperAdmin, ws ?? null);
 
-  if (loading || !filtered) return <LoadingTile title="Фин. отчёт" Icon={ShoppingCart} tone="orange" />;
+  if (loading || !filtered) return <SkeletonCard tone="orange" />;
   if (error) return <div className="text-red-500 text-sm p-2">Ошибка: {error}</div>;
 
   return (
