@@ -854,6 +854,8 @@ async function loadFinancialDataByMode(input: {
 
 export const evotorRoutes = new Hono<IEnv>()
 
+
+	// ═══════════════════ REPORTS: sales-today ═══════════════════
 	.get("/sales-today", async (c) => {
 		const mode = await getDataModeOrDefault(c.env);
 		const salesData = await c.var.evotor.getSalesToday(c.get("db"));
@@ -866,6 +868,8 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 
 	.get("/current-work-shop", async (c) => {
+
+	// ═══════════════════ OPERATIONS: current-work-shop ═══════════════════
 		const mode = await getDataModeOrDefault(c.env);
 		try {
 			const userId =
@@ -985,6 +989,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.get("/working-by-shops", async (c) => {
+
+	// ═══════════════════ OPERATIONS: working-by-shops ═══════════════════
 		const mode = await getDataModeOrDefault(c.env);
 		try {
 			const evo = c.var.evotor;
@@ -1070,6 +1076,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.get("/sales-today-graf", async (c) => {
+
+	// ═══════════════════ REPORTS: sales-today-graf ═══════════════════
 		const mode = await getDataModeOrDefault(c.env);
 		const db = c.get("db");
 		const evo = c.var.evotor;
@@ -1104,6 +1112,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		});
 	})
 	.post("/accessoriesSales/:role/:userId", async (c) => {
+
+	// ═══════════════════ ACCESSORIES: accessoriesSales ═══════════════════
 		try {
 			const db = c.get("db");
 			const evo = c.var.evotor;
@@ -1377,6 +1387,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.post("/generate-pdf", async (c) => {
+
+	// ═══════════════════ UTILS: generate-pdf ═══════════════════
 		try {
 			const chatId = c.var.userId || c.req.header("telegram-id") || "";
 			if (!chatId) {
@@ -1513,6 +1525,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.get("/plan-for-today", async (c) => {
+
+	// ═══════════════════ REPORTS: plan-for-today ═══════════════════
 		try {
 			interface SalesData {
 				[shopName: string]: {
@@ -1723,6 +1737,8 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 	// ── Share report image ──
 	.post("/share-report", async (c) => {
+
+	// ═══════════════════ OPERATIONS: share-report ═══════════════════
 		try {
 			const formData = await c.req.formData();
 			const file = formData.get("file") as File | null;
@@ -1745,6 +1761,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.get("/share/:id", async (c) => {
+
+	// ═══════════════════ OPERATIONS: share/:id ═══════════════════
 		const id = c.req.param("id");
 		if (!id || !/^[a-f0-9-]{36}$/.test(id)) {
 			return c.json({ error: "Invalid id" }, 400);
@@ -1760,6 +1778,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		});
 	})
 	.get("/groups", async (c) => {
+
+	// ═══════════════════ SETTINGS: groups ═══════════════════
 		const shopIds: string[] = await getShopUuidsWithFallback(c, c.var.evotor);
 
 		const groups = await c.var.evotor.getGroupsByNameUuid(shopIds[0]);
@@ -1767,6 +1787,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		return c.json({ groups });
 	})
 	.post("/groups-by-shop", async (c) => {
+
+	// ═══════════════════ SETTINGS: groups-by-shop ═══════════════════
 		try {
 			const data = await c.req.json();
 			const { shopUuid } = validate(GroupsByShopSchema, data);
@@ -1797,7 +1819,11 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json(body, status as 200);
 		}
 	})
+
+	// ═══════════════════ FINANCE: salary ═══════════════════
 	.post("/salary", async (c) => {
+
+	// ═══════════════════ FINANCE: salary ═══════════════════
 		try {
 			const data = await c.req.json();
 			const { employee, startDate, endDate } = validate(SalarySchema, data);
@@ -1970,6 +1996,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.post("/submitGroups", async (c) => {
+
+	// ═══════════════════ SETTINGS: submitGroups ═══════════════════
 		try {
 			const data = await c.req.json();
 
@@ -2000,6 +2028,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.get("/settings-config", async (c) => {
+
+	// ═══════════════════ SETTINGS: settings-config ═══════════════════
 		try {
 			const db = c.get("db");
 			await createAccessoriesTable(db!);
@@ -2049,6 +2079,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.post("/settings/accessory-groups", async (c) => {
+
+	// ═══════════════════ SETTINGS: accessory-groups ═══════════════════
 		try {
 			const data = await c.req.json();
 			const { groups } = validate(AccessoryGroupsSaveSchema, data);
@@ -2073,6 +2105,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.post("/settings/salary-bonus", async (c) => {
+
+	// ═══════════════════ SETTINGS: salary-bonus ═══════════════════
 		try {
 			const data = await c.req.json();
 			const { salary, bonus } = validate(SalaryBonusSaveSchema, data);
@@ -2088,6 +2122,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.post("/shops", async (c) => {
+
+	// ═══════════════════ OPERATIONS: shops ═══════════════════
 		const shopOptions: Record<string, string> = {};
 
 		const shops: ShopUuidName[] | null = await c.var.evotor.getShopNameUuids();
@@ -2102,6 +2138,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		return c.json({ shopOptions });
 	})
 	.get("/shops-names", async (c) => {
+
+	// ═══════════════════ OPERATIONS: shops-names ═══════════════════
 		const shopsName = await c.var.evotor.getShopsName();
 
 		assert(shopsName, "not an shopOptions");
@@ -2109,6 +2147,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		return c.json({ shopsName });
 	})
 	.get("/api/evotor/sales-report", async (c) => {
+
+	// ═══════════════════ REPORTS: sales-report (redirect) ═══════════════════
 		const shops = await c.var.evotor.getShops();
 
 		const shopOptions: Record<string, string> = shops.reduce(
@@ -2131,6 +2171,8 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 
 	.post("/dashboard-home-insights", async (c) => {
+
+	// ═══════════════════ DASHBOARD: dashboard-home-insights ═══════════════════
 		try {
 			const mode = await getDataModeOrDefault(c.env);
 			const payload = validate(
@@ -2759,6 +2801,8 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 
 	.get("/financial", async (c) => {
+
+	// ═══════════════════ REPORTS: financial ═══════════════════
 		try {
 			const startDate = c.req.query("since");
 			const endDate = c.req.query("until");
@@ -2845,6 +2889,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.get("/financial/today", async (c) => {
+
+	// ═══════════════════ REPORTS: financial/today ═══════════════════
 		try {
 			const kv = c.env.KV;
 			const requestedShopUuid = c.req.query("shopUuid")?.trim() || "";
@@ -2905,6 +2951,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.post("/financial/today/direct", async (c) => {
+
+	// ═══════════════════ REPORTS: financial/today/direct ═══════════════════
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
 
@@ -2935,6 +2983,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.post("/index/warm", async (c) => {
+
+	// ═══════════════════ MAINTENANCE: index/warm ═══════════════════
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
 
@@ -2968,6 +3018,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.post("/index/pull-today", async (c) => {
+
+	// ═══════════════════ MAINTENANCE: index/pull-today ═══════════════════
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
 
@@ -3012,6 +3064,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.post("/receipts/rebuild-day", async (c) => {
+
+	// ═══════════════════ MAINTENANCE: receipts/rebuild-day ═══════════════════
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
 
@@ -3085,6 +3139,8 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 	.post("/employee-kpi/backfill-index-range", async (c) => {
+
+	// ═══════════════════ MAINTENANCE: employee-kpi/backfill ═══════════════════
 		try {
 			const employeeRole = await resolveEmployeeRole(c);
 
@@ -3181,7 +3237,11 @@ export const evotorRoutes = new Hono<IEnv>()
 			return c.json({ error: "EMPLOYEE_KPI_BACKFILL_FROM_INDEX_FAILED" }, 500);
 		}
 	})
+
+	// ═══════════════════ REPORTS: order ═══════════════════
 	.post("/order", async (c) => {
+
+	// ═══════════════════ REPORTS: order ═══════════════════
 		try {
 			// Получаем данные из запроса
 			const data = await c.req.json();
@@ -3233,7 +3293,11 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 
+
+	// ═══════════════════ REPORTS: order-v2 ═══════════════════
 	.post("/order-v2", async (c) => {
+
+	// ═══════════════════ REPORTS: order-v2 ═══════════════════
 		try {
 			const payload = validate(OrderV2Schema, await c.req.json().catch(() => ({})));
 			const result = await buildOrderForecastV2({
@@ -3259,7 +3323,11 @@ export const evotorRoutes = new Hono<IEnv>()
 		}
 	})
 
+
+	// ═══════════════════ REPORTS: profit-report ═══════════════════
 	.post("/profit-report", async (c) => {
+
+	// ═══════════════════ REPORTS: profit-report ═══════════════════
 		try {
 			// Получаем данные из запроса
 			const body = await c.req.json();
@@ -3333,6 +3401,8 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 
 	.get("/profit-report/snapshots", async (c) => {
+
+	// ═══════════════════ REPORTS: profit-report/snapshots ═══════════════════
 		try {
 			const query = c.req.query();
 			const { limit } = validate(ProfitReportSnapshotsListSchema, query);
@@ -3345,6 +3415,8 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 
 	.get("/profit-report/snapshots/:id", async (c) => {
+
+	// ═══════════════════ REPORTS: profit-report/snapshots/:id ═══════════════════
 		try {
 			const { id } = validate(ProfitReportSnapshotIdSchema, c.req.param());
 			const snapshot = await getProfitReportSnapshotById(c.env.DB, id);
@@ -3359,6 +3431,8 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 
 	.post("/profit-report/snapshots", async (c) => {
+
+	// ═══════════════════ REPORTS: profit-report/snapshots POST ═══════════════════
 		try {
 			const body = await c.req.json();
 			const { period, report } = validate(ProfitReportSnapshotBodySchema, body);
@@ -3387,6 +3461,8 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 
 	.post("/stock-report", async (c) => {
+
+	// ═══════════════════ REPORTS: stock-report ═══════════════════
 		try {
 			const data = await c.req.json();
 			const { shopUuid, groups } = validate(StockReportSchema, data);
@@ -3450,6 +3526,8 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 
 	.post("/salesResult", async (c) => {
+
+	// ═══════════════════ REPORTS: salesResult ═══════════════════
 		try {
     const data = await c.req.json();
       // Filter out any undefined/null/empty group UUIDs (can come from stale localStorage)
@@ -3523,6 +3601,8 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 
 	.post("/salesGardenReport", async (c) => {
+
+	// ═══════════════════ REPORTS: salesGardenReport ═══════════════════
 		try {
 			const data = await c.req.json(); // Разбор JSON тела
 			const { startDate, endDate } = validate(SalesGardenReportSchema, data);
@@ -3574,6 +3654,8 @@ export const evotorRoutes = new Hono<IEnv>()
 	})
 
 	.post("/api/profit-report", async (c) => {
+
+	// ═══════════════════ REPORTS: profit-report (redirect) ═══════════════════
 		try {
 			// Получаем данные из запроса
 			const body = await c.req.json();

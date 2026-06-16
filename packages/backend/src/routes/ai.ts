@@ -1063,6 +1063,8 @@ export const aiRoutes = new Hono<IEnv>()
 	.use("/*", ensureAiAvailable)
 	.use("/director/*", ensureAiDirectorEnabled)
 
+
+	// ═══════════════════ DIRECTOR: alerts ═══════════════════
 	.post("/director/alerts", async (c) => {
 		try {
 			const payload = await c.req.json().catch(() => ({}));
@@ -1342,6 +1344,8 @@ export const aiRoutes = new Hono<IEnv>()
 	})
 
 	.post("/director/summary", async (c) => {
+
+	// ═══════════════════ DIRECTOR: summary ═══════════════════
 		try {
 			const payload = await c.req.json().catch(() => ({}));
 			const { date, shopUuids, avgDays } = validate(
@@ -1423,6 +1427,8 @@ export const aiRoutes = new Hono<IEnv>()
 
 
 	.post("/director/heatmap", async (c) => {
+
+	// ═══════════════════ DIRECTOR: heatmap ═══════════════════
 		try {
 			const payload = await c.req.json().catch(() => ({}));
 			const { shopUuids } = validate(AiDirectorHeatmapRequestSchema, payload);
@@ -1471,6 +1477,8 @@ export const aiRoutes = new Hono<IEnv>()
 	})
 
 	.post("/director/stock-health", async (c) => {
+
+	// ═══════════════════ INVENTORY: stock-health ═══════════════════
 		try {
 			const payload = await c.req.json().catch(() => ({}));
 			const days = Math.max(1, Math.min(90, Number(payload.days) || 14));
@@ -1609,6 +1617,8 @@ export const aiRoutes = new Hono<IEnv>()
 	})
 
 	.post("/director/stock-transfer", async (c) => {
+
+	// ═══════════════════ INVENTORY: stock-transfer ═══════════════════
 		try {
 			const payload = await c.req.json().catch(() => ({}));
 			const days = Math.max(1, Math.min(90, Number(payload.days) || 14));
@@ -1710,6 +1720,8 @@ export const aiRoutes = new Hono<IEnv>()
 	})
 
 	.post("/director/deadstock-export", async (c) => {
+
+	// ═══════════════════ INVENTORY: deadstock-export ═══════════════════
 		try {
 			const payload = await c.req.json().catch(() => ({}));
 			const { items } = payload as { items?: Array<{ name: string; quantity: number; shopName: string }> };
@@ -1739,6 +1751,8 @@ export const aiRoutes = new Hono<IEnv>()
 
 
 	.post("/director/employee-analysis", async (c) => {
+
+	// ═══════════════════ DIRECTOR: employee-analysis ═══════════════════
 		try {
 			const payload = await c.req.json().catch(() => ({}));
 			const { since, until, shopUuids, limit } = validate(
@@ -1944,6 +1958,8 @@ export const aiRoutes = new Hono<IEnv>()
 	})
 
 	.post("/director/briefing", async (c) => {
+
+	// ═══════════════════ DIRECTOR: briefing ═══════════════════
 		try {
 			const payload = await c.req.json().catch(() => ({}));
 			const { date, shopUuids, refresh } = validate(
@@ -2185,6 +2201,8 @@ export const aiRoutes = new Hono<IEnv>()
 	})
 
 	.get("/documents", async (c) => {
+
+	// ═══════════════════ AI: documents ═══════════════════
 		logger.debug("Fetching documents");
 		const db = c.get("db");
 		const shopsUuid = await c.var.evotor.getShopUuids();
@@ -2217,12 +2235,16 @@ export const aiRoutes = new Hono<IEnv>()
 	})
 
 	.get("/by-grammar", async (c) => {
+
+	// ═══════════════════ AI: by-grammar ═══════════════════
 		const result = getHoroscopeByDateTask(c, { date: "08-06-2025" });
 
 		return c.json({ result });
 	})
 
 	.get("/aiReport", async (c) => {
+
+	// ═══════════════════ AI: aiReport ═══════════════════
 		logger.info("AI report request received");
 		const evo = c.var.evotor;
 
@@ -2246,6 +2268,8 @@ export const aiRoutes = new Hono<IEnv>()
 	})
 
 	.get("/aiAssociationRules", async (c) => {
+
+	// ═══════════════════ AI: aiAssociationRules ═══════════════════
 		logger.info("AI association rules request received");
 		const evo = c.var.evotor;
 
@@ -2270,6 +2294,8 @@ export const aiRoutes = new Hono<IEnv>()
 	})
 
 	.post("/insights", async (c) => {
+
+	// ═══════════════════ AI: insights ═══════════════════
 		try {
 			const data = await c.req.json();
 			const { startDate, endDate, shopUuid } = validate(
@@ -2426,6 +2452,8 @@ export const aiRoutes = new Hono<IEnv>()
 	})
 
 	.post("/dashboard-summary2-insights", async (c) => {
+
+	// ═══════════════════ AI: dashboard-summary2-insights ═══════════════════
 		try {
 			const payload = validate(
 				DashboardSummary2InsightsRequestSchema,
@@ -2509,6 +2537,8 @@ export const aiRoutes = new Hono<IEnv>()
 		}
 	})
 	.get("/history/shift-summaries", async (c) => {
+
+	// ═══════════════════ AI: history/shift-summaries ═══════════════════
 		try {
 			const shopUuid = c.req.query("shopUuid") || undefined;
 			const date = c.req.query("date") || undefined;
@@ -2540,6 +2570,8 @@ export const aiRoutes = new Hono<IEnv>()
 		}
 	})
 	.get("/history/alerts", async (c) => {
+
+	// ═══════════════════ AI: history/alerts ═══════════════════
 		try {
 			const shopUuid = c.req.query("shopUuid") || undefined;
 			const alertTypeRaw = c.req.query("alertType") || undefined;
