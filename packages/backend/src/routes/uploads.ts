@@ -4,7 +4,7 @@ import { logger } from "../logger";
 import { GetFileSchema, validate } from "../validation";
 import { getData } from "../db/repositories/openShops";
 import { ensureOpeningPhotosSchema } from "../db/repositories/openingPhotos";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { jsonError, toApiErrorPayload } from "../errors";
@@ -150,7 +150,44 @@ export const uploadsRoutes = new Hono<IEnv>()
 		}
 	})
 
-	// Legacy: retrieve photos from old openShops table
+		// Report JPEG upload → save to disk, return public URL
+		.post("/upload", async (c) => {
+			try {
+				const formData = await c.req.formData();
+				const file = formData.get("photos") as File | null;
+				if (!file) return jsonError(c, 400, "VALIDATION_ERROR", "Missing file");
+
+				const uploadDir = "/tmp/evo-reports";
+				if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
+
+						const id = randomUUID();
+							const filename = `${id}.jpg`;
+				const filepath = join(uploadDir, filename);
+				const buffer = Buffer.from(await file.arrayBuffer());
+				writeFileSync(filepath, buffer);
+
+				const url = `/api/uploads/report/${id}`;
+				return c.json({ url, name: filename });
+			} catch (err) {
+				logger.error("Report upload error", err);
+				const { status, body } = toApiErrorPayload(err, {
+					code: "REPORT_UPLOAD_FAILED",
+					message: "Upload failed",
+				});
+				return c.json(body, status as 200);
+			}
+		})
+
+			// Serve uploaded report images
+			.get("/report/:id", async (c) => {
+				const id = c.req.param("id");
+				const filepath = join("/tmp/evo-reports", `${id}.jpg`);
+				if (!existsSync(filepath)) return c.notFound();
+				const buffer = readFileSync(filepath);
+				return new Response(buffer, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" } });
+			})
+
+		// Legacy: retrieve photos from old openShops table
 	.post("/getFile", async (c) => {
 		try {
 			const data = await c.req.json();
