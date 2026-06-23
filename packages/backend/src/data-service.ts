@@ -192,7 +192,8 @@ export class DuckDBDataService {
   async getFirstOpenSession(since: string, until: string, employeeUuid?: string): Promise<any> {
     let q = `SELECT * FROM sessions WHERE open_date >= ? AND open_date < ?`; const p: any[] = [since, until];
     if (employeeUuid) { q += ` AND open_user_uuid = ?`; p.push(employeeUuid); }
-    return this.db.prepare(q + ` ORDER BY open_date ASC LIMIT 1`).bind(...p).first();
+    const row = this.db.prepare(q + ` ORDER BY open_date ASC LIMIT 1`).bind(...p).first() as { store_uuid: string } | null;
+    return row?.store_uuid ?? null;
   }
 
   // ─── Plan ────────────────────────────────────────────

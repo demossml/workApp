@@ -1,6 +1,6 @@
 import React from "react";
 import { useStockHealth, useStockTransfer } from "@/hooks/dashboard/useStockHealth";
-import type { StockItem, OutOfStockItem, TransferRec, StockHealthData } from "@/hooks/dashboard/useStockHealth";
+import type { StockItem, OutOfStockItem, TransferRec } from "@/hooks/dashboard/useStockHealth";
 
 function formatMoney(n: number): string {
   return Math.round(n).toLocaleString("ru-RU");

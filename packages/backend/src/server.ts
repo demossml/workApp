@@ -45,7 +45,14 @@ app.route("/", api);
 const distPath = path.join(__dirname, "..", "dist");
 if (fs.existsSync(distPath)) {
   app.use("/*", serveStatic({ root: distPath }));
-  app.get("*", serveStatic({ path: "index.html", root: distPath }));
+  // SPA fallback — but NOT for asset files (prevent HTML served as JS/CSS)
+  app.get("*", (c) => {
+    const assetExts = /\.(js|css|svg|png|jpg|jpeg|webp|woff2?|ico|json|map)$/i;
+    if (assetExts.test(c.req.path)) {
+      return c.notFound();
+    }
+    return serveStatic({ path: "index.html", root: distPath })(c);
+  });
 }
 
 app.get("/", (c: any) => c.json({ message: "Evo Backend (workApp)" }));

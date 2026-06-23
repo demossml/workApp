@@ -19,8 +19,9 @@ export async function createIndexDocumentsTable(db: AppDB): Promise<void> {
 	try {
 		await db.batch([
 			db.prepare(`
+        CREATE SEQUENCE IF NOT EXISTS seq_index_documents;
         CREATE TABLE IF NOT EXISTS index_documents (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id INTEGER PRIMARY KEY DEFAULT nextval('seq_index_documents'),
           number TEXT NOT NULL,
           shop_id TEXT NOT NULL,
           close_date TEXT,

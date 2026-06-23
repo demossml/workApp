@@ -1854,19 +1854,18 @@ export const evotorRoutes = new Hono<IEnv>()
 
 			const result = [];
 
-			const sessionPromises = dates.map((date_) => {
-				const date = new Date(date_);
-				const since = formatDateWithTime(date, false);
-				const until = formatDateWithTime(date, true);
-				return c.var.evotor.getFirstOpenSession(since, until, employee);
-			});
-			const sessionRows = await Promise.all(sessionPromises);
-
-			// Keep parallel array aligned with dates (nulls stay in place)
-			const openShopUuids: (string | null)[] = sessionRows.map((row: any) => {
-				const uuid = row?.store_uuid;
-				return (typeof uuid === "string" && uuid.length > 0) ? uuid : null;
-			});
+			// Query sessions directly via DuckDB (NOT Evotor API — unreliable & slow)
+			const openShopUuids: (string | null)[] = await Promise.all(
+				dates.map(async (date_) => {
+					const date = new Date(date_);
+					const since = formatDateWithTime(date, false);
+					const until = formatDateWithTime(date, true);
+					const row = await db.prepare(
+						`SELECT store_uuid FROM sessions WHERE open_date >= ? AND open_date < ? AND open_user_uuid = ? ORDER BY open_date ASC LIMIT 1`
+					).bind(since, until, employee).first<{ store_uuid: string }>();
+					return row?.store_uuid || null;
+				})
+			);
 			const uniqueShopUuids = [...new Set(openShopUuids.filter(Boolean) as string[])];
 
 			const shopNamesMap =
@@ -3595,6 +3594,194 @@ export const evotorRoutes = new Hono<IEnv>()
 			const { status, body } = toApiErrorPayload(error, {
 				code: "SALES_RESULT_FAILED",
 				message: "Не удалось сформировать отчёт по продажам",
+			});
+			return c.json(body, status as 200);
+		}
+	})
+
+	// ═══════════════════ STOCK HEALTH ═══════════════════
+	.get("/stock-health", async (c) => {
+		try {
+			const db = c.env.DB; // fix: use c.env.DB like other routes
+			const daysParam = parseInt(c.req.query("days") || "14");
+			const shopFilter = c.req.query("shop") || "";
+
+			const days = Math.max(7, Math.min(90, daysParam));
+			const now = new Date();
+			const sinceAll = new Date(now);
+			sinceAll.setDate(sinceAll.getDate() - 90);
+			const sinceAllStr = sinceAll.toISOString().slice(0, 10);
+			const deadSince = new Date(now);
+			deadSince.setDate(deadSince.getDate() - days);
+			const deadSinceStr = deadSince.toISOString().slice(0, 10);
+
+			const shopClause = shopFilter ? "AND s.store_uuid = ?" : "";
+			const shopParam: any[] = shopFilter ? [shopFilter] : [];
+
+			// ── Last sale date per product per store ──
+			const lastSales = await db.prepare(`
+				SELECT
+					p.product_name,
+					p.commodity_uuid as product_uuid,
+					s.store_uuid,
+					s.store_name,
+					MAX(s.close_date) as last_sale,
+					SUM(p.sum) as total_rev_90d,
+					SUM(p.quantity) as total_qty_90d
+				FROM positions p
+				JOIN sells s ON p.doc_id = s.doc_id
+				WHERE s.close_date >= ?
+				${shopClause}
+				GROUP BY p.product_name, p.commodity_uuid, s.store_uuid, s.store_name
+			`).bind(sinceAllStr, ...shopParam).all();
+
+			// ── Sales in last 7 days for velocity ──
+			const since7 = new Date(now);
+			since7.setDate(since7.getDate() - 7);
+			const since7Str = since7.toISOString().slice(0, 10);
+
+			const recentSales = await db.prepare(`
+				SELECT
+					p.product_name,
+					p.commodity_uuid as product_uuid,
+					s.store_uuid,
+					SUM(p.quantity) as qty_7d,
+					SUM(p.sum) as rev_7d,
+					COUNT(DISTINCT DATE(s.close_date)) as days_sold_7d
+				FROM positions p
+				JOIN sells s ON p.doc_id = s.doc_id
+				WHERE s.close_date >= ?
+				${shopClause}
+				GROUP BY p.product_name, p.commodity_uuid, s.store_uuid
+			`).bind(since7Str, ...shopParam).all();
+
+			// Build maps (convert BigInt to Number)
+			const recentMap = new Map<string, { qty: number; rev: number; days: number }>();
+			for (const r of recentSales.results || []) {
+				const rr = r as any;
+				const key = `${rr.product_uuid}|${rr.store_uuid}`;
+				recentMap.set(key, { qty: Number(rr.qty_7d || 0), rev: Number(rr.rev_7d || 0), days: Number(rr.days_sold_7d || 0) });
+			}
+
+			// ── Classify products ──
+			const deadStock: any[] = [];
+			const lowStock: any[] = [];
+			const outOfStock: any[] = [];
+
+			// Map for transfer detection: product → stores where it's sold
+			const productStoreMap = new Map<string, Map<string, { name: string; qty: number; rev: number; dead: boolean }>>();
+
+			for (const r of lastSales.results || []) {
+				const rr = r as any;
+				const key = `${rr.product_uuid}|${rr.store_uuid}`;
+				const recent = recentMap.get(key);
+				const lastSaleDate = new Date(rr.last_sale);
+				const daysSinceLastSale = Math.floor((now.getTime() - lastSaleDate.getTime()) / 86400000);
+				const avgDailyQty = rr.total_qty_90d / 90;
+
+				// Track per product across stores for transfer
+				if (!productStoreMap.has(rr.product_uuid)) {
+					productStoreMap.set(rr.product_uuid, new Map());
+				}
+				productStoreMap.get(rr.product_uuid)!.set(rr.store_uuid, {
+					name: rr.store_name,
+					qty: Number(rr.total_qty_90d || 0),
+					rev: Number(rr.total_rev_90d || 0),
+					dead: daysSinceLastSale >= days,
+				});
+
+				const item = {
+					productName: rr.product_name,
+					productUuid: rr.product_uuid,
+					storeUuid: rr.store_uuid,
+					storeName: rr.store_name,
+					lastSale: rr.last_sale,
+					daysSinceLastSale,
+					totalRev90d: Math.round(Number(rr.total_rev_90d || 0)),
+					totalQty90d: Number(rr.total_qty_90d || 0),
+					recentQty7d: recent?.qty || 0,
+					recentRev7d: Math.round(recent?.rev || 0),
+					daysSold7d: recent?.days || 0,
+					avgDailyQty: Math.round(avgDailyQty * 100) / 100,
+				};
+
+				// DEAD: last sale > N days ago
+				if (daysSinceLastSale >= days) {
+					deadStock.push(item);
+				}
+				// OUT OF STOCK: sold in last 30d but not in last 7d
+				else if (!recent || recent.qty === 0) {
+					outOfStock.push({
+						...item,
+						lostRevenuePerDay: Math.round(rr.total_rev_90d / 90),
+					});
+				}
+				// LOW STOCK: velocity declining (sold in last 7d but < 1 unit/day)
+				else if (recent && recent.qty < 7 && recent.qty > 0) {
+					const daysLeft = recent.qty > 0 ? Math.round(recent.qty / Math.max(0.1, avgDailyQty) * 10) / 10 : 0;
+					lowStock.push({
+						...item,
+						daysLeft,
+					});
+				}
+			}
+
+			// Sort: dead by oldest last sale, low by daysLeft asc, out by lost rev desc
+			deadStock.sort((a, b) => a.daysSinceLastSale - b.daysSinceLastSale);
+			lowStock.sort((a, b) => a.daysLeft - b.daysLeft);
+			outOfStock.sort((a, b) => b.lostRevenuePerDay - a.lostRevenuePerDay);
+
+			// ── Transfer recommendations ──
+			const transfers: any[] = [];
+			for (const [productUuid, storeMap] of productStoreMap) {
+				const deadStores: string[] = [];
+				const activeStores: Array<{ uuid: string; name: string; qty: number; rev: number }> = [];
+				for (const [storeUuid, info] of storeMap) {
+					if (info.dead) deadStores.push(storeUuid);
+					else activeStores.push({ uuid: storeUuid, name: info.name, qty: info.qty, rev: info.rev });
+				}
+				if (deadStores.length > 0 && activeStores.length > 0) {
+					for (const deadStore of deadStores) {
+						const deadInfo = storeMap.get(deadStore)!;
+						// Find best active store to transfer to
+						const best = activeStores.sort((a, b) => b.qty - a.qty)[0];
+						transfers.push({
+							productName: deadStores.length > 0 ? deadStock.find(d => d.productUuid === productUuid && d.storeUuid === deadStore)?.productName || productUuid.slice(0, 8) : productUuid.slice(0, 8),
+							productUuid,
+							fromStoreUuid: deadStore,
+							fromStoreName: deadInfo.name,
+							toStoreUuid: best.uuid,
+							toStoreName: best.name,
+							deadQuantity: deadInfo.qty,
+							activeQty: best.qty,
+							activeRev: best.rev,
+						});
+					}
+				}
+			}
+
+			// ── KPI counts ──
+			const deadCount = deadStock.length;
+			const lowCount = lowStock.length;
+			const outCount = outOfStock.length;
+
+			return c.json({
+				deadCount,
+				lowCount,
+				outCount,
+				deadStock,
+				lowStock: lowStock.slice(0, 15),
+				outOfStock: outOfStock.slice(0, 15),
+				transfers,
+				days,
+				shopFilter: shopFilter || null,
+				generatedAt: now.toISOString(),
+				});
+		} catch (error) {
+			logger.error("Stock health failed:", error);
+			const { status, body } = toApiErrorPayload(error, {
+				code: "STOCK_HEALTH_FAILED",
+				message: "Не удалось получить данные по остаткам",
 			});
 			return c.json(body, status as 200);
 		}

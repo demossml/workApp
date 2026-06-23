@@ -11,7 +11,7 @@ export default defineConfig({
       selfDestroying: false,
       registerType: "autoUpdate",
       workbox: {
-        cacheId: "work-app-v2",
+        cacheId: "work-app-v3",
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,

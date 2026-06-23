@@ -10,6 +10,7 @@ interface RevenueCardProps {
 }
 
 export function RevenueCard({ value, percentPlan, onClick }: RevenueCardProps) {
+  const pct = typeof percentPlan === "number" ? Math.min(percentPlan, 100) : undefined;
   return (
     <motion.div
       whileHover={{ scale: 1.03, y: -2 }}
@@ -25,14 +26,16 @@ export function RevenueCard({ value, percentPlan, onClick }: RevenueCardProps) {
       <div className="text-xs opacity-75 mt-1 flex items-center gap-1">
         <TrendingUp className="w-3 h-3" />
         <span>
-          {typeof percentPlan === "number"
-            ? `${percentPlan}% от плана`
-            : "70% от плана"}
+          {pct != null
+            ? `~ ${pct}% от плана`
+            : "План загружается..."}
         </span>
       </div>
-      {/* Прогресс бар (условно 70% плана) */}
       <div className="absolute bottom-0 left-0 h-1 bg-white/30 w-full">
-        <div className="h-full bg-white/60" style={{ width: "70%" }} />
+        <div
+          className="h-full bg-white/60 transition-all duration-500"
+          style={{ width: `${pct ?? 0}%` }}
+        />
       </div>
     </motion.div>
   );
