@@ -1,14 +1,3 @@
-.git
-.github
-.turbo
-.wrangler
-node_modules
-**/node_modules
-dist
-**/dist
-coverage
-**/coverage
-.DS_Store
-*.log
-packages/frontend/dev-dist
-packages/frontend/tsconfig.app.tsbuildinfo
+node_modules/
+dist/
+.env

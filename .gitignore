@@ -2,6 +2,10 @@
 node_modules
 dist
 
+# База данных DuckDB (меняется каждые 5 минут, не коммитить)
+packages/backend/data/*.duckdb
+packages/backend/data/*.duckdb.wal
+
 # Секретные файлы - НИКОГДА не коммитить!
 .dev.vars
 *.dev.vars

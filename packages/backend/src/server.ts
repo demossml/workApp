@@ -55,7 +55,6 @@ if (fs.existsSync(distPath)) {
   });
 }
 
-app.get("/", (c: any) => c.json({ message: "Evo Backend (workApp)" }));
 app.onError(errorHandler);
 
 ensureSchema().catch((err: any) => console.error("Schema init error:", err));

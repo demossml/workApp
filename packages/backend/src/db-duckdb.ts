@@ -1,47 +1,19 @@
 import { Database } from "duckdb";
-import { existsSync, mkdirSync, copyFileSync, unlinkSync } from "fs";
-import { join } from "path";
 
-const DB_SOURCE = process.env.DUCKDB_PATH || "/home/admingimolost/.hermes/data/evotor.duckdb";
-const SETTINGS_DB_PATH = process.env.DUCKDB_SETTINGS_PATH || "/home/admingimolost/.hermes/data/evotor-settings.duckdb";
-const DB_COPY_TTL_MS = 5 * 60 * 1000; // refresh copy every 5 minutes
-const TEMP_DIR = "/tmp/evo-duckdb";
+/** All app data in one DB — sells, positions, payments, stores, plans, salary, etc. */
+const APP_DB_PATH = process.env.DUCKDB_SETTINGS_PATH || "./data/evotor-settings.duckdb";
 
-let _db: Database | null = null;
-let _settingsDb: Database | null = null;
-let _dbCopyTime = 0;
-
-function getTempPath(): string {
-  if (!existsSync(TEMP_DIR)) mkdirSync(TEMP_DIR, { recursive: true });
-  return join(TEMP_DIR, "evotor-miniapp.duckdb");
-}
+let _appDb: Database | null = null;
 
 export function getDuckDB(): Database {
-  const now = Date.now();
-  if (_db && (now - _dbCopyTime) < DB_COPY_TTL_MS) return _db;
-
-  // Close old connection before refreshing copy
-  if (_db) {
-    try { _db.close(); } catch {}
-    _db = null;
-  }
-
-  const tempPath = getTempPath();
-  if (existsSync(DB_SOURCE)) {
-    try { unlinkSync(tempPath); } catch {}
-    try { unlinkSync(tempPath + ".wal"); } catch {}
-    copyFileSync(DB_SOURCE, tempPath);
-  }
-  _db = new Database(tempPath);
-  _dbCopyTime = now;
-  return _db;
+  if (_appDb) return _appDb;
+  _appDb = new Database(APP_DB_PATH);
+  return _appDb;
 }
 
-/** Separate persistent DB for settings tables (accessories, plan, salary, etc). */
+/** @deprecated Use getDuckDB() instead — evotor-settings.duckdb now holds all app data. */
 export function getSettingsDB(): Database {
-  if (_settingsDb) return _settingsDb;
-  _settingsDb = new Database(SETTINGS_DB_PATH);
-  return _settingsDb;
+  return getDuckDB();
 }
 
 // Promisified DuckDB helpers
@@ -154,57 +126,19 @@ export class D1Adapter {
 }
 
 let _adapter: D1Adapter | null = null;
-let _settingsAdapter: D1Adapter | null = null;
 
 export function createD1Adapter(): D1Adapter {
   if (!_adapter) _adapter = new D1Adapter();
   return _adapter;
 }
 
-/** Adapter that uses the persistent settings DB (survives restarts). */
-class SettingsDuckAdapter extends D1Adapter {
-  prepare(sql: string): DuckPreparedStatement {
-    return new SettingsDuckPreparedStatement(sql);
-  }
-}
-
-class SettingsDuckPreparedStatement extends DuckPreparedStatement {
-  async all<T = any>(): Promise<{ success: boolean; results: T[]; meta: any }> {
-    try {
-      const db = getSettingsDB();
-      const results = await dbAll(db, (this as any).sql, ...(this as any).params);
-      return { success: true, results: results as T[], meta: { changes: results.length } };
-    } catch (err: any) {
-      console.error("SettingsDuckAdapter.all error:", err.message);
-      return { success: false, results: [], meta: { error: err.message } };
-    }
-  }
-
-  async run(): Promise<{ success: boolean; meta: { changes: number } }> {
-    try {
-      const db = getSettingsDB();
-      await dbRun(db, (this as any).sql, ...(this as any).params);
-      return { success: true, meta: { changes: 1 } };
-    } catch (err: any) {
-      console.error("SettingsDuckAdapter.run error:", err.message);
-      return { success: false, meta: { changes: 0 } };
-    }
-  }
-
-  async first<T = any>(): Promise<T | null> {
-    try {
-      const db = getSettingsDB();
-      return await dbFirst(db, (this as any).sql, ...(this as any).params) as T;
-    } catch { return null; }
-  }
-}
-
+/** @deprecated Use createD1Adapter() instead — evotor-settings.duckdb now holds all app data. */
 export function createSettingsAdapter(): D1Adapter {
-  if (!_settingsAdapter) _settingsAdapter = new SettingsDuckAdapter();
-  return _settingsAdapter;
+  return createD1Adapter();
 }
 
 export async function ensureSchema(): Promise<void> {
+  const db = getDuckDB();  // single connection for schema setup
   const tables = [
     `CREATE TABLE IF NOT EXISTS app_events (ts BIGINT NOT NULL, event_name TEXT NOT NULL, user_id TEXT, shop_uuid TEXT, role TEXT, screen TEXT, trace_id TEXT, props_json TEXT, app_version TEXT)`,
     `CREATE TABLE IF NOT EXISTS metrics_minute (minute_ts BIGINT NOT NULL, metric_key TEXT NOT NULL, shop_uuid TEXT, value DOUBLE NOT NULL)`,
@@ -228,7 +162,7 @@ export async function ensureSchema(): Promise<void> {
     `CREATE TABLE IF NOT EXISTS profitReportSnapshots (createdAt TEXT NOT NULL, createdBy TEXT, since TEXT NOT NULL, until TEXT NOT NULL, payloadJson TEXT NOT NULL)`,
   ];
   for (const sql of tables) {
-    try { await dbRun(getDuckDB(), sql); } catch (err) { console.warn("ensureSchema table error:", String(err)); }
+    try { await dbRun(db, sql); } catch (err) { console.warn("ensureSchema table error:", String(err)); }
   }
   // Create views mapping sells/positions/payments to workApp D1 schema
   const views = [
@@ -238,8 +172,9 @@ export async function ensureSchema(): Promise<void> {
     `CREATE OR REPLACE VIEW stores AS SELECT DISTINCT store_uuid, store_uuid AS id, store_name AS name FROM sells`,
   ];
   for (const v of views) {
-    try { await dbRun(getDuckDB(), v); } catch (err) { console.warn("ensureSchema view error:", String(err)); }
+    try { await dbRun(db, v); } catch (err) { console.warn("ensureSchema view error:", String(err)); }
   }
 }
 
+// Pre-connect on module load
 getDuckDB();
